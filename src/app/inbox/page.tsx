@@ -12,6 +12,7 @@ import { getContentExcerpt } from "@/features/node/node-display";
 import { useCreateNode } from "@/features/node/hooks/use-create-node";
 import { useNodes } from "@/features/node/hooks/use-nodes";
 import { useVinemaContext } from "@/features/node/hooks/use-vinema-context";
+import { getNodeDetailPath } from "@/features/node/node-routes";
 import { nodeRepository } from "@/infrastructure/repositories";
 import { formatShortDate } from "@/components/app-shell/note-list-item";
 
@@ -59,7 +60,7 @@ export default function InboxPage() {
     setBusyNodeId(nodeId);
     try {
       const note = await convertIdeaToNote(nodeRepository, nodeId, context.device);
-      router.push(`/notes/${note.id}`);
+      router.push(getNodeDetailPath(note.id));
     } finally {
       setBusyNodeId(null);
     }

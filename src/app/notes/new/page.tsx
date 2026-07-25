@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useCreateNode } from "@/features/node/hooks/use-create-node";
 import { useVinemaContext } from "@/features/node/hooks/use-vinema-context";
+import { getNodeDetailPath } from "@/features/node/node-routes";
 
 export default function NewNotePage() {
   const router = useRouter();
@@ -40,7 +41,7 @@ export default function NewNotePage() {
 
     if (node) {
       setFeedback("Nota guardada.");
-      router.push(`/notes/${node.id}`);
+      router.push(getNodeDetailPath(node.id));
     } else {
       setFeedback(null);
     }

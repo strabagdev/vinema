@@ -63,7 +63,7 @@ Prisma, Railway, realtime, sincronizacion e IA.
 - `/inbox`: captura rapida de ideas.
 - `/notes`: listado de notas activas.
 - `/notes/new`: nueva nota.
-- `/notes/[nodeId]`: detalle y edicion.
+- `/notes/detail?nodeId=<id>`: detalle y edicion.
 
 ## IndexedDB
 
@@ -74,3 +74,7 @@ Base `vinema`, version 3:
 - `devices`: in-line con `keyPath: "id"`.
 - `workspaces`: in-line con `keyPath: "id"`.
 - `nodes`: in-line con `keyPath: "id"`.
+
+Mientras Vinema use `output: "export"`, los recursos locales creados en
+IndexedDB se abren con rutas estaticas y query params. Las notas usan
+`/notes/detail?nodeId=<id>` en lugar de segmentos dinamicos de Next.js.

@@ -3,6 +3,7 @@ const SHELL_ASSETS = [
   "/",
   "/inbox",
   "/notes",
+  "/notes/detail",
   "/notes/new",
   "/manifest.webmanifest",
   "/icon.svg",

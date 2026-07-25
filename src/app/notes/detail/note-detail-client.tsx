@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { Archive } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -12,10 +12,27 @@ import { archiveNode } from "@/features/node/archive-node";
 import { updateNode } from "@/features/node/update-node";
 import { useNode } from "@/features/node/hooks/use-node";
 import { useVinemaContext } from "@/features/node/hooks/use-vinema-context";
+import { getNodeIdFromSearchParams } from "@/features/node/node-routes";
 import { nodeRepository } from "@/infrastructure/repositories";
 import { formatShortDate } from "@/components/app-shell/note-list-item";
 
-export function NoteDetailClient({ nodeId }: { nodeId: string }) {
+export function NoteDetailClient() {
+  const searchParams = useSearchParams();
+  const nodeId = getNodeIdFromSearchParams(searchParams);
+
+  if (!nodeId) {
+    return (
+      <NoteDetailMessage
+        title="Falta la nota"
+        message="La URL no incluye un identificador de nota valido."
+      />
+    );
+  }
+
+  return <NoteDetailEditor nodeId={nodeId} />;
+}
+
+function NoteDetailEditor({ nodeId }: { nodeId: string }) {
   const router = useRouter();
   const context = useVinemaContext();
   const { node, loading, error, setNode } = useNode(nodeId);
@@ -110,16 +127,19 @@ export function NoteDetailClient({ nodeId }: { nodeId: string }) {
 
   if (!node) {
     return (
-      <section className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 px-4 py-6 sm:px-6 lg:px-8">
-        <Badge variant="secondary">Notas</Badge>
-        <h1 className="text-3xl font-semibold text-zinc-950">Nota no encontrada</h1>
-        <p className="text-sm text-zinc-600">
-          Puede haber sido archivada o no existe en este dispositivo.
-        </p>
-        <Button asChild className="w-fit">
-          <Link href="/notes">Volver a notas</Link>
-        </Button>
-      </section>
+      <NoteDetailMessage
+        title="Nota no encontrada"
+        message="Puede haber sido archivada o no existe en este dispositivo."
+      />
+    );
+  }
+
+  if (node.status === "ARCHIVED") {
+    return (
+      <NoteDetailMessage
+        title="Nota archivada"
+        message="Esta nota esta archivada y no aparece en el listado activo."
+      />
     );
   }
 
@@ -196,6 +216,25 @@ export function NoteDetailClient({ nodeId }: { nodeId: string }) {
         />
         <p className="text-xs text-zinc-500">Ctrl+S o Cmd+S para guardar.</p>
       </div>
+    </section>
+  );
+}
+
+function NoteDetailMessage({
+  title,
+  message,
+}: {
+  title: string;
+  message: string;
+}) {
+  return (
+    <section className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 px-4 py-6 sm:px-6 lg:px-8">
+      <Badge variant="secondary">Notas</Badge>
+      <h1 className="text-3xl font-semibold text-zinc-950">{title}</h1>
+      <p className="text-sm text-zinc-600">{message}</p>
+      <Button asChild className="w-fit">
+        <Link href="/notes">Volver a notas</Link>
+      </Button>
     </section>
   );
 }

@@ -12,7 +12,7 @@ almacenamiento local tras recargar.
 - Workspace local por defecto llamado `Personal`.
 - Repositorios independientes del dominio.
 - Persistencia local mediante IndexedDB.
-- Rutas `/inbox`, `/notes`, `/notes/new` y `/notes/[nodeId]`.
+- Rutas `/inbox`, `/notes`, `/notes/new` y `/notes/detail?nodeId=<id>`.
 - Pruebas unitarias con repositorios en memoria para la logica principal.
 
 ## Modelo Node
@@ -43,9 +43,9 @@ metadata y `deletedAt`. No se implementa eliminacion definitiva.
 - La logica de negocio vive en `src/features/node/*`.
 - Los componentes React usan hooks que llaman casos de uso y repositorios.
 - No se instalo estado global; se usa React state y `refresh()` explicito.
-- `/notes/[nodeId]` existe como ruta App Router. Con `output: "export"` se
-  declara un parametro local de muestra en `generateStaticParams()` para que
-  Next genere el bundle de la ruta dinamica.
+- Con `output: "export"`, los recursos locales dinamicos no usan segmentos
+  dinamicos de Next.js. El detalle de nota usa la ruta estatica
+  `/notes/detail?nodeId=<id>`.
 
 ## Flujo de captura
 
@@ -83,15 +83,15 @@ reescribe en el store nuevo al actualizarse.
 - `/inbox`: captura rapida, listado de ideas, convertir y archivar.
 - `/notes`: listado de notas activas organizadas.
 - `/notes/new`: creacion de nota.
-- `/notes/[nodeId]`: detalle editable y archivado.
+- `/notes/detail?nodeId=<id>`: detalle editable y archivado.
 
 ## Limitaciones
 
 - SQLite, sincronizacion, autenticacion y backend siguen fuera de alcance.
 - No hay papelera ni eliminacion definitiva.
 - No hay Markdown avanzado, tags, proyectos, relaciones ni IA.
-- En export estatico, recargas profundas de `/notes/[nodeId]` dependen del shell
-  PWA/service worker o de un host configurado con fallback a la app.
+- En export estatico, `/notes/detail` forma parte del build y lee el `nodeId`
+  desde query params, por lo que no depende de generar IDs locales durante build.
 
 ## Pruebas
 

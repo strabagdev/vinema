@@ -4,11 +4,12 @@ import {
   getContentExcerpt,
   getNodeDisplayTitle,
 } from "@/features/node/node-display";
+import { getNodeDetailPath } from "@/features/node/node-routes";
 
 export function NoteListItem({ node }: { node: Node }) {
   return (
     <Link
-      href={`/notes/${node.id}`}
+      href={getNodeDetailPath(node.id)}
       className="block rounded-lg border border-zinc-200 bg-white p-4 transition-colors hover:border-zinc-300 hover:bg-zinc-50"
     >
       <div className="flex items-start justify-between gap-4">
