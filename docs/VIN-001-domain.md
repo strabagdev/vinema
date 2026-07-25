@@ -12,6 +12,17 @@ local-first y offline-first.
 
 ## Entidades iniciales
 
+### Node
+
+Concepto interno aprobado desde VIN-003. Un Node representa cualquier elemento
+de conocimiento. En la interfaz se muestran terminos humanos como Nota, Idea e
+Inbox; no se expone la palabra Node al usuario.
+
+Tipos habilitados inicialmente:
+
+- `NOTE`
+- `IDEA`
+
 ### Device
 
 Representa la instalacion o navegador actual de Vinema.
@@ -24,4 +35,5 @@ Representa la instalacion o navegador actual de Vinema.
 
 ## Proximos dominios
 
-Notas, proyectos, etiquetas, markdown y sincronizacion quedan fuera de VIN-002.
+Proyectos, etiquetas, markdown avanzado y sincronizacion quedan fuera del nucleo
+local inicial.
