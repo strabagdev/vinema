@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import type { Node } from "@/domain/node/node";
 import { archiveNode } from "@/features/node/archive-node";
 import { updateNode } from "@/features/node/update-node";
 import { useNode } from "@/features/node/hooks/use-node";
@@ -15,6 +16,12 @@ import { useVinemaContext } from "@/features/node/hooks/use-vinema-context";
 import { getNodeIdFromSearchParams } from "@/features/node/node-routes";
 import { nodeRepository } from "@/infrastructure/repositories";
 import { formatShortDate } from "@/components/app-shell/note-list-item";
+
+type Draft = {
+  nodeId: string;
+  title: string;
+  content: string;
+};
 
 export function NoteDetailClient() {
   const searchParams = useSearchParams();
@@ -29,28 +36,128 @@ export function NoteDetailClient() {
     );
   }
 
-  return <NoteDetailEditor nodeId={nodeId} />;
+  return <NoteDetailLoader nodeId={nodeId} />;
 }
 
-function NoteDetailEditor({ nodeId }: { nodeId: string }) {
+function NoteDetailLoader({ nodeId }: { nodeId: string }) {
   const router = useRouter();
   const context = useVinemaContext();
   const { node, loading, error, setNode } = useNode(nodeId);
-  const [draft, setDraft] = useState<{
-    nodeId: string;
-    title: string;
-    content: string;
-  } | null>(null);
+
+  if (loading) {
+    return (
+      <section className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 lg:px-8">
+        <div className="rounded-lg border border-zinc-200 bg-white p-6 text-sm text-zinc-500">
+          Cargando nota...
+        </div>
+      </section>
+    );
+  }
+
+  if (context.status === "error") {
+    return (
+      <NoteDetailMessage
+        title="No se pudo cargar Vinema"
+        message={context.error}
+      />
+    );
+  }
+
+  if (!node) {
+    return (
+      <NoteDetailMessage
+        title="Nota no encontrada"
+        message={
+          error ?? "Puede haber sido archivada o no existe en este dispositivo."
+        }
+      />
+    );
+  }
+
+  if (node.status === "ARCHIVED") {
+    return (
+      <NoteDetailMessage
+        title="Nota archivada"
+        message="Esta nota esta archivada y no aparece en el listado activo."
+      />
+    );
+  }
+
+  if (context.status !== "ready") {
+    return (
+      <section className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 lg:px-8">
+        <div className="rounded-lg border border-zinc-200 bg-white p-6 text-sm text-zinc-500">
+          Cargando contexto local...
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <NoteDetailView
+      node={node}
+      onSave={async ({ title, content }) => {
+        const updatedNode = await updateNode(nodeRepository, {
+          id: node.id,
+          title,
+          content,
+          device: context.device,
+        });
+        setNode(updatedNode);
+        return updatedNode;
+      }}
+      onArchive={async () => {
+        await archiveNode(nodeRepository, node.id, context.device);
+        router.push("/notes");
+      }}
+    />
+  );
+}
+
+export function NoteDetailView({
+  node,
+  onSave,
+  onArchive,
+}: {
+  node: Node;
+  onSave: (draft: Pick<Draft, "title" | "content">) => Promise<Node>;
+  onArchive: () => Promise<void>;
+}) {
+  const [persistedNode, setPersistedNode] = useState(node);
+  const [mode, setMode] = useState<"read" | "edit">("read");
+  const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
-  const hasDraftForNode = Boolean(draft && node && draft.nodeId === node.id);
-  const title = hasDraftForNode && draft ? draft.title : node?.title ?? "";
+  const title =
+    mode === "edit" && draft?.nodeId === persistedNode.id
+      ? draft.title
+      : persistedNode.title;
   const content =
-    hasDraftForNode && draft ? draft.content : node?.content ?? "";
+    mode === "edit" && draft?.nodeId === persistedNode.id
+      ? draft.content
+      : persistedNode.content;
+
+  function beginEdit() {
+    setDraft({
+      nodeId: persistedNode.id,
+      title: persistedNode.title,
+      content: persistedNode.content,
+    });
+    setFeedback(null);
+    setFormError(null);
+    setMode("edit");
+  }
+
+  function cancelEdit() {
+    setDraft(null);
+    setFeedback(null);
+    setFormError(null);
+    setMode("read");
+  }
 
   async function handleSave() {
-    if (!node || saving || context.status !== "ready") {
+    if (saving || mode !== "edit") {
       return;
     }
 
@@ -59,18 +166,10 @@ function NoteDetailEditor({ nodeId }: { nodeId: string }) {
     setFeedback("Guardando...");
 
     try {
-      const updatedNode = await updateNode(nodeRepository, {
-        id: node.id,
-        title,
-        content,
-        device: context.device,
-      });
-      setNode(updatedNode);
-      setDraft({
-        nodeId: updatedNode.id,
-        title: updatedNode.title,
-        content: updatedNode.content,
-      });
+      const updatedNode = await onSave({ title, content });
+      setPersistedNode(updatedNode);
+      setDraft(null);
+      setMode("read");
       setFeedback("Cambios guardados.");
     } catch (caughtError) {
       setFeedback(null);
@@ -85,7 +184,7 @@ function NoteDetailEditor({ nodeId }: { nodeId: string }) {
   }
 
   async function handleArchive() {
-    if (!node || saving || context.status !== "ready") {
+    if (saving || mode !== "read") {
       return;
     }
 
@@ -93,8 +192,7 @@ function NoteDetailEditor({ nodeId }: { nodeId: string }) {
     setFormError(null);
 
     try {
-      await archiveNode(nodeRepository, node.id, context.device);
-      router.push("/notes");
+      await onArchive();
     } catch (caughtError) {
       setFormError(
         caughtError instanceof Error
@@ -106,41 +204,14 @@ function NoteDetailEditor({ nodeId }: { nodeId: string }) {
   }
 
   function handleKeyDown(event: React.KeyboardEvent) {
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+    if (
+      mode === "edit" &&
+      (event.metaKey || event.ctrlKey) &&
+      event.key.toLowerCase() === "s"
+    ) {
       event.preventDefault();
       handleSave();
     }
-  }
-
-  const visibleError =
-    context.status === "error" ? context.error : formError ?? error;
-
-  if (loading) {
-    return (
-      <section className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 lg:px-8">
-        <div className="rounded-lg border border-zinc-200 bg-white p-6 text-sm text-zinc-500">
-          Cargando nota...
-        </div>
-      </section>
-    );
-  }
-
-  if (!node) {
-    return (
-      <NoteDetailMessage
-        title="Nota no encontrada"
-        message="Puede haber sido archivada o no existe en este dispositivo."
-      />
-    );
-  }
-
-  if (node.status === "ARCHIVED") {
-    return (
-      <NoteDetailMessage
-        title="Nota archivada"
-        message="Esta nota esta archivada y no aparece en el listado activo."
-      />
-    );
   }
 
   return (
@@ -153,30 +224,41 @@ function NoteDetailEditor({ nodeId }: { nodeId: string }) {
           <Badge variant="secondary">Notas</Badge>
           <div>
             <h1 className="text-3xl font-semibold tracking-normal text-zinc-950">
-              Editar nota
+              {mode === "edit" ? "Editar nota" : displayTitle(persistedNode)}
             </h1>
             <p className="mt-2 text-sm text-zinc-500">
-              Actualizada {formatShortDate(node.updatedAt)}
+              Actualizada {formatShortDate(persistedNode.updatedAt)}
             </p>
           </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="ghost" asChild>
-            <Link href="/notes">Cancelar</Link>
-          </Button>
-          <Button variant="secondary" onClick={handleArchive} disabled={saving}>
-            <Archive className="h-4 w-4" />
-            Archivar
-          </Button>
-          <Button onClick={handleSave} disabled={saving || context.status !== "ready"}>
-            {saving ? "Guardando..." : "Guardar"}
-          </Button>
-        </div>
+        {mode === "read" ? (
+          <div className="flex gap-2">
+            <Button variant="ghost" asChild>
+              <Link href="/notes">← Volver</Link>
+            </Button>
+            <Button variant="secondary" onClick={beginEdit}>
+              Editar
+            </Button>
+            <Button variant="ghost" onClick={handleArchive} disabled={saving}>
+              <Archive className="h-4 w-4" />
+              Archivar
+            </Button>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={cancelEdit} disabled={saving}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? "Guardando..." : "Guardar"}
+            </Button>
+          </div>
+        )}
       </div>
 
-      {visibleError ? (
+      {formError ? (
         <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {visibleError}
+          {formError}
         </p>
       ) : null}
       {feedback ? (
@@ -185,42 +267,50 @@ function NoteDetailEditor({ nodeId }: { nodeId: string }) {
         </p>
       ) : null}
 
-      <div className="space-y-4 rounded-lg border border-zinc-200 bg-white p-4">
-        <Input
-          value={title}
-          onChange={(event) => {
-            setFeedback(null);
-            setDraft({
-              nodeId: node.id,
-              title: event.target.value,
-              content,
-            });
-          }}
-          placeholder="Titulo"
-          aria-label="Titulo"
-          className="h-12 text-lg"
-        />
-        <Textarea
-          value={content}
-          onChange={(event) => {
-            setFeedback(null);
-            setDraft({
-              nodeId: node.id,
-              title,
-              content: event.target.value,
-            });
-          }}
-          placeholder="Contenido"
-          aria-label="Contenido"
-          className="min-h-[420px] resize-y text-base leading-7"
-        />
-        <p className="text-xs text-zinc-500">Ctrl+S o Cmd+S para guardar.</p>
-      </div>
+      {mode === "read" ? (
+        <article className="rounded-lg border border-zinc-200 bg-white p-5">
+          <div className="prose prose-zinc max-w-none whitespace-pre-wrap text-sm leading-7 text-zinc-800">
+            {persistedNode.content.trim() || "Sin contenido"}
+          </div>
+        </article>
+      ) : (
+        <div className="space-y-4 rounded-lg border border-zinc-200 bg-white p-4">
+          <Input
+            value={title}
+            onChange={(event) => {
+              setFeedback(null);
+              setDraft({
+                nodeId: persistedNode.id,
+                title: event.target.value,
+                content,
+              });
+            }}
+            placeholder="Titulo"
+            aria-label="Titulo"
+            className="h-12 text-lg"
+          />
+          <Textarea
+            value={content}
+            onChange={(event) => {
+              setFeedback(null);
+              setDraft({
+                nodeId: persistedNode.id,
+                title,
+                content: event.target.value,
+              });
+            }}
+            placeholder="Contenido"
+            aria-label="Contenido"
+            className="min-h-[420px] resize-y text-base leading-7"
+          />
+          <p className="text-xs text-zinc-500">Ctrl+S o Cmd+S para guardar.</p>
+        </div>
+      )}
     </section>
   );
 }
 
-function NoteDetailMessage({
+export function NoteDetailMessage({
   title,
   message,
 }: {
@@ -237,4 +327,8 @@ function NoteDetailMessage({
       </Button>
     </section>
   );
+}
+
+function displayTitle(node: Node) {
+  return node.title.trim() || "Sin titulo";
 }
