@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { MoreHorizontal, Plus, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,12 +37,14 @@ export function AppHeader() {
         <Separator orientation="vertical" className="hidden h-6 sm:block" />
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button disabled size="sm">
-              <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">Nueva nota</span>
+            <Button size="sm" asChild>
+              <Link href="/notes/new">
+                <Plus className="h-4 w-4" />
+                <span className="hidden sm:inline">Nueva nota</span>
+              </Link>
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Nueva nota estara disponible en VIN-003</TooltipContent>
+          <TooltipContent>Crear una nota</TooltipContent>
         </Tooltip>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

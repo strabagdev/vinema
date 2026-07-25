@@ -1,5 +1,12 @@
 const CACHE_NAME = "vinema-shell-v1";
-const SHELL_ASSETS = ["/", "/inbox", "/notes", "/manifest.webmanifest", "/icon.svg"];
+const SHELL_ASSETS = [
+  "/",
+  "/inbox",
+  "/notes",
+  "/notes/new",
+  "/manifest.webmanifest",
+  "/icon.svg",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

@@ -47,7 +47,9 @@ export function SidebarContent({
       <nav className="space-y-1">
         {navItems.slice(1).map((item) => {
           const Icon = item.icon;
-          const active = pathname === item.href;
+          const active =
+            pathname === item.href ||
+            (item.href !== "/" && pathname.startsWith(`${item.href}/`));
 
           if (item.disabled) {
             return (
