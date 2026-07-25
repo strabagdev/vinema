@@ -326,7 +326,7 @@ export function NoteDetailView({
     }
   }
 
-  async function handleManualSave() {
+  async function handleDone() {
     await saveDraft({ exitEditMode: true });
   }
 
@@ -415,11 +415,15 @@ export function NoteDetailView({
               <Button variant="ghost" onClick={handleBack} disabled={saveStatus === "saving"}>
                 ← Volver
               </Button>
-              <Button variant="ghost" onClick={cancelEdit}>
+              <Button
+                variant="ghost"
+                onClick={cancelEdit}
+                disabled={saveStatus === "saving"}
+              >
                 Cancelar
               </Button>
-              <Button onClick={handleManualSave} disabled={saveStatus === "saving"}>
-                {saveStatus === "saving" ? "Guardando..." : "Guardar"}
+              <Button onClick={handleDone} disabled={saveStatus === "saving"}>
+                Listo
               </Button>
             </div>
           </div>

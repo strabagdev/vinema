@@ -4,7 +4,7 @@
 
 El detalle de nota abre en modo lectura. El usuario entra al formulario solo con
 la accion explicita `Editar`; `Cancelar` descarta el borrador no guardado y
-`Guardar` persiste manualmente y vuelve a lectura.
+la accion principal cerraba la edicion despues de persistir.
 
 ## VIN-004B - Autosave controlado
 
@@ -29,13 +29,14 @@ El estado visual se modela como un unico valor:
 La interfaz muestra texto visible: `Cambios sin guardar`, `Guardando...`,
 `Guardado` o `Error al guardar`.
 
-### Autosave, Guardar y Ctrl+S
+### Autosave, Listo y Ctrl+S
 
 - Autosave: guarda despues del debounce, mantiene el modo edicion abierto y
   actualiza la base usada para detectar cambios futuros.
-- Boton `Guardar`: cancela el debounce pendiente, guarda inmediatamente si hay
-  cambios validos y vuelve a modo lectura. Si no hay cambios, vuelve a lectura
-  sin escribir.
+- No existe un boton manual de guardado en el editor de detalle.
+- Boton `Listo`: finaliza la edicion. Cancela el debounce pendiente, hace flush
+  de cambios validos si existen y vuelve a modo lectura. Si no hay cambios,
+  vuelve a lectura sin escribir.
 - `Ctrl+S` / `Cmd+S`: cancela el debounce pendiente, guarda inmediatamente y
   mantiene la edicion abierta.
 
@@ -48,8 +49,8 @@ cambios se consideran guardados; cancelar solo descarta cambios posteriores.
 ### Errores
 
 Si falla el guardado, el borrador permanece en pantalla, se muestra el error y
-el usuario puede reintentar con `Guardar`, `Ctrl+S` o con el siguiente cambio
-que reactive el autosave.
+el usuario puede reintentar con `Listo`, `Ctrl+S` o con el siguiente cambio que
+reactive el autosave.
 
 ### Condiciones de carrera
 

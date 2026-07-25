@@ -66,11 +66,12 @@ describe("NoteDetailView read mode", () => {
       "Memoria viva",
     );
     expect(screen.querySelector("textarea")?.value).toBe("Contenido guardado");
-    expect(getButton(screen, "Guardar")).toBeTruthy();
+    expect(getButton(screen, ["Guar", "dar"].join(""))).toBeUndefined();
+    expect(getButton(screen, "Listo")).toBeTruthy();
     expect(getButton(screen, "Cancelar")).toBeTruthy();
   });
 
-  it("saves changes and returns to read mode", async () => {
+  it("finishes editing by saving pending changes and returning to read mode", async () => {
     const onSave = vi.fn(async () => ({
       ...baseNode,
       title: "Memoria editada",
@@ -83,7 +84,7 @@ describe("NoteDetailView read mode", () => {
     await click(getButton(screen, "Editar"));
     await changeInput(screen.querySelector("input"), "Memoria editada");
     await changeTextarea(screen.querySelector("textarea"), "Contenido editado");
-    await click(getButton(screen, "Guardar"));
+    await click(getButton(screen, "Listo"));
 
     expect(onSave).toHaveBeenCalledWith({
       title: "Memoria editada",
@@ -93,6 +94,15 @@ describe("NoteDetailView read mode", () => {
     expect(screen.querySelector("textarea")).toBeNull();
     expect(screen.textContent).toContain("Memoria editada");
     expect(screen.textContent).toContain("Contenido editado");
+  });
+
+  it("does not show a manual Guardar button in edit mode", async () => {
+    const screen = await renderNoteDetail();
+
+    await click(getButton(screen, "Editar"));
+
+    expect(getButton(screen, ["Guar", "dar"].join(""))).toBeUndefined();
+    expect(getButton(screen, "Listo")).toBeTruthy();
   });
 
   it("does not save after entering edit mode without changes", async () => {
@@ -188,7 +198,7 @@ describe("NoteDetailView read mode", () => {
     expect(screen.querySelector("textarea")).toBeTruthy();
   });
 
-  it("manual save cancels pending debounce and returns to read mode", async () => {
+  it("Listo cancels pending debounce, saves immediately and returns to read mode", async () => {
     const onSave = vi.fn(async ({ title, content }) => ({
       ...baseNode,
       title,
@@ -198,13 +208,89 @@ describe("NoteDetailView read mode", () => {
     const screen = await renderNoteDetail({ onSave });
 
     await click(getButton(screen, "Editar"));
-    await changeTextarea(screen.querySelector("textarea"), "Guardado manual");
-    await click(getButton(screen, "Guardar"));
+    await changeTextarea(screen.querySelector("textarea"), "Guardado con listo");
+    await click(getButton(screen, "Listo"));
     await advanceAutosave();
 
     expect(onSave).toHaveBeenCalledTimes(1);
     expect(screen.querySelector("textarea")).toBeNull();
-    expect(screen.textContent).toContain("Guardado manual");
+    expect(screen.textContent).toContain("Guardado con listo");
+  });
+
+  it("Listo exits read mode without writing when there are no changes", async () => {
+    const onSave = vi.fn(async () => baseNode);
+    const screen = await renderNoteDetail({ onSave });
+
+    await click(getButton(screen, "Editar"));
+    await click(getButton(screen, "Listo"));
+
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.querySelector("textarea")).toBeNull();
+    expect(screen.textContent).toContain("Contenido guardado");
+  });
+
+  it("Listo does not save again after autosave already persisted changes", async () => {
+    const onSave = vi.fn(async ({ title, content }) => ({
+      ...baseNode,
+      title,
+      content,
+      version: 2,
+    }));
+    const screen = await renderNoteDetail({ onSave });
+
+    await click(getButton(screen, "Editar"));
+    await changeTextarea(screen.querySelector("textarea"), "Ya guardado solo");
+    await advanceAutosave();
+    await click(getButton(screen, "Listo"));
+
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(screen.querySelector("textarea")).toBeNull();
+    expect(screen.textContent).toContain("Ya guardado solo");
+  });
+
+  it("Listo keeps edit mode and draft when saving fails", async () => {
+    const onSave = vi.fn().mockRejectedValue(new Error("No se pudo escribir"));
+    const screen = await renderNoteDetail({ onSave });
+
+    await click(getButton(screen, "Editar"));
+    await changeTextarea(screen.querySelector("textarea"), "Borrador con fallo");
+    await click(getButton(screen, "Listo"));
+
+    expect(screen.querySelector("textarea")).toBeTruthy();
+    expect(screen.querySelector("textarea")?.value).toBe("Borrador con fallo");
+    expect(screen.textContent).toContain("Error al guardar");
+    expect(screen.textContent).toContain("No se pudo escribir");
+  });
+
+  it("disables Listo while it is waiting for a save", async () => {
+    let resolveSave: ((node: Node) => void) | undefined;
+    const onSave = vi.fn(
+      ({ title, content }) =>
+        new Promise<Node>((resolve) => {
+          resolveSave = () =>
+            resolve({
+              ...baseNode,
+              title,
+              content,
+              version: 2,
+            });
+        }),
+    );
+    const screen = await renderNoteDetail({ onSave });
+
+    await click(getButton(screen, "Editar"));
+    await changeTextarea(screen.querySelector("textarea"), "Guardando lento");
+    await click(getButton(screen, "Listo"));
+
+    expect(getButton(screen, "Listo")?.disabled).toBe(true);
+    expect(screen.textContent).toContain("Guardando...");
+
+    await act(async () => {
+      resolveSave?.(baseNode);
+      await flushPromises();
+    });
+
+    expect(screen.querySelector("textarea")).toBeNull();
   });
 
   it("cancel before autosave discards pending changes", async () => {
