@@ -1,6 +1,6 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   NoteDetailMessage,
   NoteDetailView,
@@ -28,6 +28,16 @@ const baseNode: Node = {
 };
 
 describe("NoteDetailView read mode", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    document.body.replaceChildren();
+  });
+
   it("opens in read mode without showing the form", async () => {
     const screen = await renderNoteDetail();
 
@@ -38,11 +48,13 @@ describe("NoteDetailView read mode", () => {
     expect(getButton(screen, "Editar")).toBeTruthy();
   });
 
-  it("uses a visible back link to /notes", async () => {
-    const screen = await renderNoteDetail();
-    const backLink = getLink(screen, "← Volver");
+  it("uses a visible back action", async () => {
+    const onBack = vi.fn();
+    const screen = await renderNoteDetail({ onBack });
 
-    expect(backLink?.getAttribute("href")).toBe("/notes");
+    await click(getButton(screen, "← Volver"));
+
+    expect(onBack).toHaveBeenCalledOnce();
   });
 
   it("enters edit mode only after pressing Editar", async () => {
@@ -83,6 +95,56 @@ describe("NoteDetailView read mode", () => {
     expect(screen.textContent).toContain("Contenido editado");
   });
 
+  it("does not save after entering edit mode without changes", async () => {
+    const onSave = vi.fn(async () => baseNode);
+    const screen = await renderNoteDetail({ onSave });
+
+    await click(getButton(screen, "Editar"));
+    await advanceAutosave();
+
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.textContent).not.toContain("Guardando");
+  });
+
+  it("marks dirty immediately and autosaves after the debounce", async () => {
+    const onSave = vi.fn(async ({ title, content }) => ({
+      ...baseNode,
+      title,
+      content,
+      version: 2,
+      updatedAt: "2026-01-02T00:00:00.000Z",
+    }));
+    const screen = await renderNoteDetail({ onSave });
+
+    await click(getButton(screen, "Editar"));
+    await changeTextarea(screen.querySelector("textarea"), "Contenido autosave");
+
+    expect(screen.textContent).toContain("Cambios sin guardar");
+
+    await advanceTime(699);
+    expect(onSave).not.toHaveBeenCalled();
+
+    await advanceTime(1);
+
+    expect(onSave).toHaveBeenCalledWith({
+      title: "Memoria viva",
+      content: "Contenido autosave",
+    });
+    expect(screen.textContent).toContain("Guardado");
+    expect(screen.querySelector("textarea")).toBeTruthy();
+  });
+
+  it("does not autosave when there are no real changes", async () => {
+    const onSave = vi.fn(async () => baseNode);
+    const screen = await renderNoteDetail({ onSave });
+
+    await click(getButton(screen, "Editar"));
+    await changeTextarea(screen.querySelector("textarea"), "Contenido guardado");
+    await advanceAutosave();
+
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
   it("cancels without saving and restores the persisted content", async () => {
     const onSave = vi.fn();
     const screen = await renderNoteDetail({ onSave });
@@ -106,7 +168,12 @@ describe("NoteDetailView read mode", () => {
   });
 
   it("only handles Ctrl+S while editing", async () => {
-    const onSave = vi.fn(async () => baseNode);
+    const onSave = vi.fn(async ({ title, content }) => ({
+      ...baseNode,
+      title,
+      content,
+      version: 2,
+    }));
     const screen = await renderNoteDetail({ onSave });
 
     await keyDown(getDetailSection(screen), "s", { ctrlKey: true });
@@ -114,9 +181,186 @@ describe("NoteDetailView read mode", () => {
     expect(onSave).not.toHaveBeenCalled();
 
     await click(getButton(screen, "Editar"));
+    await changeTextarea(screen.querySelector("textarea"), "Guardado con teclado");
     await keyDown(getDetailSection(screen), "s", { ctrlKey: true });
 
     expect(onSave).toHaveBeenCalledTimes(1);
+    expect(screen.querySelector("textarea")).toBeTruthy();
+  });
+
+  it("manual save cancels pending debounce and returns to read mode", async () => {
+    const onSave = vi.fn(async ({ title, content }) => ({
+      ...baseNode,
+      title,
+      content,
+      version: 2,
+    }));
+    const screen = await renderNoteDetail({ onSave });
+
+    await click(getButton(screen, "Editar"));
+    await changeTextarea(screen.querySelector("textarea"), "Guardado manual");
+    await click(getButton(screen, "Guardar"));
+    await advanceAutosave();
+
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(screen.querySelector("textarea")).toBeNull();
+    expect(screen.textContent).toContain("Guardado manual");
+  });
+
+  it("cancel before autosave discards pending changes", async () => {
+    const onSave = vi.fn(async () => baseNode);
+    const screen = await renderNoteDetail({ onSave });
+
+    await click(getButton(screen, "Editar"));
+    await changeTextarea(screen.querySelector("textarea"), "Borrador temporal");
+    await click(getButton(screen, "Cancelar"));
+    await advanceAutosave();
+
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.textContent).toContain("Contenido guardado");
+    expect(screen.textContent).not.toContain("Borrador temporal");
+  });
+
+  it("cancel after autosave keeps the persisted autosaved content", async () => {
+    const onSave = vi.fn(async ({ title, content }) => ({
+      ...baseNode,
+      title,
+      content,
+      version: 2,
+      updatedAt: "2026-01-02T00:00:00.000Z",
+    }));
+    const screen = await renderNoteDetail({ onSave });
+
+    await click(getButton(screen, "Editar"));
+    await changeTextarea(screen.querySelector("textarea"), "Ya autosave");
+    await advanceAutosave();
+    await changeTextarea(screen.querySelector("textarea"), "Borrador posterior");
+    await click(getButton(screen, "Cancelar"));
+
+    expect(screen.textContent).toContain("Ya autosave");
+    expect(screen.textContent).not.toContain("Borrador posterior");
+  });
+
+  it("keeps the draft and allows retry after a save error", async () => {
+    const onSave = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("IndexedDB fallo"))
+      .mockImplementationOnce(async ({ title, content }) => ({
+        ...baseNode,
+        title,
+        content,
+        version: 2,
+      }));
+    const screen = await renderNoteDetail({ onSave });
+
+    await click(getButton(screen, "Editar"));
+    await changeTextarea(screen.querySelector("textarea"), "Borrador con error");
+    await advanceAutosave();
+
+    expect(screen.textContent).toContain("Error al guardar");
+    expect(screen.textContent).toContain("IndexedDB fallo");
+    expect(screen.querySelector("textarea")?.value).toBe("Borrador con error");
+
+    await changeTextarea(screen.querySelector("textarea"), "Borrador corregido");
+    await advanceAutosave();
+
+    expect(onSave).toHaveBeenCalledTimes(2);
+    expect(screen.textContent).toContain("Guardado");
+  });
+
+  it("does not mark newer changes as saved when an older save resolves", async () => {
+    let resolveFirstSave: ((node: Node) => void) | undefined;
+    const onSave = vi
+      .fn()
+      .mockImplementationOnce(
+        ({ title, content }) =>
+          new Promise<Node>((resolve) => {
+            resolveFirstSave = () =>
+              resolve({
+                ...baseNode,
+                title,
+                content,
+                version: 2,
+              });
+          }),
+      )
+      .mockImplementationOnce(async ({ title, content }) => ({
+        ...baseNode,
+        title,
+        content,
+        version: 3,
+      }));
+    const screen = await renderNoteDetail({ onSave });
+
+    await click(getButton(screen, "Editar"));
+    await changeTextarea(screen.querySelector("textarea"), "Cambio A");
+    await advanceAutosave();
+
+    expect(screen.textContent).toContain("Guardando");
+
+    await changeTextarea(screen.querySelector("textarea"), "Cambio B");
+
+    await act(async () => {
+      resolveFirstSave?.(baseNode);
+      await flushPromises();
+    });
+
+    expect(screen.textContent).toContain("Cambios sin guardar");
+    expect(screen.textContent).not.toContain("Guardado");
+
+    await advanceAutosave();
+
+    expect(onSave).toHaveBeenCalledTimes(2);
+    expect(onSave).toHaveBeenLastCalledWith({
+      title: "Memoria viva",
+      content: "Cambio B",
+    });
+  });
+
+  it("does not autosave an invalid draft", async () => {
+    const onSave = vi.fn(async () => baseNode);
+    const screen = await renderNoteDetail({ onSave });
+
+    await click(getButton(screen, "Editar"));
+    await changeInput(screen.querySelector("input"), " ");
+    await changeTextarea(screen.querySelector("textarea"), " ");
+    await advanceAutosave();
+
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.textContent).toContain("Escribe un titulo o contenido");
+    expect(screen.textContent).toContain("Cambios sin guardar");
+  });
+
+  it("flushes pending changes before returning to notes", async () => {
+    const onBack = vi.fn();
+    const onSave = vi.fn(async ({ title, content }) => ({
+      ...baseNode,
+      title,
+      content,
+      version: 2,
+    }));
+    const screen = await renderNoteDetail({ onSave, onBack });
+
+    await click(getButton(screen, "Editar"));
+    await changeTextarea(screen.querySelector("textarea"), "Guardar antes de volver");
+    await click(getButton(screen, "← Volver"));
+
+    expect(onSave).toHaveBeenCalledOnce();
+    expect(onBack).toHaveBeenCalledOnce();
+  });
+
+  it("does not navigate back if flushing changes fails", async () => {
+    const onBack = vi.fn();
+    const onSave = vi.fn().mockRejectedValue(new Error("No se pudo escribir"));
+    const screen = await renderNoteDetail({ onSave, onBack });
+
+    await click(getButton(screen, "Editar"));
+    await changeTextarea(screen.querySelector("textarea"), "No navega");
+    await click(getButton(screen, "← Volver"));
+
+    expect(onBack).not.toHaveBeenCalled();
+    expect(screen.textContent).toContain("No se pudo escribir");
+    expect(screen.querySelector("textarea")).toBeTruthy();
   });
 
   it("keeps a return action available for a missing note state", async () => {
@@ -131,10 +375,12 @@ async function renderNoteDetail({
   node = baseNode,
   onSave = vi.fn(async () => node),
   onArchive = vi.fn(async () => undefined),
+  onBack = vi.fn(),
 }: {
   node?: Node;
   onSave?: (draft: { title: string; content: string }) => Promise<Node>;
   onArchive?: () => Promise<void>;
+  onBack?: () => void;
 } = {}) {
   const { container } = createContainer();
 
@@ -144,6 +390,7 @@ async function renderNoteDetail({
         node,
         onSave,
         onArchive,
+        onBack,
       }),
     );
   });
@@ -214,6 +461,22 @@ async function keyDown(
       new KeyboardEvent("keydown", { bubbles: true, key, ...options }),
     );
   });
+}
+
+async function advanceAutosave() {
+  await advanceTime(700);
+}
+
+async function advanceTime(ms: number) {
+  await act(async () => {
+    vi.advanceTimersByTime(ms);
+    await flushPromises();
+  });
+}
+
+async function flushPromises() {
+  await Promise.resolve();
+  await Promise.resolve();
 }
 
 async function changeInput(element: HTMLInputElement | null, value: string) {
