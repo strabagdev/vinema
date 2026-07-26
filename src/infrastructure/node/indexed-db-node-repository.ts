@@ -9,13 +9,13 @@ function byNewestUpdatedAt(a: Node, b: Node) {
 export class IndexedDbNodeRepository implements NodeRepository {
   async create(node: Node): Promise<Node> {
     const db = await getVinemaDb();
-    await db.add(NODES_STORE, node);
+    await db.add(NODES_STORE, stripLegacyEmbeddedContext(node));
     return node;
   }
 
   async update(node: Node): Promise<Node> {
     const db = await getVinemaDb();
-    await db.put(NODES_STORE, node);
+    await db.put(NODES_STORE, stripLegacyEmbeddedContext(node));
     return node;
   }
 
@@ -27,7 +27,7 @@ export class IndexedDbNodeRepository implements NodeRepository {
       return null;
     }
 
-    return node;
+    return stripLegacyEmbeddedContext(node);
   }
 
   async listActive(): Promise<Node[]> {
@@ -35,6 +35,7 @@ export class IndexedDbNodeRepository implements NodeRepository {
     const nodes = await db.getAll(NODES_STORE);
 
     return nodes
+      .map(stripLegacyEmbeddedContext)
       .filter(
         (node) =>
           node.deletedAt === null &&
@@ -49,6 +50,7 @@ export class IndexedDbNodeRepository implements NodeRepository {
     const nodes = await db.getAll(NODES_STORE);
 
     return nodes
+      .map(stripLegacyEmbeddedContext)
       .filter(
         (node) =>
           node.deletedAt === null &&
@@ -63,7 +65,18 @@ export class IndexedDbNodeRepository implements NodeRepository {
     const nodes = await db.getAll(NODES_STORE);
 
     return nodes
+      .map(stripLegacyEmbeddedContext)
       .filter((node) => node.deletedAt === null && node.status === "ARCHIVED")
       .sort(byNewestUpdatedAt);
   }
+}
+
+function stripLegacyEmbeddedContext(node: Node): Node {
+  if (!("context" in node)) {
+    return node;
+  }
+
+  const nodeWithoutContext = { ...node } as Node & { context?: unknown };
+  delete nodeWithoutContext.context;
+  return nodeWithoutContext;
 }

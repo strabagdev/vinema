@@ -1,6 +1,8 @@
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { deleteDB, openDB } from "idb";
+import type { Context } from "@/domain/context/context";
+import type { NodeContextRelation } from "@/domain/context/node-context-relation";
 import type { Device } from "@/domain/device/device";
 import { DevicePlatform } from "@/domain/device/device";
 import type { Node } from "@/domain/node/node";
@@ -11,12 +13,16 @@ import { convertIdeaToNote } from "@/features/node/convert-idea-to-note";
 import { restoreNode } from "@/features/node/restore-node";
 import { updateNode } from "@/features/node/update-node";
 import { getOrCreateDefaultWorkspace } from "@/features/workspace/get-or-create-default-workspace";
+import { IndexedDbContextRepository } from "@/infrastructure/context/indexed-db-context-repository";
+import { IndexedDbNodeContextRelationRepository } from "@/infrastructure/context/indexed-db-node-context-relation-repository";
 import { IndexedDbNodeRepository } from "@/infrastructure/node/indexed-db-node-repository";
 import { IndexedDbAdapter } from "@/infrastructure/storage/indexed-db-adapter";
 import {
   APP_SETTINGS_STORE,
+  CONTEXTS_STORE,
   DEVICES_STORE,
   LEGACY_KEY_VALUE_STORE,
+  NODE_CONTEXT_RELATIONS_STORE,
   NODES_STORE,
   VINEMA_DB_NAME,
   WORKSPACES_STORE,
@@ -24,6 +30,8 @@ import {
   resetVinemaDbConnectionForTests,
 } from "@/infrastructure/storage/vinema-db";
 import { IndexedDbWorkspaceRepository } from "@/infrastructure/workspace/indexed-db-workspace-repository";
+
+const workspaceId = "workspace-indexeddb";
 
 const device: Device = {
   id: "device-indexeddb",
@@ -36,7 +44,7 @@ const device: Device = {
 function makeNode(overrides: Partial<Node> = {}): Node {
   return {
     id: overrides.id ?? crypto.randomUUID(),
-    workspaceId: "workspace-indexeddb",
+    workspaceId,
     type: "NOTE",
     title: "Nota local",
     content: "Contenido local",
@@ -53,6 +61,33 @@ function makeNode(overrides: Partial<Node> = {}): Node {
   };
 }
 
+function makeContext(overrides: Partial<Context> = {}): Context {
+  return {
+    id: overrides.id ?? crypto.randomUUID(),
+    workspaceId,
+    type: "AREA",
+    name: "Trabajo",
+    description: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    archivedAt: null,
+    ...overrides,
+  };
+}
+
+function makeRelation(
+  overrides: Partial<NodeContextRelation> = {},
+): NodeContextRelation {
+  return {
+    id: overrides.id ?? crypto.randomUUID(),
+    workspaceId,
+    nodeId: "node-1",
+    contextId: "context-1",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
 describe("IndexedDB repositories", () => {
   beforeEach(async () => {
     await resetVinemaDbConnectionForTests();
@@ -64,11 +99,28 @@ describe("IndexedDB repositories", () => {
     await deleteDB(VINEMA_DB_NAME);
   });
 
-  it("creates a clean version 3 database with the expected keyPath schema", async () => {
+  it("creates a clean version 4 database with the expected keyPath schema", async () => {
     const db = await getVinemaDb();
+    const nodesStore = db.transaction(NODES_STORE).objectStore(NODES_STORE);
+    const contextsStore = db
+      .transaction(CONTEXTS_STORE)
+      .objectStore(CONTEXTS_STORE);
+    const relationsStore = db
+      .transaction(NODE_CONTEXT_RELATIONS_STORE)
+      .objectStore(NODE_CONTEXT_RELATIONS_STORE);
 
-    expect(db.version).toBe(3);
-    expect(db.transaction(NODES_STORE).objectStore(NODES_STORE).keyPath).toBe("id");
+    expect(db.version).toBe(4);
+    expect(nodesStore.keyPath).toBe("id");
+    expect(contextsStore.keyPath).toBe("id");
+    expect(contextsStore.indexNames.contains("by-workspace")).toBe(true);
+    expect(contextsStore.indexNames.contains("by-type")).toBe(true);
+    expect(contextsStore.indexNames.contains("by-archived-at")).toBe(true);
+    expect(contextsStore.indexNames.contains("by-workspace-and-type")).toBe(true);
+    expect(relationsStore.keyPath).toBe("id");
+    expect(relationsStore.indexNames.contains("by-workspace")).toBe(true);
+    expect(relationsStore.indexNames.contains("by-node")).toBe(true);
+    expect(relationsStore.indexNames.contains("by-context")).toBe(true);
+    expect(relationsStore.indexNames.contains("by-node-and-context")).toBe(true);
     expect(
       db.transaction(WORKSPACES_STORE).objectStore(WORKSPACES_STORE).keyPath,
     ).toBe("id");
@@ -115,6 +167,59 @@ describe("IndexedDB repositories", () => {
     await expect(repository.listActive()).resolves.toHaveLength(1);
   });
 
+  it("stores contexts and relations separately from nodes", async () => {
+    const nodeRepository = new IndexedDbNodeRepository();
+    const contextRepository = new IndexedDbContextRepository();
+    const relationRepository = new IndexedDbNodeContextRelationRepository();
+    const node = makeNode({ id: "node-1" });
+    const context = makeContext({ id: "context-1", type: "PROJECT" });
+    const relation = makeRelation({
+      id: "relation-1",
+      nodeId: node.id,
+      contextId: context.id,
+    });
+
+    await nodeRepository.create(node);
+    await contextRepository.save(context);
+    await relationRepository.save(relation);
+
+    await expect(contextRepository.getById(context.id)).resolves.toEqual(context);
+    await expect(
+      relationRepository.getByNodeAndContext(node.id, context.id),
+    ).resolves.toEqual(relation);
+    await expect(nodeRepository.findById(node.id)).resolves.toEqual(node);
+  });
+
+  it("persists contexts and relations after reopening the database", async () => {
+    const contextRepository = new IndexedDbContextRepository();
+    const relationRepository = new IndexedDbNodeContextRelationRepository();
+    const context = makeContext({ id: "context-1" });
+    const relation = makeRelation({ id: "relation-1" });
+
+    await contextRepository.save(context);
+    await relationRepository.save(relation);
+    await resetVinemaDbConnectionForTests();
+
+    await expect(
+      new IndexedDbContextRepository().getById(context.id),
+    ).resolves.toEqual(context);
+    await expect(
+      new IndexedDbNodeContextRelationRepository().getByNodeAndContext(
+        relation.nodeId,
+        relation.contextId,
+      ),
+    ).resolves.toEqual(relation);
+  });
+
+  it("prevents duplicate relations through a unique nodeId + contextId index", async () => {
+    const repository = new IndexedDbNodeContextRelationRepository();
+    await repository.save(makeRelation({ id: "relation-1" }));
+
+    await expect(
+      repository.save(makeRelation({ id: "relation-2" })),
+    ).rejects.toThrow();
+  });
+
   it("archives, restores and converts using inline Node keys", async () => {
     const repository = new IndexedDbNodeRepository();
     const idea = makeNode({
@@ -144,7 +249,7 @@ describe("IndexedDB repositories", () => {
   it("stores the default Workspace by explicit id", async () => {
     const repository = new IndexedDbWorkspaceRepository();
     const workspace: Workspace = {
-      id: "workspace-indexeddb",
+      id: workspaceId,
       name: "Personal",
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
@@ -193,9 +298,19 @@ describe("IndexedDB repositories", () => {
     await expect(repository.findById(oldNode.id)).resolves.toEqual(oldNode);
 
     const db = await getVinemaDb();
-    expect(db.version).toBe(3);
+    expect(db.version).toBe(4);
     expect(db.transaction(NODES_STORE).objectStore(NODES_STORE).keyPath).toBe("id");
     await expect(repository.listActive()).resolves.toHaveLength(1);
+  });
+
+  it("creates contexts and relations stores when migrating from version 3", async () => {
+    await createVersion3Database({ nodes: [makeNode({ id: "legacy-node" })] });
+
+    await resetVinemaDbConnectionForTests();
+    const db = await getVinemaDb();
+
+    expect(db.objectStoreNames.contains(CONTEXTS_STORE)).toBe(true);
+    expect(db.objectStoreNames.contains(NODE_CONTEXT_RELATIONS_STORE)).toBe(true);
   });
 
   it("migrates a version 2 in-line nodes store without losing records", async () => {
@@ -315,6 +430,36 @@ async function createVersion2Database({
       });
       settings.forEach(([key, value]) => {
         appSettings.put(value, key);
+      });
+    },
+  });
+
+  db.close();
+}
+
+async function createVersion3Database({
+  nodes = [],
+}: {
+  nodes?: Node[];
+}) {
+  await resetVinemaDbConnectionForTests();
+  await deleteDB(VINEMA_DB_NAME);
+
+  const db = await openDB(VINEMA_DB_NAME, 3, {
+    upgrade(database) {
+      database.createObjectStore(APP_SETTINGS_STORE);
+      database.createObjectStore(LEGACY_KEY_VALUE_STORE);
+      database.createObjectStore(WORKSPACES_STORE, { keyPath: "id" });
+      database.createObjectStore(DEVICES_STORE, { keyPath: "id" });
+      const nodesStore = database.createObjectStore(NODES_STORE, {
+        keyPath: "id",
+      });
+
+      nodesStore.createIndex("by-updated-at", "updatedAt");
+      nodesStore.createIndex("by-workspace", "workspaceId");
+
+      nodes.forEach((node) => {
+        nodesStore.put(node);
       });
     },
   });

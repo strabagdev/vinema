@@ -63,6 +63,7 @@ describe("Node core", () => {
     expect(node.title).toBe("Primera nota");
     expect(node.version).toBe(1);
     expect(node.status).toBe("ACTIVE");
+    expect("context" in node).toBe(false);
     expect(node.metadata).toEqual({});
     expect(node.deletedAt).toBeNull();
     expect(await repository.findById(node.id)).toEqual(node);

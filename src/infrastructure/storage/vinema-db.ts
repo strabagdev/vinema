@@ -4,15 +4,19 @@ import {
   type IDBPDatabase,
   type OpenDBCallbacks,
 } from "idb";
+import type { Context } from "@/domain/context/context";
+import type { NodeContextRelation } from "@/domain/context/node-context-relation";
 import type { Node } from "@/domain/node/node";
 import type { Workspace } from "@/domain/workspace/workspace";
 
 export const VINEMA_DB_NAME = "vinema";
-export const VINEMA_DB_VERSION = 3;
+export const VINEMA_DB_VERSION = 4;
 
 export const APP_SETTINGS_STORE = "app_settings";
+export const CONTEXTS_STORE = "contexts";
 export const DEVICES_STORE = "devices";
 export const LEGACY_KEY_VALUE_STORE = "key-value";
+export const NODE_CONTEXT_RELATIONS_STORE = "node_context_relations";
 export const NODES_STORE = "nodes";
 export const WORKSPACES_STORE = "workspaces";
 
@@ -21,6 +25,16 @@ export interface VinemaDbSchema extends DBSchema {
     key: string;
     value: unknown;
   };
+  [CONTEXTS_STORE]: {
+    key: string;
+    value: Context;
+    indexes: {
+      "by-archived-at": string;
+      "by-type": string;
+      "by-workspace": string;
+      "by-workspace-and-type": [string, string];
+    };
+  };
   [DEVICES_STORE]: {
     key: string;
     value: { id: string } & Record<string, unknown>;
@@ -28,6 +42,16 @@ export interface VinemaDbSchema extends DBSchema {
   [LEGACY_KEY_VALUE_STORE]: {
     key: string;
     value: unknown;
+  };
+  [NODE_CONTEXT_RELATIONS_STORE]: {
+    key: string;
+    value: NodeContextRelation;
+    indexes: {
+      "by-context": string;
+      "by-node": string;
+      "by-node-and-context": [string, string];
+      "by-workspace": string;
+    };
   };
   [NODES_STORE]: {
     key: string;
@@ -48,14 +72,16 @@ type UpgradeTransaction = Parameters<
   NonNullable<OpenDBCallbacks<VinemaDbSchema>["upgrade"]>
 >[3];
 type InlineStoreName =
+  | typeof CONTEXTS_STORE
   | typeof DEVICES_STORE
-  | typeof WORKSPACES_STORE
-  | typeof NODES_STORE;
+  | typeof NODE_CONTEXT_RELATIONS_STORE
+  | typeof NODES_STORE
+  | typeof WORKSPACES_STORE;
 type UpgradeObjectStore = {
   keyPath: IDBObjectStore["keyPath"];
   indexNames: DOMStringList;
   getAll(): Promise<unknown[]>;
-  put(value: { id: string } & Record<string, unknown>): Promise<unknown>;
+  put(value: unknown): Promise<unknown>;
   createIndex(
     name: string,
     keyPath: string | string[],
@@ -71,10 +97,19 @@ export function getVinemaDb() {
 
       await ensureInlineIdStore(db, transaction, DEVICES_STORE);
       await ensureInlineIdStore(db, transaction, WORKSPACES_STORE);
-      await ensureInlineIdStore(db, transaction, NODES_STORE, (store) => {
-        store.createIndex("by-updated-at", "updatedAt");
-        store.createIndex("by-workspace", "workspaceId");
-      });
+      await ensureInlineIdStore(db, transaction, NODES_STORE, ensureNodeIndexes);
+      await ensureInlineIdStore(
+        db,
+        transaction,
+        CONTEXTS_STORE,
+        ensureContextIndexes,
+      );
+      await ensureInlineIdStore(
+        db,
+        transaction,
+        NODE_CONTEXT_RELATIONS_STORE,
+        ensureNodeContextRelationIndexes,
+      );
     },
   });
 
@@ -111,7 +146,7 @@ async function ensureInlineIdStore(
   const existingStore = transaction.objectStore(storeName);
 
   if (existingStore.keyPath === "id") {
-    ensureNodeIndexes(existingStore, storeName);
+    configure?.(existingStore);
     return;
   }
 
@@ -123,25 +158,56 @@ async function ensureInlineIdStore(
 
   for (const record of records) {
     if (hasInlineId(record)) {
-      recreatedStore.put(record);
+      await recreatedStore.put(stripLegacyEmbeddedContext(record));
     }
   }
 }
 
-function ensureNodeIndexes(
-  store: UpgradeObjectStore,
-  storeName: InlineStoreName,
-) {
-  if (storeName !== NODES_STORE) {
-    return;
-  }
-
+function ensureNodeIndexes(store: UpgradeObjectStore) {
   if (!store.indexNames.contains("by-updated-at")) {
     store.createIndex("by-updated-at", "updatedAt");
   }
 
   if (!store.indexNames.contains("by-workspace")) {
     store.createIndex("by-workspace", "workspaceId");
+  }
+}
+
+function ensureContextIndexes(store: UpgradeObjectStore) {
+  if (!store.indexNames.contains("by-workspace")) {
+    store.createIndex("by-workspace", "workspaceId");
+  }
+
+  if (!store.indexNames.contains("by-type")) {
+    store.createIndex("by-type", "type");
+  }
+
+  if (!store.indexNames.contains("by-archived-at")) {
+    store.createIndex("by-archived-at", "archivedAt");
+  }
+
+  if (!store.indexNames.contains("by-workspace-and-type")) {
+    store.createIndex("by-workspace-and-type", ["workspaceId", "type"]);
+  }
+}
+
+function ensureNodeContextRelationIndexes(store: UpgradeObjectStore) {
+  if (!store.indexNames.contains("by-workspace")) {
+    store.createIndex("by-workspace", "workspaceId");
+  }
+
+  if (!store.indexNames.contains("by-node")) {
+    store.createIndex("by-node", "nodeId");
+  }
+
+  if (!store.indexNames.contains("by-context")) {
+    store.createIndex("by-context", "contextId");
+  }
+
+  if (!store.indexNames.contains("by-node-and-context")) {
+    store.createIndex("by-node-and-context", ["nodeId", "contextId"], {
+      unique: true,
+    });
   }
 }
 
@@ -152,4 +218,14 @@ function hasInlineId(value: unknown): value is { id: string } {
     "id" in value &&
     typeof value.id === "string"
   );
+}
+
+function stripLegacyEmbeddedContext<T>(value: T): T {
+  if (typeof value !== "object" || value === null || !("context" in value)) {
+    return value;
+  }
+
+  const record = { ...value };
+  delete (record as { context?: unknown }).context;
+  return record;
 }
