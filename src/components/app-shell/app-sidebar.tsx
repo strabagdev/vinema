@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Archive, Folder, Inbox, NotebookText, Tags } from "lucide-react";
+import { Archive, Briefcase, Inbox, NotebookText, User, WalletCards } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Separator } from "@/components/ui/separator";
 
@@ -10,8 +10,9 @@ const navItems = [
   { href: "/", label: "Vinema", icon: Archive, disabled: false },
   { href: "/inbox", label: "Inbox", icon: Inbox, disabled: false },
   { href: "/notes", label: "Notas", icon: NotebookText, disabled: false },
-  { href: "/projects", label: "Proyectos", icon: Folder, disabled: true },
-  { href: "/tags", label: "Etiquetas", icon: Tags, disabled: true },
+  { href: "/contexts/areas", label: "Areas", icon: WalletCards, disabled: false },
+  { href: "/contexts/projects", label: "Proyectos", icon: Briefcase, disabled: false },
+  { href: "/contexts/people", label: "Personas", icon: User, disabled: false },
 ];
 
 export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {

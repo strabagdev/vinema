@@ -320,18 +320,24 @@ describe("Node context relations", () => {
     });
     const repositories = {
       contextRepository: new InMemoryContextRepository([area, archivedProject]),
-      nodeContextRelationRepository: new InMemoryNodeContextRelationRepository(),
+      nodeContextRelationRepository: new InMemoryNodeContextRelationRepository([
+        {
+          id: "relation-area",
+          workspaceId: workspace.id,
+          nodeId: node.id,
+          contextId: area.id,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          id: "relation-project",
+          workspaceId: workspace.id,
+          nodeId: node.id,
+          contextId: archivedProject.id,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ]),
       nodeRepository: new InMemoryNodeRepository([node]),
     };
-
-    await attachNodeToContext(repositories, {
-      nodeId: node.id,
-      contextId: area.id,
-    });
-    await attachNodeToContext(repositories, {
-      nodeId: node.id,
-      contextId: archivedProject.id,
-    });
 
     await expect(
       listContextsForNode(repositories, { nodeId: node.id, type: "AREA" }),
@@ -345,6 +351,26 @@ describe("Node context relations", () => {
         includeArchived: true,
       }),
     ).resolves.toEqual([archivedProject, area]);
+  });
+
+  it("rejects creating a new relation to an archived context", async () => {
+    const node = makeNode({ id: "note-1" });
+    const archivedContext = makeContext({
+      id: "area-1",
+      archivedAt: "2026-01-02T00:00:00.000Z",
+    });
+    const repositories = {
+      contextRepository: new InMemoryContextRepository([archivedContext]),
+      nodeContextRelationRepository: new InMemoryNodeContextRelationRepository(),
+      nodeRepository: new InMemoryNodeRepository([node]),
+    };
+
+    await expect(
+      attachNodeToContext(repositories, {
+        nodeId: node.id,
+        contextId: archivedContext.id,
+      }),
+    ).rejects.toThrow("contexto archivado");
   });
 
   it("excludes archived nodes by default but preserves relations", async () => {

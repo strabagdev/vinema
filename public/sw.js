@@ -5,6 +5,10 @@ const SHELL_ASSETS = [
   "/notes",
   "/notes/detail",
   "/notes/new",
+  "/contexts/areas",
+  "/contexts/projects",
+  "/contexts/people",
+  "/contexts/detail",
   "/manifest.webmanifest",
   "/icon.svg",
 ];

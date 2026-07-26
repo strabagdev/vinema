@@ -5,6 +5,7 @@ import {
   NoteDetailMessage,
   NoteDetailView,
 } from "@/app/notes/detail/note-detail-client";
+import type { Context } from "@/domain/context/context";
 import type { Node } from "@/domain/node/node";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
@@ -27,6 +28,39 @@ const baseNode: Node = {
   lastModifiedByDeviceId: "device-1",
 };
 
+const areaContext: Context = {
+  id: "area-1",
+  workspaceId: "workspace-1",
+  type: "AREA",
+  name: "Trabajo",
+  description: null,
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+  archivedAt: null,
+};
+
+const projectContext: Context = {
+  id: "project-1",
+  workspaceId: "workspace-1",
+  type: "PROJECT",
+  name: "Vinema",
+  description: null,
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+  archivedAt: null,
+};
+
+const archivedPersonContext: Context = {
+  id: "person-1",
+  workspaceId: "workspace-1",
+  type: "PERSON",
+  name: "Juan Perez",
+  description: null,
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+  archivedAt: "2026-01-02T00:00:00.000Z",
+};
+
 describe("NoteDetailView read mode", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -46,6 +80,28 @@ describe("NoteDetailView read mode", () => {
     expect(screen.querySelector("input")).toBeNull();
     expect(screen.querySelector("textarea")).toBeNull();
     expect(getButton(screen, "Editar")).toBeTruthy();
+  });
+
+  it("shows related contexts in read mode with links", async () => {
+    const screen = await renderNoteDetail({
+      relatedContexts: [areaContext, projectContext, archivedPersonContext],
+    });
+
+    expect(screen.textContent).toContain("Contextos");
+    expect(screen.textContent).toContain("Areas");
+    expect(screen.textContent).toContain("Trabajo");
+    expect(screen.textContent).toContain("Proyectos");
+    expect(screen.textContent).toContain("Vinema");
+    expect(screen.textContent).toContain("Juan Perez · Archivado");
+    expect(getLink(screen, "Trabajo")?.getAttribute("href")).toBe(
+      "/contexts/detail?contextId=area-1",
+    );
+  });
+
+  it("shows an empty context hint when no relations exist", async () => {
+    const screen = await renderNoteDetail();
+
+    expect(screen.textContent).toContain("Sin contextos relacionados");
   });
 
   it("uses a visible back action", async () => {
@@ -103,6 +159,41 @@ describe("NoteDetailView read mode", () => {
 
     expect(getButton(screen, ["Guar", "dar"].join(""))).toBeUndefined();
     expect(getButton(screen, "Listo")).toBeTruthy();
+  });
+
+  it("keeps contextual relation changes local until pressing Listo", async () => {
+    const onSaveContextRelations = vi.fn(async () => undefined);
+    const screen = await renderNoteDetail({
+      relatedContexts: [areaContext],
+      contextOptions: [areaContext, projectContext],
+      onSaveContextRelations,
+    });
+
+    await click(getButton(screen, "Editar"));
+    await toggleCheckbox(screen, "Vinema");
+
+    expect(onSaveContextRelations).not.toHaveBeenCalled();
+
+    await click(getButton(screen, "Listo"));
+
+    expect(onSaveContextRelations).toHaveBeenCalledWith(["area-1", "project-1"]);
+  });
+
+  it("cancels contextual relation changes without persisting them", async () => {
+    const onSaveContextRelations = vi.fn(async () => undefined);
+    const screen = await renderNoteDetail({
+      relatedContexts: [areaContext],
+      contextOptions: [areaContext, projectContext],
+      onSaveContextRelations,
+    });
+
+    await click(getButton(screen, "Editar"));
+    await toggleCheckbox(screen, "Vinema");
+    await click(getButton(screen, "Cancelar"));
+
+    expect(onSaveContextRelations).not.toHaveBeenCalled();
+    expect(screen.textContent).toContain("Trabajo");
+    expect(screen.textContent).not.toContain("Vinema");
   });
 
   it("does not save after entering edit mode without changes", async () => {
@@ -459,12 +550,20 @@ describe("NoteDetailView read mode", () => {
 
 async function renderNoteDetail({
   node = baseNode,
+  relatedContexts = [],
+  contextOptions = [],
+  contextError = null,
   onSave = vi.fn(async () => node),
+  onSaveContextRelations = vi.fn(async () => undefined),
   onArchive = vi.fn(async () => undefined),
   onBack = vi.fn(),
 }: {
   node?: Node;
+  relatedContexts?: Context[];
+  contextOptions?: Context[];
+  contextError?: string | null;
   onSave?: (draft: { title: string; content: string }) => Promise<Node>;
+  onSaveContextRelations?: (selectedContextIds: string[]) => Promise<void>;
   onArchive?: () => Promise<void>;
   onBack?: () => void;
 } = {}) {
@@ -474,7 +573,11 @@ async function renderNoteDetail({
     createRoot(container).render(
       createElement(NoteDetailView, {
         node,
+        relatedContexts,
+        contextOptions,
+        contextError,
         onSave,
+        onSaveContextRelations,
         onArchive,
         onBack,
       }),
@@ -515,6 +618,21 @@ function getLink(container: HTMLElement, name: string) {
   return Array.from(container.querySelectorAll("a")).find(
     (link) => link.textContent?.trim() === name,
   ) as HTMLAnchorElement | undefined;
+}
+
+async function toggleCheckbox(container: HTMLElement, labelText: string) {
+  const label = Array.from(container.querySelectorAll("label")).find((candidate) =>
+    candidate.textContent?.includes(labelText),
+  );
+  const checkbox = label?.querySelector("input");
+
+  if (!checkbox) {
+    throw new Error(`Expected checkbox ${labelText} to exist.`);
+  }
+
+  await act(async () => {
+    checkbox.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
 }
 
 function getDetailSection(container: HTMLElement) {

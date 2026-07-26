@@ -30,6 +30,10 @@ export async function attachNodeToContext(
     throw new Error("La nota y el contexto pertenecen a workspaces distintos.");
   }
 
+  if (context.archivedAt) {
+    throw new Error("No se puede asociar una nota a un contexto archivado.");
+  }
+
   const existingRelation =
     await repositories.nodeContextRelationRepository.getByNodeAndContext(
       node.id,
