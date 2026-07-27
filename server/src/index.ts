@@ -2,7 +2,7 @@ import { createVinemaApiServer } from "./http/create-server";
 import { prisma } from "./db/prisma";
 import { PrismaSyncStore } from "./db/prisma-sync-store";
 
-const port = Number(process.env.PORT ?? 3001);
+const port = Number(process.env.PORT ?? 8000);
 const apiKey = process.env.VINEMA_SYNC_API_KEY;
 
 if (!apiKey) {
