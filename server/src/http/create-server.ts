@@ -9,6 +9,8 @@ import { syncError } from "./errors";
 import { processPull, processPush } from "../sync/sync-service";
 import type { SyncStore } from "../sync/sync-store";
 
+const DATABASE_HEALTHCHECK_TIMEOUT_MS = 2_000;
+
 export function createVinemaApiServer({
   store,
   apiKey,
@@ -32,22 +34,14 @@ export function createVinemaApiServer({
   });
 
   app.get("/api/health", async (_request, reply) => {
-    try {
-      await store.health();
-      return reply.send({
-        status: "ok",
-        service: "vinema-api",
-        database: "connected",
-        timestamp: new Date().toISOString(),
-      });
-    } catch {
-      return reply.status(503).send({
-        status: "error",
-        service: "vinema-api",
-        database: "unavailable",
-        timestamp: new Date().toISOString(),
-      });
-    }
+    const database = await checkDatabaseHealth(store, app);
+
+    return reply.send({
+      status: "ok",
+      service: "vinema-api",
+      database,
+      timestamp: new Date().toISOString(),
+    });
   });
 
   app.post("/api/sync/push", async (request, reply) => {
@@ -116,4 +110,48 @@ function parseAllowedOrigins(value: string | undefined) {
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
+}
+
+async function checkDatabaseHealth(
+  store: SyncStore,
+  app: FastifyInstance,
+): Promise<"connected" | "unavailable"> {
+  try {
+    await withTimeout(store.health(), DATABASE_HEALTHCHECK_TIMEOUT_MS);
+    return "connected";
+  } catch (error) {
+    app.log.error(
+      { error: toSafeHealthcheckError(error) },
+      "Database healthcheck failed.",
+    );
+    return "unavailable";
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout>;
+
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      reject(new Error("Database healthcheck timed out."));
+    }, timeoutMs);
+  });
+
+  return Promise.race([
+    promise.finally(() => {
+      clearTimeout(timeout);
+    }),
+    timeoutPromise,
+  ]);
+}
+
+function toSafeHealthcheckError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return { message: "Unknown database healthcheck error." };
+  }
+
+  return {
+    name: error.name,
+    message: error.message.replace(/postgresql:\/\/\S+/g, "[redacted-database-url]"),
+  };
 }

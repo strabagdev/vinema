@@ -29,7 +29,12 @@ describe("Vinema sync API", () => {
 
     store.failHealth = true;
     const failed = await app.inject({ method: "GET", url: "/api/health" });
-    expect(failed.statusCode).toBe(503);
+    expect(failed.statusCode).toBe(200);
+    expect(failed.json()).toMatchObject({
+      status: "ok",
+      service: "vinema-api",
+      database: "unavailable",
+    });
     expect(failed.body).not.toContain("postgresql://");
   });
 
