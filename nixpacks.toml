@@ -1,0 +1,10 @@
+[variables]
+NIXPACKS_NODE_VERSION = "22"
+NPM_CONFIG_CACHE = "/tmp/npm-cache"
+
+[phases.install]
+cmds = ["npm ci --cache /tmp/npm-cache"]
+cacheDirectories = ["/tmp/npm-cache"]
+
+[phases.build]
+cacheDirectories = [".next/cache"]

@@ -11,6 +11,7 @@ base PostgreSQL pertenece exclusivamente a Vinema.
 Configurar en el servicio de API:
 
 ```env
+NIXPACKS_NODE_VERSION=22
 DATABASE_URL=${{Postgres.DATABASE_URL}}
 VINEMA_SYNC_API_KEY=<secreto>
 VINEMA_SEED_EMAIL=<email>
@@ -21,6 +22,11 @@ Usar la referencia del servicio PostgreSQL de Railway en lugar de copiar
 credenciales manualmente. Si Railway ofrece conectividad privada dentro del
 proyecto, preferirla sobre URLs publicas.
 
+Vinema requiere Node 22 para construir en Railway. El repositorio incluye
+`nixpacks.toml` para ejecutar `npm ci` en fase install con cache npm fuera de
+`node_modules`, evitando conflictos con los cache mounts de Nixpacks durante la
+fase build.
+
 ## Root directory
 
 Configurar Railway para construir desde la raiz del repositorio (`/`), no desde
@@ -29,10 +35,16 @@ Configurar Railway para construir desde la raiz del repositorio (`/`), no desde
 
 ## Build
 
-Comandos recomendados:
+La instalacion se ejecuta desde `nixpacks.toml`:
 
 ```bash
-npm ci && npm run db:generate && npm run server:build
+npm ci --cache /tmp/npm-cache
+```
+
+Comandos de build recomendados:
+
+```bash
+npm run db:generate && npm run server:build && npm run build
 ```
 
 ## Migraciones
