@@ -1,0 +1,23 @@
+{
+  "name": "server",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "npm run build --workspace @vinema/sync-contracts && tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.0.1",
+    "@prisma/client": "^6.14.0",
+    "@vinema/sync-contracts": "file:../packages/sync-contracts",
+    "fastify": "^5.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "tsx": "^4.20.4",
+    "typescript": "^5",
+    "vitest": "^4.1.10"
+  }
+}

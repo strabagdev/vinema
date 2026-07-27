@@ -1,5 +1,14 @@
-export function getNodeDetailPath(nodeId: string): string {
-  return `/notes/detail?nodeId=${encodeURIComponent(nodeId)}`;
+export function getNodeDetailPath(
+  nodeId: string,
+  options: { returnTo?: string } = {},
+): string {
+  const searchParams = [`nodeId=${encodeURIComponent(nodeId)}`];
+
+  if (options.returnTo) {
+    searchParams.push(`returnTo=${encodeURIComponent(options.returnTo)}`);
+  }
+
+  return `/notes/detail?${searchParams.join("&")}`;
 }
 
 export function getNodeIdFromSearchParams(

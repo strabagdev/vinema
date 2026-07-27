@@ -1,7 +1,6 @@
 import type { Device } from "@/domain/device/device";
 import type { Node } from "@/domain/node/node";
 import type { NodeRepository } from "@/domain/node/node-repository";
-import { createTitleFromContent } from "@/features/node/node-display";
 
 export async function convertIdeaToNote(
   repository: NodeRepository,
@@ -14,13 +13,14 @@ export async function convertIdeaToNote(
     throw new Error("No se encontro la idea.");
   }
 
+  const now = new Date().toISOString();
   const updatedNode: Node = {
     ...existingNode,
     type: "NOTE",
-    title: existingNode.title.trim() || createTitleFromContent(existingNode.content),
     organizationStatus: "ORGANIZED",
     version: existingNode.version + 1,
-    updatedAt: new Date().toISOString(),
+    contentUpdatedAt: now,
+    updatedAt: now,
     lastModifiedByDeviceId: device.id,
   };
 

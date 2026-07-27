@@ -10,14 +10,17 @@ export async function restoreNode(
   const existingNode = await repository.findById(id);
 
   if (!existingNode) {
-    throw new Error("No se encontro la nota.");
+    throw new Error("No se encontro la captura.");
   }
 
+  const now = new Date().toISOString();
   const restoredNode: Node = {
     ...existingNode,
     status: "ACTIVE",
     version: existingNode.version + 1,
-    updatedAt: new Date().toISOString(),
+    archivedAt: null,
+    restoredAt: now,
+    updatedAt: now,
     lastModifiedByDeviceId: device.id,
   };
 

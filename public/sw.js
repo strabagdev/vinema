@@ -1,10 +1,9 @@
 const CACHE_NAME = "vinema-shell-v1";
 const SHELL_ASSETS = [
   "/",
-  "/inbox",
   "/notes",
+  "/notes/archive",
   "/notes/detail",
-  "/notes/new",
   "/contexts/areas",
   "/contexts/projects",
   "/contexts/people",
@@ -33,6 +32,17 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") {
+    return;
+  }
+
+  const requestUrl = new URL(event.request.url);
+
+  if (requestUrl.origin === self.location.origin && requestUrl.pathname === "/search") {
+    event.respondWith(
+      fetch(event.request).catch(() =>
+        caches.match("/notes").then((cachedResponse) => cachedResponse || caches.match("/")),
+      ),
+    );
     return;
   }
 

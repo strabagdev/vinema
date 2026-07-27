@@ -27,7 +27,7 @@ export function getContextDescriptionPlaceholder(type: ContextType) {
     return "Iniciativas con un proposito concreto, como Vinema o MITAT.";
   }
 
-  return "Notas, reuniones y referencias relacionadas con alguien.";
+  return "Capturas, reuniones y referencias relacionadas con alguien.";
 }
 
 export function getEmptyContextMessage(type: ContextType) {

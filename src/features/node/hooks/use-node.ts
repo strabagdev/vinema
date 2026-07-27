@@ -19,13 +19,13 @@ export function useNode(nodeId: string) {
       setNode(nextNode);
 
       if (!nextNode) {
-        setError("No se encontro la nota.");
+        setError("No se encontro la captura.");
       }
     } catch (caughtError) {
       setError(
         caughtError instanceof Error
           ? caughtError.message
-          : "No se pudo cargar la nota.",
+          : "No se pudo cargar la captura.",
       );
     } finally {
       setLoading(false);

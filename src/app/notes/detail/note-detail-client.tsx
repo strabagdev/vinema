@@ -6,13 +6,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Archive } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { Context, ContextType } from "@/domain/context/context";
 import type { Node } from "@/domain/node/node";
-import {
-  CONTEXT_TYPE_PLURAL_LABEL,
-} from "@/features/context/context-display";
+import { getCaptureTimestamps } from "@/features/capture/capture-timestamps";
 import { getContextDetailPath } from "@/features/context/context-routes";
 import { listContextsByType } from "@/features/context/list-contexts";
 import {
@@ -21,10 +18,12 @@ import {
   listContextsForNode,
 } from "@/features/context/node-context-relations";
 import { archiveNode } from "@/features/node/archive-node";
+import { restoreNode } from "@/features/node/restore-node";
 import { updateNode } from "@/features/node/update-node";
 import { useNode } from "@/features/node/hooks/use-node";
 import { useVinemaContext } from "@/features/node/hooks/use-vinema-context";
 import { getNodeIdFromSearchParams } from "@/features/node/node-routes";
+import { getReturnToFromSearchParams } from "@/features/recovery/recovery-routes";
 import { validateEditableNode } from "@/features/node/node-validation";
 import {
   contextRepository,
@@ -37,27 +36,33 @@ const AUTOSAVE_DEBOUNCE_MS = 700;
 
 type Draft = {
   nodeId: string;
-  title: string;
   content: string;
 };
 
 export function NoteDetailClient() {
   const searchParams = useSearchParams();
   const nodeId = getNodeIdFromSearchParams(searchParams);
+  const returnTo = getReturnToFromSearchParams(searchParams);
 
   if (!nodeId) {
     return (
       <NoteDetailMessage
-        title="Falta la nota"
-        message="La URL no incluye un identificador de nota valido."
+        heading="Falta la captura"
+        message="La URL no incluye un identificador de captura valido."
       />
     );
   }
 
-  return <NoteDetailLoader nodeId={nodeId} />;
+  return <NoteDetailLoader nodeId={nodeId} returnTo={returnTo} />;
 }
 
-function NoteDetailLoader({ nodeId }: { nodeId: string }) {
+function NoteDetailLoader({
+  nodeId,
+  returnTo,
+}: {
+  nodeId: string;
+  returnTo: string | null;
+}) {
   const router = useRouter();
   const context = useVinemaContext();
   const { node, loading, error, setNode } = useNode(nodeId);
@@ -94,12 +99,11 @@ function NoteDetailLoader({ nodeId }: { nodeId: string }) {
         );
         setContextOptions([...areaOptions, ...projectOptions, ...personOptions]);
       } catch {
-        setContextError("No se pudieron cargar los contextos de la nota.");
+        setContextError("No se pudieron cargar las relaciones de la captura.");
       }
     },
     [],
   );
-
   useEffect(() => {
     if (context.status !== "ready" || !node) {
       return;
@@ -114,7 +118,7 @@ function NoteDetailLoader({ nodeId }: { nodeId: string }) {
     return (
       <section className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 lg:px-8">
         <div className="rounded-lg border border-zinc-200 bg-white p-6 text-sm text-zinc-500">
-          Cargando nota...
+          Cargando captura...
         </div>
       </section>
     );
@@ -123,7 +127,7 @@ function NoteDetailLoader({ nodeId }: { nodeId: string }) {
   if (context.status === "error") {
     return (
       <NoteDetailMessage
-        title="No se pudo cargar Vinema"
+        heading="No se pudo cargar Vinema"
         message={context.error}
       />
     );
@@ -132,19 +136,10 @@ function NoteDetailLoader({ nodeId }: { nodeId: string }) {
   if (!node) {
     return (
       <NoteDetailMessage
-        title="Nota no encontrada"
+        heading="Captura no encontrada"
         message={
           error ?? "Puede haber sido archivada o no existe en este dispositivo."
         }
-      />
-    );
-  }
-
-  if (node.status === "ARCHIVED") {
-    return (
-      <NoteDetailMessage
-        title="Nota archivada"
-        message="Esta nota esta archivada y no aparece en el listado activo."
       />
     );
   }
@@ -165,10 +160,9 @@ function NoteDetailLoader({ nodeId }: { nodeId: string }) {
       relatedContexts={relatedContexts}
       contextOptions={contextOptions}
       contextError={contextError}
-      onSave={async ({ title, content }) => {
+      onSave={async ({ content }) => {
         const updatedNode = await updateNode(nodeRepository, {
           id: node.id,
-          title,
           content,
           device: context.device,
         });
@@ -177,7 +171,12 @@ function NoteDetailLoader({ nodeId }: { nodeId: string }) {
       }}
       onArchive={async () => {
         await archiveNode(nodeRepository, node.id, context.device);
-        router.push("/notes");
+        router.push(returnTo ?? "/notes");
+      }}
+      onRestore={async () => {
+        const restored = await restoreNode(nodeRepository, node.id, context.device);
+        setNode(restored);
+        return restored;
       }}
       onSaveContextRelations={async (selectedContextIds) => {
         const persistedContextIds = new Set(
@@ -213,7 +212,7 @@ function NoteDetailLoader({ nodeId }: { nodeId: string }) {
         await loadNoteContexts(node.id, context.workspace.id);
       }}
       onBack={() => {
-        router.push("/notes");
+        router.push(returnTo ?? "/notes");
       }}
     />
   );
@@ -227,15 +226,17 @@ export function NoteDetailView({
   onSave,
   onSaveContextRelations,
   onArchive,
+  onRestore,
   onBack,
 }: {
   node: Node;
   relatedContexts?: Context[];
   contextOptions?: Context[];
   contextError?: string | null;
-  onSave: (draft: Pick<Draft, "title" | "content">) => Promise<Node>;
+  onSave: (draft: Pick<Draft, "content">) => Promise<Node>;
   onSaveContextRelations?: (selectedContextIds: string[]) => Promise<void>;
   onArchive: () => Promise<void>;
+  onRestore?: () => Promise<Node>;
   onBack?: () => void;
 }) {
   const [persistedNode, setPersistedNode] = useState(node);
@@ -245,6 +246,9 @@ export function NoteDetailView({
     "idle" | "dirty" | "saving" | "saved" | "error"
   >("idle");
   const [formError, setFormError] = useState<string | null>(null);
+  const [archiveConfirmationVisible, setArchiveConfirmationVisible] =
+    useState(false);
+  const [restoreFeedback, setRestoreFeedback] = useState<string | null>(null);
   const [selectedContextIds, setSelectedContextIds] = useState<string[]>(
     relatedContexts.map((context) => context.id),
   );
@@ -256,10 +260,6 @@ export function NoteDetailView({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savingRef = useRef(false);
   const saveAgainAfterCurrentRef = useRef(false);
-  const title =
-    mode === "edit" && draft?.nodeId === persistedNode.id
-      ? draft.title
-      : persistedNode.title;
   const content =
     mode === "edit" && draft?.nodeId === persistedNode.id
       ? draft.content
@@ -309,6 +309,10 @@ export function NoteDetailView({
   }
 
   function beginEdit() {
+    if (persistedNodeRef.current.status === "ARCHIVED") {
+      return;
+    }
+
     setDraftState(toDraft(persistedNodeRef.current));
     setSelectedContexts(relatedContexts.map((context) => context.id));
     setSaveStatus("idle");
@@ -375,7 +379,6 @@ export function NoteDetailView({
 
     try {
       validateEditableNode({
-        title: currentDraft.title,
         content: currentDraft.content,
         organizationStatus: "ORGANIZED",
       });
@@ -384,7 +387,7 @@ export function NoteDetailView({
       setFormError(
         caughtError instanceof Error
           ? caughtError.message
-          : "No se pudo validar la nota.",
+          : "No se pudo validar la captura.",
       );
       return false;
     }
@@ -401,7 +404,6 @@ export function NoteDetailView({
 
     try {
       const updatedNode = await onSave({
-        title: saveSnapshot.title,
         content: saveSnapshot.content,
       });
       setPersisted(updatedNode);
@@ -435,7 +437,7 @@ export function NoteDetailView({
       setFormError(
         caughtError instanceof Error
           ? caughtError.message
-          : "No se pudo guardar la nota.",
+          : "No se pudo guardar la captura.",
       );
       return false;
     } finally {
@@ -502,6 +504,11 @@ export function NoteDetailView({
       return;
     }
 
+    if (!archiveConfirmationVisible) {
+      setArchiveConfirmationVisible(true);
+      return;
+    }
+
     savingRef.current = true;
     setFormError(null);
 
@@ -511,8 +518,32 @@ export function NoteDetailView({
       setFormError(
         caughtError instanceof Error
           ? caughtError.message
-          : "No se pudo archivar la nota.",
+          : "No se pudo archivar la captura.",
       );
+      savingRef.current = false;
+    }
+  }
+
+  async function handleRestore() {
+    if (savingRef.current || mode !== "read" || !onRestore) {
+      return;
+    }
+
+    savingRef.current = true;
+    setFormError(null);
+    setRestoreFeedback(null);
+
+    try {
+      const restored = await onRestore();
+      setPersisted(restored);
+      setRestoreFeedback("Captura restaurada.");
+    } catch (caughtError) {
+      setFormError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "No se pudo restaurar la captura.",
+      );
+    } finally {
       savingRef.current = false;
     }
   }
@@ -535,17 +566,30 @@ export function NoteDetailView({
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-3">
-          <Badge variant="secondary">Notas</Badge>
+          <Badge variant="secondary">
+            {persistedNode.status === "ARCHIVED" ? "Captura archivada" : "Captura"}
+          </Badge>
           <div>
             <h1 className="text-3xl font-semibold tracking-normal text-zinc-950">
-              {mode === "edit" ? "Editar nota" : displayTitle(persistedNode)}
+              {mode === "edit" ? "Editar captura" : "Captura"}
             </h1>
-            <p className="mt-2 text-sm text-zinc-500">
-              Actualizada {formatShortDate(persistedNode.updatedAt)}
-            </p>
+            <CaptureDates node={persistedNode} />
           </div>
         </div>
-        {mode === "read" ? (
+        {mode === "read" && persistedNode.status === "ARCHIVED" ? (
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={handleBack}>
+              ← Volver
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={handleRestore}
+              disabled={savingRef.current}
+            >
+              Restaurar
+            </Button>
+          </div>
+        ) : mode === "read" ? (
           <div className="flex gap-2">
             <Button variant="ghost" onClick={handleBack}>
               ← Volver
@@ -585,6 +629,41 @@ export function NoteDetailView({
           {formError}
         </p>
       ) : null}
+      {restoreFeedback ? (
+        <p className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-600" aria-live="polite">
+          {restoreFeedback}{" "}
+          <Link href="/notes" className="font-medium underline">
+            Ver en Base de Conocimiento
+          </Link>
+        </p>
+      ) : null}
+      {archiveConfirmationVisible && persistedNode.status !== "ARCHIVED" ? (
+        <div
+          className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"
+          role="alert"
+        >
+          <p className="font-medium">Archivar esta captura?</p>
+          <p className="mt-1">Podras restaurarla desde Archivo.</p>
+          <div className="mt-3 flex gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setArchiveConfirmationVisible(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleArchive}
+              disabled={savingRef.current}
+            >
+              Archivar
+            </Button>
+          </div>
+        </div>
+      ) : null}
       {contextError ? (
         <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
           {contextError}
@@ -597,29 +676,15 @@ export function NoteDetailView({
               {persistedNode.content.trim() || "Sin contenido"}
             </div>
           </article>
-          <ReadContextSection contexts={relatedContexts} />
+          <ReadConceptSection contexts={relatedContexts} />
         </div>
       ) : (
         <div className="space-y-4 rounded-lg border border-zinc-200 bg-white p-4">
-          <Input
-            value={title}
-            onChange={(event) => {
-              updateDraft({
-                nodeId: persistedNode.id,
-                title: event.target.value,
-                content,
-              });
-            }}
-            placeholder="Titulo"
-            aria-label="Titulo"
-            className="h-12 text-lg"
-          />
           <Textarea
             value={content}
             onChange={(event) => {
               updateDraft({
                 nodeId: persistedNode.id,
-                title,
                 content: event.target.value,
               });
             }}
@@ -641,39 +706,30 @@ export function NoteDetailView({
   );
 }
 
-function ReadContextSection({ contexts }: { contexts: Context[] }) {
+function ReadConceptSection({ contexts }: { contexts: Context[] }) {
   const groupedContexts = groupContextsByType(contexts);
   const visibleTypes = getContextTypes().filter(
     (type) => groupedContexts[type].length > 0,
   );
 
+  if (visibleTypes.length === 0) {
+    return null;
+  }
+
   return (
-    <section className="rounded-lg border border-zinc-200 bg-white p-5">
-      <h2 className="text-sm font-medium text-zinc-950">Contextos</h2>
-      {visibleTypes.length > 0 ? (
-        <div className="mt-4 space-y-4">
-          {visibleTypes.map((type) => (
-            <div key={type} className="space-y-2">
-              <h3 className="text-xs font-medium uppercase tracking-normal text-zinc-500">
-                {CONTEXT_TYPE_PLURAL_LABEL[type]}
-              </h3>
-              <div className="flex flex-wrap gap-2">
-                {groupedContexts[type].map((context) => (
-                  <Link
-                    key={context.id}
-                    href={getContextDetailPath(context.id)}
-                    className="rounded-md border border-zinc-200 px-2 py-1 text-sm text-zinc-700 hover:bg-zinc-50"
-                  >
-                    {context.name}
-                    {context.archivedAt ? " · Archivado" : ""}
-                  </Link>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="mt-3 text-sm text-zinc-500">Sin contextos relacionados</p>
+    <section className="flex flex-wrap items-center gap-2">
+      <h2 className="mr-1 text-sm font-medium text-zinc-700">Conceptos</h2>
+      {visibleTypes.map((type) =>
+        groupedContexts[type].map((context) => (
+          <Link
+            key={context.id}
+            href={getContextDetailPath(context.id)}
+            className="rounded-full border border-zinc-200 px-3 py-1 text-sm text-zinc-700 hover:border-zinc-400 hover:text-zinc-950"
+          >
+            {context.name}
+            {context.archivedAt ? " · Archivado" : ""}
+          </Link>
+        )),
       )}
     </section>
   );
@@ -690,6 +746,9 @@ function EditContextSection({
 }) {
   const groupedContexts = groupContextsByType(contexts);
   const selectedSet = new Set(selectedContextIds);
+  const visibleTypes = getContextTypes().filter(
+    (type) => groupedContexts[type].length > 0,
+  );
 
   function toggleContext(contextId: string) {
     if (selectedSet.has(contextId)) {
@@ -700,46 +759,37 @@ function EditContextSection({
     onChange([...selectedContextIds, contextId]);
   }
 
-  return (
-    <section className="space-y-4 border-t border-zinc-200 pt-4">
-      <h2 className="text-sm font-medium text-zinc-950">Contextos</h2>
-      {getContextTypes().map((type) => (
-        <div key={type} className="space-y-2">
-          <h3 className="text-xs font-medium uppercase tracking-normal text-zinc-500">
-            {CONTEXT_TYPE_PLURAL_LABEL[type]}
-          </h3>
-          {groupedContexts[type].length > 0 ? (
-            <div className="space-y-2">
-              {groupedContexts[type].map((context) => {
-                const disabled = Boolean(context.archivedAt) && !selectedSet.has(context.id);
+  if (visibleTypes.length === 0) {
+    return null;
+  }
 
-                return (
-                  <label
-                    key={context.id}
-                    className="flex items-center gap-3 rounded-md border border-zinc-200 px-3 py-2 text-sm text-zinc-700"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedSet.has(context.id)}
-                      disabled={disabled}
-                      onChange={() => toggleContext(context.id)}
-                      className="h-4 w-4 rounded border-zinc-300"
-                    />
-                    <span>
-                      {context.name}
-                      {context.archivedAt ? " · Archivado" : ""}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-sm text-zinc-500">
-              No hay {CONTEXT_TYPE_PLURAL_LABEL[type].toLowerCase()} activos.
-            </p>
-          )}
-        </div>
-      ))}
+  return (
+    <section className="flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-4">
+      <h2 className="mr-1 text-sm font-medium text-zinc-700">Conceptos</h2>
+      {visibleTypes.map((type) =>
+        groupedContexts[type].map((context) => {
+          const disabled = Boolean(context.archivedAt) && !selectedSet.has(context.id);
+          const selected = selectedSet.has(context.id);
+
+          return (
+            <button
+              key={context.id}
+              type="button"
+              aria-pressed={selected}
+              disabled={disabled}
+              className={
+                selected
+                  ? "rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-sm text-white"
+                  : "rounded-full border border-zinc-200 px-3 py-1 text-sm text-zinc-700 hover:border-zinc-400 disabled:text-zinc-400"
+              }
+              onClick={() => toggleContext(context.id)}
+            >
+              {context.name}
+              {context.archivedAt ? " · Archivado" : ""}
+            </button>
+          );
+        }),
+      )}
     </section>
   );
 }
@@ -770,26 +820,40 @@ function getContextTypes(): ContextType[] {
 }
 
 export function NoteDetailMessage({
-  title,
+  heading,
   message,
 }: {
-  title: string;
+  heading: string;
   message: string;
 }) {
   return (
     <section className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 px-4 py-6 sm:px-6 lg:px-8">
-      <Badge variant="secondary">Notas</Badge>
-      <h1 className="text-3xl font-semibold text-zinc-950">{title}</h1>
+      <Badge variant="secondary">Captura</Badge>
+      <h1 className="text-3xl font-semibold text-zinc-950">{heading}</h1>
       <p className="text-sm text-zinc-600">{message}</p>
       <Button asChild className="w-fit">
-        <Link href="/notes">Volver a notas</Link>
+        <Link href="/notes">Volver a Base de Conocimiento</Link>
       </Button>
     </section>
   );
 }
 
-function displayTitle(node: Node) {
-  return node.title.trim() || "Sin titulo";
+function CaptureDates({ node }: { node: Node }) {
+  const timestamps = getCaptureTimestamps(node);
+  const createdAt = formatShortDate(timestamps.createdAt);
+  const contentUpdatedAt = formatShortDate(timestamps.contentUpdatedAt);
+  const archivedAt = timestamps.archivedAt
+    ? formatShortDate(timestamps.archivedAt)
+    : null;
+  const showContentUpdated = timestamps.contentUpdatedAt !== timestamps.createdAt;
+
+  return (
+    <p className="mt-2 text-sm text-zinc-500">
+      Creada {createdAt}
+      {showContentUpdated ? ` · Editada ${contentUpdatedAt}` : ""}
+      {archivedAt ? ` · Archivada ${archivedAt}` : ""}
+    </p>
+  );
 }
 
 function SaveStatusIndicator({
@@ -818,14 +882,13 @@ function SaveStatusIndicator({
 function toDraft(node: Node): Draft {
   return {
     nodeId: node.id,
-    title: node.title,
     content: node.content,
   };
 }
 
 function isSameDraft(
-  first: Pick<Draft, "title" | "content">,
-  second: Pick<Draft, "title" | "content">,
+  first: Pick<Draft, "content">,
+  second: Pick<Draft, "content">,
 ) {
-  return first.title === second.title && first.content === second.content;
+  return first.content === second.content;
 }

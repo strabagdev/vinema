@@ -9,13 +9,13 @@ function byNewestUpdatedAt(a: Node, b: Node) {
 export class IndexedDbNodeRepository implements NodeRepository {
   async create(node: Node): Promise<Node> {
     const db = await getVinemaDb();
-    await db.add(NODES_STORE, stripLegacyEmbeddedContext(node));
+    await db.add(NODES_STORE, toStoredNode(node));
     return node;
   }
 
   async update(node: Node): Promise<Node> {
     const db = await getVinemaDb();
-    await db.put(NODES_STORE, stripLegacyEmbeddedContext(node));
+    await db.put(NODES_STORE, toStoredNode(node));
     return node;
   }
 
@@ -23,11 +23,13 @@ export class IndexedDbNodeRepository implements NodeRepository {
     const db = await getVinemaDb();
     const node = await db.get(NODES_STORE, id);
 
-    if (!node || node.deletedAt !== null) {
+    const normalizedNode = normalizeStoredNode(node);
+
+    if (!normalizedNode || normalizedNode.deletedAt !== null) {
       return null;
     }
 
-    return stripLegacyEmbeddedContext(node);
+    return normalizedNode;
   }
 
   async listActive(): Promise<Node[]> {
@@ -35,7 +37,8 @@ export class IndexedDbNodeRepository implements NodeRepository {
     const nodes = await db.getAll(NODES_STORE);
 
     return nodes
-      .map(stripLegacyEmbeddedContext)
+      .map(normalizeStoredNode)
+      .filter((node): node is Node => node !== null)
       .filter(
         (node) =>
           node.deletedAt === null &&
@@ -50,7 +53,8 @@ export class IndexedDbNodeRepository implements NodeRepository {
     const nodes = await db.getAll(NODES_STORE);
 
     return nodes
-      .map(stripLegacyEmbeddedContext)
+      .map(normalizeStoredNode)
+      .filter((node): node is Node => node !== null)
       .filter(
         (node) =>
           node.deletedAt === null &&
@@ -65,18 +69,93 @@ export class IndexedDbNodeRepository implements NodeRepository {
     const nodes = await db.getAll(NODES_STORE);
 
     return nodes
-      .map(stripLegacyEmbeddedContext)
+      .map(normalizeStoredNode)
+      .filter((node): node is Node => node !== null)
       .filter((node) => node.deletedAt === null && node.status === "ARCHIVED")
+      .sort(byNewestUpdatedAt);
+  }
+
+  async listByWorkspace(
+    workspaceId: string,
+    options: { includeArchived?: boolean } = {},
+  ): Promise<Node[]> {
+    const db = await getVinemaDb();
+    const nodes = await db.getAllFromIndex(NODES_STORE, "by-workspace", workspaceId);
+
+    return nodes
+      .map(normalizeStoredNode)
+      .filter((node): node is Node => node !== null)
+      .filter(
+        (node) =>
+          node.deletedAt === null &&
+          (options.includeArchived || node.status !== "ARCHIVED"),
+      )
       .sort(byNewestUpdatedAt);
   }
 }
 
-function stripLegacyEmbeddedContext(node: Node): Node {
-  if (!("context" in node)) {
-    return node;
+export function normalizeStoredNode(value: unknown): Node | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
   }
 
-  const nodeWithoutContext = { ...node } as Node & { context?: unknown };
-  delete nodeWithoutContext.context;
-  return nodeWithoutContext;
+  const record = value as Partial<Node> & {
+    title?: unknown;
+    context?: unknown;
+  };
+  const recoveredContent =
+    typeof record.content === "string" && record.content.trim().length > 0
+      ? record.content
+      : typeof record.title === "string"
+        ? record.title
+        : record.content;
+
+  if (
+    typeof record.id !== "string" ||
+    typeof record.workspaceId !== "string" ||
+    (record.type !== "NOTE" && record.type !== "IDEA") ||
+    typeof recoveredContent !== "string" ||
+    (record.status !== "ACTIVE" && record.status !== "ARCHIVED") ||
+    (record.organizationStatus !== "INBOX" &&
+      record.organizationStatus !== "ORGANIZED") ||
+    typeof record.version !== "number" ||
+    typeof record.createdAt !== "string" ||
+    typeof record.updatedAt !== "string" ||
+    typeof record.createdByDeviceId !== "string" ||
+    typeof record.lastModifiedByDeviceId !== "string"
+  ) {
+    return null;
+  }
+
+  return toStoredNode({
+    id: record.id,
+    workspaceId: record.workspaceId,
+    type: record.type,
+    content: recoveredContent,
+    status: record.status,
+    organizationStatus: record.organizationStatus,
+    metadata:
+      typeof record.metadata === "object" && record.metadata !== null
+        ? record.metadata
+        : {},
+    version: record.version,
+    createdAt: record.createdAt,
+    contentUpdatedAt: record.contentUpdatedAt,
+    archivedAt: record.archivedAt,
+    restoredAt: record.restoredAt,
+    updatedAt: record.updatedAt,
+    deletedAt: typeof record.deletedAt === "string" ? record.deletedAt : null,
+    createdByDeviceId: record.createdByDeviceId,
+    lastModifiedByDeviceId: record.lastModifiedByDeviceId,
+  });
+}
+
+function toStoredNode(node: Node): Node {
+  const cleanNode = { ...node } as Node & {
+    title?: unknown;
+    context?: unknown;
+  };
+  delete cleanNode.title;
+  delete cleanNode.context;
+  return cleanNode;
 }

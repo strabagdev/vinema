@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import { MoreHorizontal, Plus, Search } from "lucide-react";
+import { MoreHorizontal, SquarePen } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,7 +9,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { MobileNavigation } from "@/components/app-shell/mobile-navigation";
 import {
@@ -19,33 +17,40 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-export function AppHeader() {
+export type AppHeaderProps = {
+  pathname: string;
+  onFocusWriting: () => void;
+};
+
+export function AppHeader({ pathname, onFocusWriting }: AppHeaderProps) {
+  const onHome = pathname === "/";
+
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-zinc-200 bg-white/95 px-4 backdrop-blur sm:px-6">
+    <header className="sticky top-0 z-30 flex h-12 items-center gap-3 border-b border-zinc-100 bg-zinc-50/80 px-4 backdrop-blur sm:px-6">
       <MobileNavigation />
-      <div className="relative hidden w-full max-w-md md:block">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-        <Input
-          disabled
-          aria-label="Busqueda deshabilitada"
-          className="pl-9"
-          placeholder="Buscar en Vinema"
-        />
-      </div>
       <div className="ml-auto flex items-center gap-2">
-        <Badge variant="outline">Solo local</Badge>
-        <Separator orientation="vertical" className="hidden h-6 sm:block" />
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button size="sm" asChild>
-              <Link href="/notes/new">
-                <Plus className="h-4 w-4" />
-                <span className="hidden sm:inline">Nueva nota</span>
-              </Link>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Crear una nota</TooltipContent>
-        </Tooltip>
+        <Badge variant="outline" className="border-zinc-200 bg-transparent text-xs text-zinc-500">
+          Solo local
+        </Badge>
+        {!onHome ? (
+          <Separator orientation="vertical" className="hidden h-6 sm:block" />
+        ) : null}
+        {!onHome ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={onFocusWriting}
+                aria-label="Empezar a escribir"
+              >
+                <SquarePen className="h-4 w-4" />
+                <span className="hidden sm:inline">Escribir</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Ir al editor (Ctrl+Shift+K)</TooltipContent>
+          </Tooltip>
+        ) : null}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" aria-label="Abrir menu">

@@ -31,7 +31,6 @@ function makeNode(overrides: Partial<Node>): Node {
     id: overrides.id ?? crypto.randomUUID(),
     workspaceId: workspace.id,
     type: "NOTE",
-    title: "Nota",
     content: "Contenido",
     status: "ACTIVE",
     organizationStatus: "ORGANIZED",
@@ -52,7 +51,6 @@ describe("Node core", () => {
 
     const node = await createNode(repository, {
       type: "NOTE",
-      title: "  Primera nota  ",
       content: "Contenido vivo",
       organizationStatus: "ORGANIZED",
       workspace,
@@ -60,7 +58,7 @@ describe("Node core", () => {
     });
 
     expect(node.id).toEqual(expect.any(String));
-    expect(node.title).toBe("Primera nota");
+    expect("title" in node).toBe(false);
     expect(node.version).toBe(1);
     expect(node.status).toBe("ACTIVE");
     expect("context" in node).toBe(false);
@@ -69,26 +67,24 @@ describe("Node core", () => {
     expect(await repository.findById(node.id)).toEqual(node);
   });
 
-  it("rejects an empty title and empty content", async () => {
+  it("rejects empty content", async () => {
     const repository = new InMemoryNodeRepository();
 
     await expect(
       createNode(repository, {
         type: "NOTE",
-        title: " ",
         content: " ",
         organizationStatus: "ORGANIZED",
         workspace,
         device,
       }),
-    ).rejects.toThrow("Escribe un titulo o contenido");
+    ).rejects.toThrow("Escribe contenido");
   });
 
   it("increments version when editing", async () => {
     const repository = new InMemoryNodeRepository();
     const node = await createNode(repository, {
       type: "NOTE",
-      title: "Original",
       content: "Contenido",
       organizationStatus: "ORGANIZED",
       workspace,
@@ -97,13 +93,12 @@ describe("Node core", () => {
 
     const updatedNode = await updateNode(repository, {
       id: node.id,
-      title: "Editada",
       content: "Contenido editado",
       device,
     });
 
     expect(updatedNode.version).toBe(2);
-    expect(updatedNode.title).toBe("Editada");
+    expect("title" in updatedNode).toBe(false);
     expect(updatedNode.content).toBe("Contenido editado");
   });
 
@@ -127,7 +122,6 @@ describe("Node core", () => {
     const inboxIdea = makeNode({
       id: "inbox-idea",
       type: "IDEA",
-      title: "",
       organizationStatus: "INBOX",
     });
     const archivedNote = makeNode({ id: "archived-note", status: "ARCHIVED" });
@@ -145,7 +139,6 @@ describe("Node core", () => {
     const idea = makeNode({
       id: "idea-1",
       type: "IDEA",
-      title: "",
       content: "Investigar arquitectura local first",
       organizationStatus: "INBOX",
     });
@@ -156,7 +149,8 @@ describe("Node core", () => {
     expect(note.id).toBe(idea.id);
     expect(note.type).toBe("NOTE");
     expect(note.organizationStatus).toBe("ORGANIZED");
-    expect(note.title).toBe("Investigar arquitectura local first");
+    expect(note.content).toBe("Investigar arquitectura local first");
+    expect("title" in note).toBe(false);
     expect(note.version).toBe(2);
     await expect(repository.listInbox()).resolves.toEqual([]);
     await expect(repository.listActive()).resolves.toHaveLength(1);

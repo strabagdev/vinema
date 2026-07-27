@@ -1,0 +1,141 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum WorkspaceRole {
+  OWNER
+  MEMBER
+}
+
+enum ConceptAssociationSource {
+  USER_CONFIRMED
+  MIGRATED
+  SYSTEM
+}
+
+enum SyncEntityType {
+  CAPTURE
+  CONCEPT
+  CAPTURE_CONCEPT
+}
+
+enum SyncOperation {
+  UPSERT
+  ARCHIVE
+}
+
+model User {
+  id          String   @id @default(uuid())
+  email       String   @unique
+  displayName String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  memberships WorkspaceMember[]
+}
+
+model Workspace {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members  WorkspaceMember[]
+  captures Capture[]
+  concepts Concept[]
+  changes  SyncChange[]
+}
+
+model WorkspaceMember {
+  id          String        @id @default(uuid())
+  workspaceId String
+  userId      String
+  role        WorkspaceRole @default(MEMBER)
+  createdAt   DateTime      @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+}
+
+model Capture {
+  id          String    @id
+  workspaceId String
+  content     String
+  createdAt   DateTime
+  updatedAt   DateTime
+  archivedAt  DateTime?
+  version     Int       @default(1)
+
+  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  concepts  CaptureConcept[]
+
+  @@index([workspaceId, updatedAt])
+  @@index([workspaceId, archivedAt])
+}
+
+model Concept {
+  id            String    @id
+  workspaceId   String
+  label         String
+  normalizedKey String
+  createdAt     DateTime
+  updatedAt     DateTime
+  archivedAt    DateTime?
+  mergedIntoId  String?
+  version       Int       @default(1)
+
+  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  captures  CaptureConcept[]
+
+  @@index([workspaceId, normalizedKey])
+  @@index([workspaceId, updatedAt])
+}
+
+model CaptureConcept {
+  id         String                   @id
+  captureId  String
+  conceptId  String
+  source     ConceptAssociationSource
+  createdAt  DateTime
+  updatedAt  DateTime
+  archivedAt DateTime?
+  version    Int                      @default(1)
+
+  capture Capture @relation(fields: [captureId], references: [id], onDelete: Cascade)
+  concept Concept @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+
+  @@unique([captureId, conceptId])
+  @@index([conceptId])
+}
+
+model SyncChange {
+  sequence      BigInt         @id @default(autoincrement())
+  workspaceId   String
+  entityType    SyncEntityType
+  entityId      String
+  operation     SyncOperation
+  entityVersion Int
+  changedAt     DateTime       @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, sequence])
+  @@index([workspaceId, changedAt])
+}
+
+model ProcessedMutation {
+  mutationId  String   @id
+  workspaceId String
+  processedAt DateTime @default(now())
+  response    Json?
+
+  @@index([workspaceId, processedAt])
+}

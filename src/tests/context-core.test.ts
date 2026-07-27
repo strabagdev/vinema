@@ -46,7 +46,6 @@ function makeNode(overrides: Partial<Node> = {}): Node {
     id: overrides.id ?? crypto.randomUUID(),
     workspaceId: workspace.id,
     type: "NOTE",
-    title: "Nota",
     content: "Contenido",
     status: "ACTIVE",
     organizationStatus: "ORGANIZED",

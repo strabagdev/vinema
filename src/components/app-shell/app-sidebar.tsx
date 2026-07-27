@@ -2,24 +2,24 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Archive, Briefcase, Inbox, NotebookText, User, WalletCards } from "lucide-react";
+import { Clock3, Home } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { Separator } from "@/components/ui/separator";
 
 const navItems = [
-  { href: "/", label: "Vinema", icon: Archive, disabled: false },
-  { href: "/inbox", label: "Inbox", icon: Inbox, disabled: false },
-  { href: "/notes", label: "Notas", icon: NotebookText, disabled: false },
-  { href: "/contexts/areas", label: "Areas", icon: WalletCards, disabled: false },
-  { href: "/contexts/projects", label: "Proyectos", icon: Briefcase, disabled: false },
-  { href: "/contexts/people", label: "Personas", icon: User, disabled: false },
+  { href: "/", label: "Inicio", icon: Home, disabled: false },
+  {
+    href: "/notes",
+    label: "Historial",
+    icon: Clock3,
+    disabled: false,
+  },
 ];
 
 export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
 
   return (
-    <aside className="hidden w-64 shrink-0 border-r border-zinc-200 bg-white lg:block">
+    <aside className="hidden w-52 shrink-0 border-r border-zinc-100 bg-zinc-50 lg:block">
       <SidebarContent pathname={pathname} onNavigate={onNavigate} />
     </aside>
   );
@@ -33,20 +33,19 @@ export function SidebarContent({
   onNavigate?: () => void;
 }) {
   return (
-    <div className="flex h-full min-h-screen flex-col px-3 py-4">
+    <div className="flex h-full min-h-screen flex-col px-3 py-3">
       <Link
         href="/"
         onClick={onNavigate}
-        className="flex h-11 items-center gap-3 rounded-md px-3 text-lg font-semibold text-zinc-950"
+        className="flex h-10 items-center gap-2 rounded-md px-2 text-base font-semibold text-zinc-800"
       >
-        <span className="flex h-8 w-8 items-center justify-center rounded-md bg-zinc-950 text-sm font-semibold text-white">
+        <span className="flex h-7 w-7 items-center justify-center rounded-md bg-zinc-900 text-xs font-semibold text-white">
           V
         </span>
         Vinema
       </Link>
-      <Separator className="my-4" />
-      <nav className="space-y-1">
-        {navItems.slice(1).map((item) => {
+      <nav className="mt-5 space-y-1">
+        {navItems.map((item) => {
           const Icon = item.icon;
           const active =
             pathname === item.href ||
@@ -57,7 +56,7 @@ export function SidebarContent({
               <span
                 key={item.href}
                 aria-disabled="true"
-                className="flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium text-zinc-400"
+                className="flex h-9 items-center gap-2 rounded-md px-2 text-sm font-medium text-zinc-400"
               >
                 <Icon className="h-4 w-4" />
                 {item.label}
@@ -71,8 +70,8 @@ export function SidebarContent({
               href={item.href}
               onClick={onNavigate}
               className={cn(
-                "flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100 hover:text-zinc-950",
-                active && "bg-zinc-100 text-zinc-950",
+                "flex h-9 items-center gap-2 rounded-md px-2 text-sm font-medium text-zinc-500 hover:bg-zinc-100/70 hover:text-zinc-900",
+                active && "bg-zinc-100/70 text-zinc-900",
               )}
             >
               <Icon className="h-4 w-4" />

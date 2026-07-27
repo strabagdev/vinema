@@ -10,7 +10,7 @@ import type { Node } from "@/domain/node/node";
 import type { Workspace } from "@/domain/workspace/workspace";
 
 export const VINEMA_DB_NAME = "vinema";
-export const VINEMA_DB_VERSION = 4;
+export const VINEMA_DB_VERSION = 5;
 
 export const APP_SETTINGS_STORE = "app_settings";
 export const CONTEXTS_STORE = "contexts";
@@ -50,6 +50,8 @@ export interface VinemaDbSchema extends DBSchema {
       "by-context": string;
       "by-node": string;
       "by-node-and-context": [string, string];
+      "by-related-node": string;
+      "by-relation-type": string;
       "by-workspace": string;
     };
   };
@@ -92,28 +94,48 @@ type UpgradeObjectStore = {
 export function getVinemaDb() {
   dbPromise ??= openDB<VinemaDbSchema>(VINEMA_DB_NAME, VINEMA_DB_VERSION, {
     async upgrade(db, _oldVersion, _newVersion, transaction) {
-      ensureOutOfLineStore(db, APP_SETTINGS_STORE);
-      ensureOutOfLineStore(db, LEGACY_KEY_VALUE_STORE);
-
-      await ensureInlineIdStore(db, transaction, DEVICES_STORE);
-      await ensureInlineIdStore(db, transaction, WORKSPACES_STORE);
-      await ensureInlineIdStore(db, transaction, NODES_STORE, ensureNodeIndexes);
-      await ensureInlineIdStore(
-        db,
-        transaction,
-        CONTEXTS_STORE,
-        ensureContextIndexes,
-      );
-      await ensureInlineIdStore(
-        db,
-        transaction,
-        NODE_CONTEXT_RELATIONS_STORE,
-        ensureNodeContextRelationIndexes,
+      await ensureVinemaStores(db, transaction);
+    },
+    blocked(currentVersion, blockedVersion) {
+      reportVinemaDbDevelopmentWarning(
+        `IndexedDB upgrade blocked from v${currentVersion} to v${blockedVersion ?? "unknown"}. Close other Vinema tabs and reload.`,
       );
     },
+    blocking(_currentVersion, blockedVersion, event) {
+      reportVinemaDbDevelopmentWarning(
+        `Closing Vinema IndexedDB connection for pending upgrade to v${blockedVersion ?? "unknown"}.`,
+      );
+      closeVersionChangeTarget(event);
+    },
+  }).then((db) => {
+    db.addEventListener("versionchange", () => {
+      reportVinemaDbDevelopmentWarning(
+        "Closing Vinema IndexedDB connection after versionchange.",
+      );
+      db.close();
+    });
+
+    return db;
   });
 
   return dbPromise;
+}
+
+export async function ensureVinemaDatabaseSchema() {
+  const db = await getVinemaDb();
+  const missingStores = getMissingVinemaStores(db);
+
+  if (missingStores.length > 0) {
+    throw new VinemaDatabaseSchemaError(
+      `Vinema IndexedDB schema is incomplete. Missing stores: ${missingStores.join(", ")}.`,
+      { missingStores },
+    );
+  }
+
+  return {
+    version: db.version,
+    stores: Array.from(db.objectStoreNames),
+  };
 }
 
 export async function resetVinemaDbConnectionForTests() {
@@ -129,6 +151,30 @@ function ensureOutOfLineStore(
   if (!db.objectStoreNames.contains(storeName)) {
     db.createObjectStore(storeName);
   }
+}
+
+async function ensureVinemaStores(
+  db: IDBPDatabase<VinemaDbSchema>,
+  transaction: UpgradeTransaction,
+) {
+  ensureOutOfLineStore(db, APP_SETTINGS_STORE);
+  ensureOutOfLineStore(db, LEGACY_KEY_VALUE_STORE);
+
+  await ensureInlineIdStore(db, transaction, DEVICES_STORE);
+  await ensureInlineIdStore(db, transaction, WORKSPACES_STORE);
+  await ensureInlineIdStore(db, transaction, NODES_STORE, ensureNodeIndexes);
+  await ensureInlineIdStore(
+    db,
+    transaction,
+    CONTEXTS_STORE,
+    ensureContextIndexes,
+  );
+  await ensureInlineIdStore(
+    db,
+    transaction,
+    NODE_CONTEXT_RELATIONS_STORE,
+    ensureNodeContextRelationIndexes,
+  );
 }
 
 async function ensureInlineIdStore(
@@ -208,6 +254,51 @@ function ensureNodeContextRelationIndexes(store: UpgradeObjectStore) {
     store.createIndex("by-node-and-context", ["nodeId", "contextId"], {
       unique: true,
     });
+  }
+
+  if (!store.indexNames.contains("by-related-node")) {
+    store.createIndex("by-related-node", "relatedNodeId");
+  }
+
+  if (!store.indexNames.contains("by-relation-type")) {
+    store.createIndex("by-relation-type", "relationType");
+  }
+}
+
+export class VinemaDatabaseSchemaError extends Error {
+  constructor(
+    message: string,
+    public readonly details: { missingStores: string[] },
+  ) {
+    super(message);
+    this.name = "VinemaDatabaseSchemaError";
+  }
+}
+
+function getMissingVinemaStores(db: IDBPDatabase<VinemaDbSchema>) {
+  const requiredStores = [
+    APP_SETTINGS_STORE,
+    CONTEXTS_STORE,
+    DEVICES_STORE,
+    LEGACY_KEY_VALUE_STORE,
+    NODE_CONTEXT_RELATIONS_STORE,
+    NODES_STORE,
+    WORKSPACES_STORE,
+  ] as const;
+
+  return requiredStores.filter(
+    (storeName) => !db.objectStoreNames.contains(storeName),
+  );
+}
+
+function closeVersionChangeTarget(event: IDBVersionChangeEvent) {
+  const database = event.target as { close?: () => void } | null;
+  database?.close?.();
+}
+
+function reportVinemaDbDevelopmentWarning(message: string) {
+  if (process.env.NODE_ENV === "development") {
+    console.warn(`[vinema-db] ${message}`);
   }
 }
 

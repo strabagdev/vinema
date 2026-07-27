@@ -15,7 +15,6 @@ const baseNode: Node = {
   id: "note-1",
   workspaceId: "workspace-1",
   type: "NOTE",
-  title: "Memoria viva",
   content: "Contenido guardado",
   status: "ACTIVE",
   organizationStatus: "ORGANIZED",
@@ -75,22 +74,20 @@ describe("NoteDetailView read mode", () => {
   it("opens in read mode without showing the form", async () => {
     const screen = await renderNoteDetail();
 
-    expect(screen.textContent).toContain("Memoria viva");
+    expect(screen.textContent).toContain("Captura");
     expect(screen.textContent).toContain("Contenido guardado");
     expect(screen.querySelector("input")).toBeNull();
     expect(screen.querySelector("textarea")).toBeNull();
     expect(getButton(screen, "Editar")).toBeTruthy();
   });
 
-  it("shows related contexts in read mode with links", async () => {
+  it("shows concepts in read mode with compact links", async () => {
     const screen = await renderNoteDetail({
       relatedContexts: [areaContext, projectContext, archivedPersonContext],
     });
 
-    expect(screen.textContent).toContain("Contextos");
-    expect(screen.textContent).toContain("Areas");
+    expect(screen.textContent).toContain("Conceptos");
     expect(screen.textContent).toContain("Trabajo");
-    expect(screen.textContent).toContain("Proyectos");
     expect(screen.textContent).toContain("Vinema");
     expect(screen.textContent).toContain("Juan Perez · Archivado");
     expect(getLink(screen, "Trabajo")?.getAttribute("href")).toBe(
@@ -98,10 +95,11 @@ describe("NoteDetailView read mode", () => {
     );
   });
 
-  it("shows an empty context hint when no relations exist", async () => {
+  it("does not render an empty concepts hint when no relations exist", async () => {
     const screen = await renderNoteDetail();
 
-    expect(screen.textContent).toContain("Sin contextos relacionados");
+    expect(screen.textContent).not.toContain("Conceptos");
+    expect(screen.textContent).not.toContain("Sin contextos relacionados");
   });
 
   it("uses a visible back action", async () => {
@@ -118,9 +116,7 @@ describe("NoteDetailView read mode", () => {
 
     await click(getButton(screen, "Editar"));
 
-    expect(screen.querySelector("input")?.getAttribute("value")).toBe(
-      "Memoria viva",
-    );
+    expect(screen.querySelector("input")).toBeNull();
     expect(screen.querySelector("textarea")?.value).toBe("Contenido guardado");
     expect(getButton(screen, ["Guar", "dar"].join(""))).toBeUndefined();
     expect(getButton(screen, "Listo")).toBeTruthy();
@@ -130,7 +126,6 @@ describe("NoteDetailView read mode", () => {
   it("finishes editing by saving pending changes and returning to read mode", async () => {
     const onSave = vi.fn(async () => ({
       ...baseNode,
-      title: "Memoria editada",
       content: "Contenido editado",
       version: 2,
       updatedAt: "2026-01-02T00:00:00.000Z",
@@ -138,17 +133,14 @@ describe("NoteDetailView read mode", () => {
     const screen = await renderNoteDetail({ onSave });
 
     await click(getButton(screen, "Editar"));
-    await changeInput(screen.querySelector("input"), "Memoria editada");
     await changeTextarea(screen.querySelector("textarea"), "Contenido editado");
     await click(getButton(screen, "Listo"));
 
     expect(onSave).toHaveBeenCalledWith({
-      title: "Memoria editada",
       content: "Contenido editado",
     });
     expect(screen.querySelector("input")).toBeNull();
     expect(screen.querySelector("textarea")).toBeNull();
-    expect(screen.textContent).toContain("Memoria editada");
     expect(screen.textContent).toContain("Contenido editado");
   });
 
@@ -170,7 +162,7 @@ describe("NoteDetailView read mode", () => {
     });
 
     await click(getButton(screen, "Editar"));
-    await toggleCheckbox(screen, "Vinema");
+    await toggleChip(screen, "Vinema");
 
     expect(onSaveContextRelations).not.toHaveBeenCalled();
 
@@ -188,7 +180,7 @@ describe("NoteDetailView read mode", () => {
     });
 
     await click(getButton(screen, "Editar"));
-    await toggleCheckbox(screen, "Vinema");
+    await toggleChip(screen, "Vinema");
     await click(getButton(screen, "Cancelar"));
 
     expect(onSaveContextRelations).not.toHaveBeenCalled();
@@ -208,9 +200,8 @@ describe("NoteDetailView read mode", () => {
   });
 
   it("marks dirty immediately and autosaves after the debounce", async () => {
-    const onSave = vi.fn(async ({ title, content }) => ({
+    const onSave = vi.fn(async ({ content }) => ({
       ...baseNode,
-      title,
       content,
       version: 2,
       updatedAt: "2026-01-02T00:00:00.000Z",
@@ -228,7 +219,6 @@ describe("NoteDetailView read mode", () => {
     await advanceTime(1);
 
     expect(onSave).toHaveBeenCalledWith({
-      title: "Memoria viva",
       content: "Contenido autosave",
     });
     expect(screen.textContent).toContain("Guardado");
@@ -251,27 +241,22 @@ describe("NoteDetailView read mode", () => {
     const screen = await renderNoteDetail({ onSave });
 
     await click(getButton(screen, "Editar"));
-    await changeInput(screen.querySelector("input"), "Borrador descartado");
     await changeTextarea(screen.querySelector("textarea"), "No guardar");
     await click(getButton(screen, "Cancelar"));
 
     expect(onSave).not.toHaveBeenCalled();
     expect(screen.querySelector("input")).toBeNull();
-    expect(screen.textContent).toContain("Memoria viva");
     expect(screen.textContent).toContain("Contenido guardado");
 
     await click(getButton(screen, "Editar"));
 
-    expect(screen.querySelector("input")?.getAttribute("value")).toBe(
-      "Memoria viva",
-    );
+    expect(screen.querySelector("input")).toBeNull();
     expect(screen.querySelector("textarea")?.value).toBe("Contenido guardado");
   });
 
   it("only handles Ctrl+S while editing", async () => {
-    const onSave = vi.fn(async ({ title, content }) => ({
+    const onSave = vi.fn(async ({ content }) => ({
       ...baseNode,
-      title,
       content,
       version: 2,
     }));
@@ -290,9 +275,8 @@ describe("NoteDetailView read mode", () => {
   });
 
   it("Listo cancels pending debounce, saves immediately and returns to read mode", async () => {
-    const onSave = vi.fn(async ({ title, content }) => ({
+    const onSave = vi.fn(async ({ content }) => ({
       ...baseNode,
-      title,
       content,
       version: 2,
     }));
@@ -321,9 +305,8 @@ describe("NoteDetailView read mode", () => {
   });
 
   it("Listo does not save again after autosave already persisted changes", async () => {
-    const onSave = vi.fn(async ({ title, content }) => ({
+    const onSave = vi.fn(async ({ content }) => ({
       ...baseNode,
-      title,
       content,
       version: 2,
     }));
@@ -356,12 +339,11 @@ describe("NoteDetailView read mode", () => {
   it("disables Listo while it is waiting for a save", async () => {
     let resolveSave: ((node: Node) => void) | undefined;
     const onSave = vi.fn(
-      ({ title, content }) =>
+      ({ content }) =>
         new Promise<Node>((resolve) => {
           resolveSave = () =>
             resolve({
               ...baseNode,
-              title,
               content,
               version: 2,
             });
@@ -399,9 +381,8 @@ describe("NoteDetailView read mode", () => {
   });
 
   it("cancel after autosave keeps the persisted autosaved content", async () => {
-    const onSave = vi.fn(async ({ title, content }) => ({
+    const onSave = vi.fn(async ({ content }) => ({
       ...baseNode,
-      title,
       content,
       version: 2,
       updatedAt: "2026-01-02T00:00:00.000Z",
@@ -422,9 +403,8 @@ describe("NoteDetailView read mode", () => {
     const onSave = vi
       .fn()
       .mockRejectedValueOnce(new Error("IndexedDB fallo"))
-      .mockImplementationOnce(async ({ title, content }) => ({
+      .mockImplementationOnce(async ({ content }) => ({
         ...baseNode,
-        title,
         content,
         version: 2,
       }));
@@ -450,20 +430,18 @@ describe("NoteDetailView read mode", () => {
     const onSave = vi
       .fn()
       .mockImplementationOnce(
-        ({ title, content }) =>
+        ({ content }) =>
           new Promise<Node>((resolve) => {
             resolveFirstSave = () =>
               resolve({
                 ...baseNode,
-                title,
                 content,
                 version: 2,
               });
           }),
       )
-      .mockImplementationOnce(async ({ title, content }) => ({
+      .mockImplementationOnce(async ({ content }) => ({
         ...baseNode,
-        title,
         content,
         version: 3,
       }));
@@ -489,7 +467,6 @@ describe("NoteDetailView read mode", () => {
 
     expect(onSave).toHaveBeenCalledTimes(2);
     expect(onSave).toHaveBeenLastCalledWith({
-      title: "Memoria viva",
       content: "Cambio B",
     });
   });
@@ -499,20 +476,18 @@ describe("NoteDetailView read mode", () => {
     const screen = await renderNoteDetail({ onSave });
 
     await click(getButton(screen, "Editar"));
-    await changeInput(screen.querySelector("input"), " ");
     await changeTextarea(screen.querySelector("textarea"), " ");
     await advanceAutosave();
 
     expect(onSave).not.toHaveBeenCalled();
-    expect(screen.textContent).toContain("Escribe un titulo o contenido");
+    expect(screen.textContent).toContain("Escribe contenido");
     expect(screen.textContent).toContain("Cambios sin guardar");
   });
 
   it("flushes pending changes before returning to notes", async () => {
     const onBack = vi.fn();
-    const onSave = vi.fn(async ({ title, content }) => ({
+    const onSave = vi.fn(async ({ content }) => ({
       ...baseNode,
-      title,
       content,
       version: 2,
     }));
@@ -540,11 +515,55 @@ describe("NoteDetailView read mode", () => {
     expect(screen.querySelector("textarea")).toBeTruthy();
   });
 
+  it("asks for confirmation before archiving", async () => {
+    const onArchive = vi.fn(async () => undefined);
+    const screen = await renderNoteDetail({ onArchive });
+
+    await click(getButton(screen, "Archivar"));
+
+    expect(onArchive).not.toHaveBeenCalled();
+    expect(screen.textContent).toContain("Archivar esta captura?");
+    expect(screen.textContent).toContain("Podras restaurarla desde Archivo.");
+
+    await click(getButton(screen, "Cancelar"));
+
+    expect(screen.textContent).not.toContain("Archivar esta captura?");
+
+    await click(getButton(screen, "Archivar"));
+    await click(getButton(screen, "Archivar"));
+
+    expect(onArchive).toHaveBeenCalledOnce();
+  });
+
+  it("opens archived captures in read mode with restore and without edit actions", async () => {
+    const onRestore = vi.fn(async (): Promise<Node> => ({
+      ...baseNode,
+      status: "ACTIVE",
+      version: 2,
+      updatedAt: "2026-01-02T00:00:00.000Z",
+    }));
+    const screen = await renderNoteDetail({
+      node: { ...baseNode, status: "ARCHIVED" },
+      onRestore,
+    });
+
+    expect(screen.textContent).toContain("Captura archivada");
+    expect(getButton(screen, "Editar")).toBeUndefined();
+    expect(getButton(screen, "Archivar")).toBeUndefined();
+    expect(getButton(screen, "Restaurar")).toBeTruthy();
+
+    await click(getButton(screen, "Restaurar"));
+
+    expect(onRestore).toHaveBeenCalledOnce();
+    expect(screen.textContent).toContain("Captura restaurada.");
+    expect(screen.textContent).toContain("Ver en Base de Conocimiento");
+  });
+
   it("keeps a return action available for a missing note state", async () => {
     const screen = await renderMessage();
 
-    expect(screen.textContent).toContain("Nota no encontrada");
-    expect(getLink(screen, "Volver a notas")?.getAttribute("href")).toBe("/notes");
+    expect(screen.textContent).toContain("Captura no encontrada");
+    expect(getLink(screen, "Volver a Base de Conocimiento")?.getAttribute("href")).toBe("/notes");
   });
 });
 
@@ -556,15 +575,17 @@ async function renderNoteDetail({
   onSave = vi.fn(async () => node),
   onSaveContextRelations = vi.fn(async () => undefined),
   onArchive = vi.fn(async () => undefined),
+  onRestore = vi.fn(async () => node),
   onBack = vi.fn(),
 }: {
   node?: Node;
   relatedContexts?: Context[];
   contextOptions?: Context[];
   contextError?: string | null;
-  onSave?: (draft: { title: string; content: string }) => Promise<Node>;
+  onSave?: (draft: { content: string }) => Promise<Node>;
   onSaveContextRelations?: (selectedContextIds: string[]) => Promise<void>;
   onArchive?: () => Promise<void>;
+  onRestore?: () => Promise<Node>;
   onBack?: () => void;
 } = {}) {
   const { container } = createContainer();
@@ -579,6 +600,7 @@ async function renderNoteDetail({
         onSave,
         onSaveContextRelations,
         onArchive,
+        onRestore,
         onBack,
       }),
     );
@@ -593,7 +615,7 @@ async function renderMessage() {
   await act(async () => {
     createRoot(container).render(
       createElement(NoteDetailMessage, {
-        title: "Nota no encontrada",
+        heading: "Captura no encontrada",
         message: "No existe en este dispositivo.",
       }),
     );
@@ -620,19 +642,14 @@ function getLink(container: HTMLElement, name: string) {
   ) as HTMLAnchorElement | undefined;
 }
 
-async function toggleCheckbox(container: HTMLElement, labelText: string) {
-  const label = Array.from(container.querySelectorAll("label")).find((candidate) =>
-    candidate.textContent?.includes(labelText),
-  );
-  const checkbox = label?.querySelector("input");
+async function toggleChip(container: HTMLElement, labelText: string) {
+  const button = getButton(container, labelText);
 
-  if (!checkbox) {
-    throw new Error(`Expected checkbox ${labelText} to exist.`);
+  if (!button) {
+    throw new Error(`Expected chip ${labelText} to exist.`);
   }
 
-  await act(async () => {
-    checkbox.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-  });
+  await click(button);
 }
 
 function getDetailSection(container: HTMLElement) {
@@ -681,17 +698,6 @@ async function advanceTime(ms: number) {
 async function flushPromises() {
   await Promise.resolve();
   await Promise.resolve();
-}
-
-async function changeInput(element: HTMLInputElement | null, value: string) {
-  if (!element) {
-    throw new Error("Expected input to exist.");
-  }
-
-  await act(async () => {
-    setNativeValue(element, value);
-    element.dispatchEvent(new Event("input", { bubbles: true }));
-  });
 }
 
 async function changeTextarea(

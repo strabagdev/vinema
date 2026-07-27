@@ -16,6 +16,7 @@ import {
 } from "@/features/context/context-display";
 import {
   getContextIdFromSearchParams,
+  getContextDetailPath,
   getContextListPath,
 } from "@/features/context/context-routes";
 import { getContextById } from "@/features/context/list-contexts";
@@ -23,8 +24,9 @@ import { listNodesForContext } from "@/features/context/node-context-relations";
 import { restoreContext } from "@/features/context/restore-context";
 import { updateContext } from "@/features/context/update-context";
 import { useVinemaContext } from "@/features/node/hooks/use-vinema-context";
-import { getContentExcerpt, getNodeDisplayTitle } from "@/features/node/node-display";
+import { getCapturePreview, getContentExcerpt } from "@/features/node/node-display";
 import { getNodeDetailPath } from "@/features/node/node-routes";
+import { getReturnToFromSearchParams } from "@/features/recovery/recovery-routes";
 import {
   contextRepository,
   nodeContextRelationRepository,
@@ -40,20 +42,27 @@ type Draft = {
 export function ContextDetailClient() {
   const searchParams = useSearchParams();
   const contextId = getContextIdFromSearchParams(searchParams);
+  const returnTo = getReturnToFromSearchParams(searchParams);
 
   if (!contextId) {
     return (
       <ContextDetailMessage
-        title="Falta el contexto"
+        heading="Falta el contexto"
         message="La URL no incluye un identificador de contexto valido."
       />
     );
   }
 
-  return <ContextDetailLoader contextId={contextId} />;
+  return <ContextDetailLoader contextId={contextId} returnTo={returnTo} />;
 }
 
-function ContextDetailLoader({ contextId }: { contextId: string }) {
+function ContextDetailLoader({
+  contextId,
+  returnTo,
+}: {
+  contextId: string;
+  returnTo: string | null;
+}) {
   const vinemaContext = useVinemaContext();
   const [context, setContext] = useState<Context | null>(null);
   const [nodes, setNodes] = useState<Node[]>([]);
@@ -110,7 +119,7 @@ function ContextDetailLoader({ contextId }: { contextId: string }) {
   if (vinemaContext.status === "error") {
     return (
       <ContextDetailMessage
-        title="No se pudo cargar Vinema"
+        heading="No se pudo cargar Vinema"
         message={vinemaContext.error}
       />
     );
@@ -119,7 +128,7 @@ function ContextDetailLoader({ contextId }: { contextId: string }) {
   if (!context) {
     return (
       <ContextDetailMessage
-        title="Contexto no encontrado"
+        heading="Contexto no encontrado"
         message={error ?? "No existe o no pertenece a este workspace."}
       />
     );
@@ -146,6 +155,7 @@ function ContextDetailLoader({ contextId }: { contextId: string }) {
         const restoredContext = await restoreContext(contextRepository, context.id);
         setContext(restoredContext);
       }}
+      returnTo={returnTo}
     />
   );
 }
@@ -156,12 +166,14 @@ export function ContextDetailView({
   onSave,
   onArchive,
   onRestore,
+  returnTo = null,
 }: {
   context: Context;
   nodes: Node[];
   onSave: (draft: Draft) => Promise<Context>;
   onArchive: () => Promise<void>;
   onRestore: () => Promise<void>;
+  returnTo?: string | null;
 }) {
   const router = useRouter();
   const [persistedContext, setPersistedContext] = useState(context);
@@ -171,6 +183,7 @@ export function ContextDetailView({
   const [formError, setFormError] = useState<string | null>(null);
   const label = CONTEXT_TYPE_LABEL[persistedContext.type];
   const listPath = getContextListPath(persistedContext.type);
+  const detailPath = getContextDetailPath(persistedContext.id, { returnTo });
 
   function beginEdit() {
     setDraft(toDraft(persistedContext));
@@ -256,7 +269,7 @@ export function ContextDetailView({
         </div>
         {mode === "read" ? (
           <div className="flex flex-wrap gap-2">
-            <Button variant="ghost" onClick={() => router.push(listPath)}>
+            <Button variant="ghost" onClick={() => router.push(returnTo ?? listPath)}>
               ← Volver
             </Button>
             {!persistedContext.archivedAt ? (
@@ -277,7 +290,11 @@ export function ContextDetailView({
           </div>
         ) : (
           <div className="flex flex-wrap gap-2">
-            <Button variant="ghost" onClick={() => router.push(listPath)} disabled={saving}>
+            <Button
+              variant="ghost"
+              onClick={() => router.push(returnTo ?? listPath)}
+              disabled={saving}
+            >
               ← Volver
             </Button>
             <Button variant="ghost" onClick={cancelEdit} disabled={saving}>
@@ -334,20 +351,22 @@ export function ContextDetailView({
       )}
 
       <section className="space-y-3">
-        <h2 className="text-lg font-medium text-zinc-950">Notas relacionadas</h2>
+        <h2 className="text-lg font-medium text-zinc-950">
+          Capturas relacionadas
+        </h2>
         {nodes.length > 0 ? (
           <div className="space-y-3">
             {nodes.map((node) => (
               <Link
                 key={node.id}
-                href={getNodeDetailPath(node.id)}
+                href={getNodeDetailPath(node.id, { returnTo: detailPath })}
                 className="block rounded-lg border border-zinc-200 bg-white p-4 transition-colors hover:border-zinc-300 hover:bg-zinc-50"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
-                    <h3 className="truncate text-base font-medium text-zinc-950">
-                      {getNodeDisplayTitle(node)}
-                    </h3>
+                    <p className="line-clamp-2 text-base leading-7 text-zinc-800">
+                      {getCapturePreview(node.content, { maxLength: 140 })}
+                    </p>
                     <p className="mt-2 line-clamp-2 text-sm leading-6 text-zinc-600">
                       {getContentExcerpt(node.content) || "Sin contenido"}
                     </p>
@@ -362,7 +381,7 @@ export function ContextDetailView({
           </div>
         ) : (
           <div className="rounded-lg border border-dashed border-zinc-300 bg-white p-6 text-sm text-zinc-500">
-            No hay notas relacionadas.
+            No hay capturas relacionadas.
           </div>
         )}
       </section>
@@ -371,16 +390,16 @@ export function ContextDetailView({
 }
 
 function ContextDetailMessage({
-  title,
+  heading,
   message,
 }: {
-  title: string;
+  heading: string;
   message: string;
 }) {
   return (
     <section className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 px-4 py-6 sm:px-6 lg:px-8">
       <Badge variant="secondary">Contextos</Badge>
-      <h1 className="text-3xl font-semibold text-zinc-950">{title}</h1>
+      <h1 className="text-3xl font-semibold text-zinc-950">{heading}</h1>
       <p className="text-sm text-zinc-600">{message}</p>
       <Button asChild className="w-fit">
         <Link href="/contexts/areas">Volver a contextos</Link>

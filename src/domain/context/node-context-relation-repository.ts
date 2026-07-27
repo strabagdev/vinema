@@ -7,6 +7,7 @@ export interface NodeContextRelationRepository {
   ): Promise<NodeContextRelation | null>;
   listByNodeId(nodeId: string): Promise<NodeContextRelation[]>;
   listByContextId(contextId: string): Promise<NodeContextRelation[]>;
+  listByWorkspace(workspaceId: string): Promise<NodeContextRelation[]>;
   save(relation: NodeContextRelation): Promise<NodeContextRelation>;
   delete(id: string): Promise<void>;
 }

@@ -117,7 +117,7 @@ export function ContextListClient({ type }: { type: ContextType }) {
   if (vinemaContext.status === "error") {
     return (
       <ContextPageMessage
-        title={`No se pudo cargar ${pluralLabel.toLowerCase()}`}
+        heading={`No se pudo cargar ${pluralLabel.toLowerCase()}`}
         message={vinemaContext.error}
       />
     );
@@ -245,7 +245,7 @@ export function ContextListClient({ type }: { type: ContextType }) {
                   ) : null}
                 </div>
                 <div className="flex shrink-0 flex-wrap gap-2 text-xs text-zinc-500">
-                  <span>{context.relatedNodeCount} notas</span>
+                  <span>{context.relatedNodeCount} capturas</span>
                   {context.archivedAt ? <span>Archivado</span> : null}
                 </div>
               </div>
@@ -271,15 +271,15 @@ export function ContextListClient({ type }: { type: ContextType }) {
 }
 
 function ContextPageMessage({
-  title,
+  heading,
   message,
 }: {
-  title: string;
+  heading: string;
   message: string;
 }) {
   return (
     <section className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-4 px-4 py-6 sm:px-6 lg:px-8">
-      <h1 className="text-3xl font-semibold text-zinc-950">{title}</h1>
+      <h1 className="text-3xl font-semibold text-zinc-950">{heading}</h1>
       <p className="text-sm text-zinc-600">{message}</p>
     </section>
   );

@@ -1,5 +1,6 @@
 import type { Node } from "@/domain/node/node";
 import type { NodeRepository } from "@/domain/node/node-repository";
+import { normalizeStoredNode } from "@/infrastructure/node/indexed-db-node-repository";
 
 function byNewestUpdatedAt(a: Node, b: Node) {
   return Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
@@ -9,17 +10,24 @@ export class InMemoryNodeRepository implements NodeRepository {
   private readonly nodes = new Map<string, Node>();
 
   constructor(nodes: Node[] = []) {
-    nodes.forEach((node) => this.nodes.set(node.id, node));
+    nodes.forEach((node) => {
+      const normalizedNode = normalizeStoredNode(node);
+      if (normalizedNode) {
+        this.nodes.set(normalizedNode.id, normalizedNode);
+      }
+    });
   }
 
   async create(node: Node): Promise<Node> {
-    this.nodes.set(node.id, node);
-    return node;
+    const normalizedNode = normalizeStoredNode(node) ?? node;
+    this.nodes.set(normalizedNode.id, normalizedNode);
+    return normalizedNode;
   }
 
   async update(node: Node): Promise<Node> {
-    this.nodes.set(node.id, node);
-    return node;
+    const normalizedNode = normalizeStoredNode(node) ?? node;
+    this.nodes.set(normalizedNode.id, normalizedNode);
+    return normalizedNode;
   }
 
   async findById(id: string): Promise<Node | null> {
@@ -52,6 +60,20 @@ export class InMemoryNodeRepository implements NodeRepository {
   async listArchived(): Promise<Node[]> {
     return Array.from(this.nodes.values())
       .filter((node) => node.deletedAt === null && node.status === "ARCHIVED")
+      .sort(byNewestUpdatedAt);
+  }
+
+  async listByWorkspace(
+    workspaceId: string,
+    options: { includeArchived?: boolean } = {},
+  ): Promise<Node[]> {
+    return Array.from(this.nodes.values())
+      .filter(
+        (node) =>
+          node.workspaceId === workspaceId &&
+          node.deletedAt === null &&
+          (options.includeArchived || node.status !== "ARCHIVED"),
+      )
       .sort(byNewestUpdatedAt);
   }
 }

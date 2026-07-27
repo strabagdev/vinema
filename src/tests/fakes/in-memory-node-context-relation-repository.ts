@@ -34,6 +34,12 @@ export class InMemoryNodeContextRelationRepository
     );
   }
 
+  async listByWorkspace(workspaceId: string): Promise<NodeContextRelation[]> {
+    return Array.from(this.relations.values()).filter(
+      (relation) => relation.workspaceId === workspaceId,
+    );
+  }
+
   async save(
     relation: NodeContextRelation,
   ): Promise<NodeContextRelation> {

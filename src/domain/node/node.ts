@@ -8,13 +8,15 @@ export interface Node {
   id: string;
   workspaceId: string;
   type: NodeType;
-  title: string;
   content: string;
   status: NodeStatus;
   organizationStatus: NodeOrganizationStatus;
   metadata: Record<string, unknown>;
   version: number;
   createdAt: string;
+  contentUpdatedAt?: string;
+  archivedAt?: string | null;
+  restoredAt?: string | null;
   updatedAt: string;
   deletedAt: string | null;
   createdByDeviceId: string;

@@ -6,9 +6,9 @@ describe("StorageAdapter", () => {
     const adapter = new LocalStorageAdapter(window.localStorage);
     const key = "vinema:test";
 
-    await adapter.set(key, { title: "Memoria viva" });
+    await adapter.set(key, { value: "Memoria viva" });
 
-    await expect(adapter.get(key)).resolves.toEqual({ title: "Memoria viva" });
+    await expect(adapter.get(key)).resolves.toEqual({ value: "Memoria viva" });
 
     await adapter.remove(key);
 

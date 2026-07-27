@@ -13,7 +13,6 @@ export function useCreateNode() {
 
   async function create(input: {
     type: NodeType;
-    title: string;
     content: string;
     organizationStatus: NodeOrganizationStatus;
     workspace: Workspace;

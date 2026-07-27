@@ -7,4 +7,8 @@ export interface NodeRepository {
   listActive(): Promise<Node[]>;
   listInbox(): Promise<Node[]>;
   listArchived(): Promise<Node[]>;
+  listByWorkspace(
+    workspaceId: string,
+    options?: { includeArchived?: boolean },
+  ): Promise<Node[]>;
 }

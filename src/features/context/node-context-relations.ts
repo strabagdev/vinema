@@ -19,7 +19,7 @@ export async function attachNodeToContext(
   const context = await repositories.contextRepository.getById(input.contextId);
 
   if (!node) {
-    throw new Error("No se encontro la nota.");
+    throw new Error("No se encontro la captura.");
   }
 
   if (!context) {
@@ -27,11 +27,11 @@ export async function attachNodeToContext(
   }
 
   if (node.workspaceId !== context.workspaceId) {
-    throw new Error("La nota y el contexto pertenecen a workspaces distintos.");
+    throw new Error("La captura y el contexto pertenecen a workspaces distintos.");
   }
 
   if (context.archivedAt) {
-    throw new Error("No se puede asociar una nota a un contexto archivado.");
+    throw new Error("No se puede asociar una captura a un contexto archivado.");
   }
 
   const existingRelation =

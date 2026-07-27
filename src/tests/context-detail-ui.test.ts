@@ -29,7 +29,6 @@ const node: Node = {
   id: "note-1",
   workspaceId: "workspace-1",
   type: "NOTE",
-  title: "Reunion Mitcom",
   content: "Seguimiento del proyecto",
   status: "ACTIVE",
   organizationStatus: "ORGANIZED",
@@ -52,8 +51,8 @@ describe("ContextDetailView", () => {
 
     expect(screen.textContent).toContain("Vinema");
     expect(screen.textContent).toContain("Memoria local");
-    expect(screen.textContent).toContain("Notas relacionadas");
-    expect(screen.textContent).toContain("Reunion Mitcom");
+    expect(screen.textContent).toContain("Capturas relacionadas");
+    expect(screen.textContent).toContain("Seguimiento del proyecto");
     expect(screen.querySelector("input")).toBeNull();
   });
 

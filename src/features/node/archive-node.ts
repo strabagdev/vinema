@@ -10,14 +10,16 @@ export async function archiveNode(
   const existingNode = await repository.findById(id);
 
   if (!existingNode) {
-    throw new Error("No se encontro la nota.");
+    throw new Error("No se encontro la captura.");
   }
 
+  const now = new Date().toISOString();
   const archivedNode: Node = {
     ...existingNode,
     status: "ARCHIVED",
     version: existingNode.version + 1,
-    updatedAt: new Date().toISOString(),
+    archivedAt: now,
+    updatedAt: now,
     deletedAt: null,
     lastModifiedByDeviceId: device.id,
   };

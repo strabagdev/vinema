@@ -5,7 +5,6 @@ import { validateEditableNode } from "@/features/node/node-validation";
 
 export type UpdateNodeInput = {
   id: string;
-  title: string;
   content: string;
   device: Device;
 };
@@ -17,21 +16,21 @@ export async function updateNode(
   const existingNode = await repository.findById(input.id);
 
   if (!existingNode) {
-    throw new Error("No se encontro la nota.");
+    throw new Error("No se encontro la captura.");
   }
 
   const validated = validateEditableNode({
-    title: input.title,
     content: input.content,
     organizationStatus: existingNode.organizationStatus,
   });
+  const now = new Date().toISOString();
 
   const updatedNode: Node = {
     ...existingNode,
-    title: validated.title,
     content: validated.content,
     version: existingNode.version + 1,
-    updatedAt: new Date().toISOString(),
+    contentUpdatedAt: now,
+    updatedAt: now,
     lastModifiedByDeviceId: input.device.id,
   };
 

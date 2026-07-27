@@ -12,7 +12,6 @@ const note: Node = {
   id: "nota con espacios/and/symbols?",
   workspaceId: "workspace-1",
   type: "NOTE",
-  title: "Ruta local",
   content: "Contenido",
   status: "ACTIVE",
   organizationStatus: "ORGANIZED",

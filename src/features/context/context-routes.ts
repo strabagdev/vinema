@@ -5,8 +5,17 @@ export function getContextListPath(type: ContextType) {
   return `/contexts/${CONTEXT_TYPE_ROUTE_SEGMENT[type]}`;
 }
 
-export function getContextDetailPath(contextId: string): string {
-  return `/contexts/detail?contextId=${encodeURIComponent(contextId)}`;
+export function getContextDetailPath(
+  contextId: string,
+  options: { returnTo?: string | null } = {},
+): string {
+  const searchParams = [`contextId=${encodeURIComponent(contextId)}`];
+
+  if (options.returnTo) {
+    searchParams.push(`returnTo=${encodeURIComponent(options.returnTo)}`);
+  }
+
+  return `/contexts/detail?${searchParams.join("&")}`;
 }
 
 export function getContextIdFromSearchParams(

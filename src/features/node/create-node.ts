@@ -6,7 +6,6 @@ import { validateEditableNode } from "@/features/node/node-validation";
 
 export type CreateNodeInput = {
   type: NodeType;
-  title: string;
   content: string;
   organizationStatus: NodeOrganizationStatus;
   workspace: Workspace;
@@ -23,13 +22,15 @@ export async function createNode(
     id: crypto.randomUUID(),
     workspaceId: input.workspace.id,
     type: input.type,
-    title: validated.title,
     content: validated.content,
     status: "ACTIVE",
     organizationStatus: input.organizationStatus,
     metadata: {},
     version: 1,
     createdAt: now,
+    contentUpdatedAt: now,
+    archivedAt: null,
+    restoredAt: null,
     updatedAt: now,
     deletedAt: null,
     createdByDeviceId: input.device.id,
