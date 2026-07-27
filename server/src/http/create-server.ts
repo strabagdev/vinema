@@ -10,6 +10,10 @@ import { processPull, processPush } from "../sync/sync-service";
 import type { SyncStore } from "../sync/sync-store";
 
 const DATABASE_HEALTHCHECK_TIMEOUT_MS = 2_000;
+const DEFAULT_ALLOWED_ORIGINS = [
+  "https://vinema-web.up.railway.app",
+  "http://localhost:3000",
+];
 
 export function createVinemaApiServer({
   store,
@@ -24,13 +28,15 @@ export function createVinemaApiServer({
 
   void app.register(cors, {
     origin(origin, callback) {
-      if (!origin || allowedOrigins.includes("*") || allowedOrigins.includes(origin)) {
+      if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
         return;
       }
 
-      callback(new Error("Origin not allowed"), false);
+      callback(null, false);
     },
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Authorization", "Content-Type"],
   });
 
   app.get("/api/health", async (_request, reply) => {
@@ -106,10 +112,12 @@ export function createVinemaApiServer({
 }
 
 function parseAllowedOrigins(value: string | undefined) {
-  return (value ?? "")
+  const origins = (value ?? "")
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
+
+  return origins.length > 0 ? origins : DEFAULT_ALLOWED_ORIGINS;
 }
 
 async function checkDatabaseHealth(

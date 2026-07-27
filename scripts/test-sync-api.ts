@@ -14,6 +14,7 @@ if (!apiUrl || !apiKey || !workspaceId) {
 }
 
 const now = new Date().toISOString();
+const runLabel = `E2E_RAILWAY_${now.replace(/[^0-9]/g, "")}`;
 const deviceId = crypto.randomUUID();
 const captureId = crypto.randomUUID();
 const conceptId = crypto.randomUUID();
@@ -22,10 +23,17 @@ const captureMutationId = crypto.randomUUID();
 const conceptMutationId = crypto.randomUUID();
 const relationMutationId = crypto.randomUUID();
 const captureUpdateMutationId = crypto.randomUUID();
+const captureArchiveMutationId = crypto.randomUUID();
+const conceptArchiveMutationId = crypto.randomUUID();
+const relationArchiveMutationId = crypto.randomUUID();
 
 async function main() {
   const health = await fetch(`${apiUrl}/api/health`);
   assert(health.ok, "health failed");
+  const healthBody = (await health.json()) as { database?: string };
+  assert(healthBody.database === "connected", "database is not connected");
+
+  await expectUnauthorizedRequests();
 
   const firstPush = await push([
     {
@@ -35,7 +43,7 @@ async function main() {
       entityId: captureId,
       baseVersion: null,
       payload: {
-        content: "Captura de prueba de sincronizacion Vinema.",
+        content: `${runLabel} Captura de prueba de sincronizacion Vinema.`,
         createdAt: now,
         updatedAt: now,
         archivedAt: null,
@@ -48,8 +56,8 @@ async function main() {
       entityId: conceptId,
       baseVersion: null,
       payload: {
-        label: "Prueba Sync",
-        normalizedKey: "prueba-sync",
+        label: `${runLabel} Prueba Sync`,
+        normalizedKey: runLabel.toLowerCase(),
         createdAt: now,
         updatedAt: now,
         archivedAt: null,
@@ -76,6 +84,11 @@ async function main() {
 
   const pullResponse = await pull("0");
   assert(pullResponse.changes.length >= 3, "pull did not return pushed changes");
+  assert(
+    pullResponse.changes.some((change) => change.entity.id === captureId),
+    "pull did not return the test capture",
+  );
+  const cursorAfterFirstPush = pullResponse.nextCursor;
 
   const idempotentPush = await push([
     {
@@ -85,7 +98,7 @@ async function main() {
       entityId: captureId,
       baseVersion: null,
       payload: {
-        content: "Captura de prueba de sincronizacion Vinema.",
+        content: `${runLabel} Captura de prueba de sincronizacion Vinema.`,
         createdAt: now,
         updatedAt: now,
         archivedAt: null,
@@ -93,6 +106,11 @@ async function main() {
     },
   ]);
   assert(idempotentPush.accepted[0]?.version === 1, "idempotency changed version");
+  const afterIdempotencyPull = await pull(cursorAfterFirstPush);
+  assert(
+    afterIdempotencyPull.changes.length === 0,
+    "idempotency created duplicate changes",
+  );
 
   const updatePush = await push([
     {
@@ -102,7 +120,7 @@ async function main() {
       entityId: captureId,
       baseVersion: 1,
       payload: {
-        content: "Captura de prueba de sincronizacion Vinema actualizada.",
+        content: `${runLabel} Captura de prueba de sincronizacion Vinema actualizada.`,
         createdAt: now,
         updatedAt: new Date().toISOString(),
         archivedAt: null,
@@ -137,7 +155,9 @@ async function main() {
     "conflict did not return the current server entity",
   );
 
-  console.log("Sync API integration test passed.");
+  await archiveTestRecords();
+
+  console.log("Sync API Railway integration test passed.");
 }
 
 async function push(mutations: unknown[]): Promise<PushResponse> {
@@ -162,6 +182,72 @@ async function pull(cursor: string): Promise<PullResponse> {
 
   assert(response.ok, `pull failed with ${response.status}`);
   return response.json() as Promise<PullResponse>;
+}
+
+async function expectUnauthorizedRequests() {
+  const withoutKey = await fetch(`${apiUrl}/api/sync/push`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workspaceId, deviceId, mutations: [] }),
+  });
+  assert(withoutKey.status === 401, "push without API key did not fail with 401");
+
+  const wrongKey = await fetch(
+    `${apiUrl}/api/sync/pull?workspaceId=${workspaceId}&cursor=0&limit=1`,
+    { headers: { Authorization: "Bearer E2E_RAILWAY_WRONG_KEY" } },
+  );
+  assert(wrongKey.status === 401, "pull with wrong API key did not fail with 401");
+}
+
+async function archiveTestRecords() {
+  const archivedAt = new Date().toISOString();
+  const archivePush = await push([
+    {
+      mutationId: relationArchiveMutationId,
+      entityType: "captureConcept",
+      operation: "upsert",
+      entityId: relationId,
+      baseVersion: 1,
+      payload: {
+        captureId,
+        conceptId,
+        source: "USER_CONFIRMED",
+        createdAt: now,
+        updatedAt: archivedAt,
+        archivedAt,
+      },
+    },
+    {
+      mutationId: conceptArchiveMutationId,
+      entityType: "concept",
+      operation: "upsert",
+      entityId: conceptId,
+      baseVersion: 1,
+      payload: {
+        label: `${runLabel} Prueba Sync`,
+        normalizedKey: runLabel.toLowerCase(),
+        createdAt: now,
+        updatedAt: archivedAt,
+        archivedAt,
+        mergedIntoId: null,
+      },
+    },
+    {
+      mutationId: captureArchiveMutationId,
+      entityType: "capture",
+      operation: "upsert",
+      entityId: captureId,
+      baseVersion: 2,
+      payload: {
+        content: `${runLabel} Captura de prueba de sincronizacion Vinema actualizada.`,
+        createdAt: now,
+        updatedAt: archivedAt,
+        archivedAt,
+      },
+    },
+  ]);
+
+  assert(archivePush.accepted.length === 3, "test records were not archived");
 }
 
 function assert(condition: unknown, message: string): asserts condition {

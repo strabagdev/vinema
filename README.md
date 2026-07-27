@@ -49,7 +49,7 @@ Abrir `http://localhost:3000`.
 - [Normalizacion de conceptos](docs/product/VIN-021-2-NORMALIZACION-CONCEPTOS.md)
 - [API y persistencia remota](docs/product/VIN-022-API-PERSISTENCIA-REMOTA.md)
 - [Preparacion Railway](docs/product/VIN-022-1-PREPARACION-RAILWAY.md)
-- [Despliegue Railway](docs/deployment/RAILWAY.md)
+- [Despliegue Railway](docs/deployment/railway.md)
 
 ## Escritorio
 
@@ -147,32 +147,26 @@ npm run test:sync-api
 
 ## Railway
 
-Desplegar solo la API. Usar root directory `/` para que Railway tenga acceso a
-workspaces, `package-lock.json` raiz y `prisma/schema.prisma`.
+Vinema se despliega en Railway como dos servicios desde el mismo repositorio.
+Ver [docs/deployment/railway.md](docs/deployment/railway.md) para la
+configuracion completa.
 
-Build command:
+`vinema-web`:
 
 ```bash
-npm ci && npm run db:generate && npm run server:build
+npm run db:generate && npm run build
+npm run start -- --hostname 0.0.0.0 --port $PORT
 ```
 
-Pre-deploy command:
+`vinema-api`:
 
 ```bash
-npm run db:migrate:deploy
-```
-
-Start command:
-
-```bash
+npm run db:generate && npm run server:build
 npm run server:start
 ```
 
-Healthcheck:
-
-```text
-/api/health
-```
+La API ejecuta `npm run db:migrate:deploy` como pre-deploy. La web no ejecuta
+migraciones.
 
 ## Rutas funcionales
 
@@ -204,9 +198,9 @@ Base `vinema`, version 5:
   `by-workspace`, `by-node`, `by-context`, `by-node-and-context`,
   `by-related-node` y `by-relation-type`.
 
-Mientras Vinema use `output: "export"`, los recursos locales creados en
-IndexedDB se abren con rutas estaticas y query params. Las notas usan
-`/notes/detail?nodeId=<id>` en lugar de segmentos dinamicos de Next.js.
+Los recursos locales creados en IndexedDB se abren con rutas estaticas y query
+params. Las notas usan `/notes/detail?nodeId=<id>` en lugar de segmentos
+dinamicos de Next.js.
 
 Las capturas historicas que todavia incluyan `title` se leen por compatibilidad.
 Si no tienen contenido, ese valor se recupera como contenido; las escrituras

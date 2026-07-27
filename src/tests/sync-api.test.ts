@@ -59,6 +59,50 @@ describe("Vinema sync API", () => {
     ).resolves.toMatchObject({ statusCode: 401 });
   });
 
+  it("allows the deployed web origin and auth headers through CORS", async () => {
+    const app = createVinemaApiServer({
+      store: new InMemorySyncStore([workspaceId]),
+      apiKey,
+    });
+
+    const response = await app.inject({
+      method: "OPTIONS",
+      url: "/api/sync/push",
+      headers: {
+        Origin: "https://vinema-web.up.railway.app",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "authorization,content-type",
+      },
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(response.headers["access-control-allow-origin"]).toBe(
+      "https://vinema-web.up.railway.app",
+    );
+    expect(response.headers["access-control-allow-headers"]).toContain(
+      "Authorization",
+    );
+  });
+
+  it("does not open CORS to unexpected browser origins", async () => {
+    const app = createVinemaApiServer({
+      store: new InMemorySyncStore([workspaceId]),
+      apiKey,
+    });
+
+    const response = await app.inject({
+      method: "OPTIONS",
+      url: "/api/sync/push",
+      headers: {
+        Origin: "https://example.invalid",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "authorization,content-type",
+      },
+    });
+
+    expect(response.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+
   it("creates a capture with client id, version, SyncChange and ProcessedMutation", async () => {
     const store = new InMemorySyncStore([workspaceId]);
     const app = createVinemaApiServer({ store, apiKey });
