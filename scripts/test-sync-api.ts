@@ -21,6 +21,7 @@ const relationId = crypto.randomUUID();
 const captureMutationId = crypto.randomUUID();
 const conceptMutationId = crypto.randomUUID();
 const relationMutationId = crypto.randomUUID();
+const captureUpdateMutationId = crypto.randomUUID();
 
 async function main() {
   const health = await fetch(`${apiUrl}/api/health`);
@@ -93,13 +94,30 @@ async function main() {
   ]);
   assert(idempotentPush.accepted[0]?.version === 1, "idempotency changed version");
 
+  const updatePush = await push([
+    {
+      mutationId: captureUpdateMutationId,
+      entityType: "capture",
+      operation: "upsert",
+      entityId: captureId,
+      baseVersion: 1,
+      payload: {
+        content: "Captura de prueba de sincronizacion Vinema actualizada.",
+        createdAt: now,
+        updatedAt: new Date().toISOString(),
+        archivedAt: null,
+      },
+    },
+  ]);
+  assert(updatePush.accepted[0]?.version === 2, "capture update did not advance version");
+
   const conflict = await push([
     {
       mutationId: crypto.randomUUID(),
       entityType: "capture",
       operation: "upsert",
       entityId: captureId,
-      baseVersion: 0,
+      baseVersion: 1,
       payload: {
         content: "Conflicto esperado.",
         createdAt: now,
@@ -109,6 +127,15 @@ async function main() {
     },
   ]);
   assert(conflict.conflicts.length === 1, "conflict was not reported");
+  assert(conflict.accepted.length === 0, "conflict mutation was accepted");
+  assert(
+    conflict.conflicts[0]?.reason === "VERSION_CONFLICT",
+    "conflict reason was not VERSION_CONFLICT",
+  );
+  assert(
+    getServerEntityVersion(conflict.conflicts[0]?.serverEntity) === 2,
+    "conflict did not return the current server entity",
+  );
 
   console.log("Sync API integration test passed.");
 }
@@ -141,6 +168,19 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
     throw new Error(message);
   }
+}
+
+function getServerEntityVersion(serverEntity: unknown) {
+  if (
+    typeof serverEntity === "object" &&
+    serverEntity !== null &&
+    "version" in serverEntity &&
+    typeof serverEntity.version === "number"
+  ) {
+    return serverEntity.version;
+  }
+
+  return null;
 }
 
 main().catch((error) => {
