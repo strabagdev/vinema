@@ -1,7 +1,12 @@
+import { existsSync, readFileSync } from "node:fs";
+import { parseEnv } from "node:util";
 import {
   type PullResponse,
   type PushResponse,
 } from "@vinema/sync-contracts";
+
+loadLocalEnvFile(".env");
+loadLocalEnvFile(".env.local");
 
 const apiUrl = process.env.VINEMA_API_URL;
 const apiKey = process.env.VINEMA_SYNC_API_KEY;
@@ -26,6 +31,18 @@ const captureUpdateMutationId = crypto.randomUUID();
 const captureArchiveMutationId = crypto.randomUUID();
 const conceptArchiveMutationId = crypto.randomUUID();
 const relationArchiveMutationId = crypto.randomUUID();
+
+function loadLocalEnvFile(path: string) {
+  if (!existsSync(path)) {
+    return;
+  }
+
+  const variables = parseEnv(readFileSync(path, "utf8"));
+
+  for (const [key, value] of Object.entries(variables)) {
+    process.env[key] = value;
+  }
+}
 
 async function main() {
   const health = await fetch(`${apiUrl}/api/health`);
