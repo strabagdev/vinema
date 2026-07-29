@@ -8,9 +8,13 @@ import type { Context } from "@/domain/context/context";
 import type { NodeContextRelation } from "@/domain/context/node-context-relation";
 import type { Node } from "@/domain/node/node";
 import type { Workspace } from "@/domain/workspace/workspace";
+import type {
+  SyncMetadataRecord,
+  SyncMutationOutboxRecord,
+} from "@/features/sync/sync-outbox-repository";
 
 export const VINEMA_DB_NAME = "vinema";
-export const VINEMA_DB_VERSION = 5;
+export const VINEMA_DB_VERSION = 6;
 
 export const APP_SETTINGS_STORE = "app_settings";
 export const CONTEXTS_STORE = "contexts";
@@ -18,6 +22,8 @@ export const DEVICES_STORE = "devices";
 export const LEGACY_KEY_VALUE_STORE = "key-value";
 export const NODE_CONTEXT_RELATIONS_STORE = "node_context_relations";
 export const NODES_STORE = "nodes";
+export const SYNC_METADATA_STORE = "sync_metadata";
+export const SYNC_MUTATIONS_STORE = "sync_mutations";
 export const WORKSPACES_STORE = "workspaces";
 
 export interface VinemaDbSchema extends DBSchema {
@@ -61,6 +67,25 @@ export interface VinemaDbSchema extends DBSchema {
     indexes: {
       "by-updated-at": string;
       "by-workspace": string;
+    };
+  };
+  [SYNC_METADATA_STORE]: {
+    key: [string, string];
+    value: SyncMetadataRecord;
+    indexes: {
+      "by-device": string;
+      "by-workspace": string;
+    };
+  };
+  [SYNC_MUTATIONS_STORE]: {
+    key: string;
+    value: SyncMutationOutboxRecord;
+    indexes: {
+      "by-created-at": string;
+      "by-next-at": string;
+      "by-status": string;
+      "by-workspace": string;
+      "by-workspace-and-status": [string, string];
     };
   };
   [WORKSPACES_STORE]: {
@@ -175,6 +200,8 @@ async function ensureVinemaStores(
     NODE_CONTEXT_RELATIONS_STORE,
     ensureNodeContextRelationIndexes,
   );
+  await ensureSyncMutationsStore(db, transaction);
+  ensureSyncMetadataStore(db, transaction);
 }
 
 async function ensureInlineIdStore(
@@ -265,6 +292,92 @@ function ensureNodeContextRelationIndexes(store: UpgradeObjectStore) {
   }
 }
 
+function ensureSyncMutationIndexes(store: UpgradeObjectStore) {
+  if (!store.indexNames.contains("by-workspace")) {
+    store.createIndex("by-workspace", "workspaceId");
+  }
+
+  if (!store.indexNames.contains("by-status")) {
+    store.createIndex("by-status", "status");
+  }
+
+  if (!store.indexNames.contains("by-created-at")) {
+    store.createIndex("by-created-at", "createdAt");
+  }
+
+  if (!store.indexNames.contains("by-workspace-and-status")) {
+    store.createIndex("by-workspace-and-status", ["workspaceId", "status"]);
+  }
+
+  if (!store.indexNames.contains("by-next-at")) {
+    store.createIndex("by-next-at", "nextAttemptAt");
+  }
+}
+
+async function ensureSyncMutationsStore(
+  db: IDBPDatabase<VinemaDbSchema>,
+  transaction: UpgradeTransaction,
+) {
+  if (!db.objectStoreNames.contains(SYNC_MUTATIONS_STORE)) {
+    const store = db.createObjectStore(SYNC_MUTATIONS_STORE, {
+      keyPath: "mutationId",
+    });
+    ensureSyncMutationIndexes(store);
+    return;
+  }
+
+  const existingStore = transaction.objectStore(SYNC_MUTATIONS_STORE);
+
+  if (existingStore.keyPath === "mutationId") {
+    ensureSyncMutationIndexes(existingStore);
+    return;
+  }
+
+  const records = await existingStore.getAll();
+  db.deleteObjectStore(SYNC_MUTATIONS_STORE);
+
+  const recreatedStore = db.createObjectStore(SYNC_MUTATIONS_STORE, {
+    keyPath: "mutationId",
+  });
+  ensureSyncMutationIndexes(recreatedStore);
+
+  for (const record of records) {
+    if (
+      typeof record === "object" &&
+      record !== null &&
+      "mutationId" in record &&
+      typeof record.mutationId === "string"
+    ) {
+      await recreatedStore.put(record);
+    }
+  }
+}
+
+function ensureSyncMetadataStore(
+  db: IDBPDatabase<VinemaDbSchema>,
+  transaction: UpgradeTransaction,
+) {
+  if (!db.objectStoreNames.contains(SYNC_METADATA_STORE)) {
+    const store = db.createObjectStore(SYNC_METADATA_STORE, {
+      keyPath: ["workspaceId", "deviceId"],
+    });
+    ensureSyncMetadataIndexes(store);
+    return;
+  }
+
+  ensureSyncMetadataIndexes(transaction.objectStore(SYNC_METADATA_STORE));
+}
+
+function ensureSyncMetadataIndexes(store: UpgradeObjectStore) {
+  if (!store.indexNames.contains("by-workspace")) {
+    store.createIndex("by-workspace", "workspaceId");
+  }
+
+  if (!store.indexNames.contains("by-device")) {
+    store.createIndex("by-device", "deviceId");
+  }
+}
+
 export class VinemaDatabaseSchemaError extends Error {
   constructor(
     message: string,
@@ -283,6 +396,8 @@ function getMissingVinemaStores(db: IDBPDatabase<VinemaDbSchema>) {
     LEGACY_KEY_VALUE_STORE,
     NODE_CONTEXT_RELATIONS_STORE,
     NODES_STORE,
+    SYNC_METADATA_STORE,
+    SYNC_MUTATIONS_STORE,
     WORKSPACES_STORE,
   ] as const;
 

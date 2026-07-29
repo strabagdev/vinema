@@ -28,9 +28,10 @@ import {
   LEGACY_KEY_VALUE_STORE,
   NODE_CONTEXT_RELATIONS_STORE,
   NODES_STORE,
+  SYNC_METADATA_STORE,
+  SYNC_MUTATIONS_STORE,
   VINEMA_DB_NAME,
   VINEMA_DB_VERSION,
-  VinemaDatabaseSchemaError,
   WORKSPACES_STORE,
   getVinemaDb,
   resetVinemaDbConnectionForTests,
@@ -104,7 +105,7 @@ describe("IndexedDB repositories", () => {
     await deleteDB(VINEMA_DB_NAME);
   });
 
-  it("creates a clean version 5 database with the expected keyPath schema", async () => {
+  it("creates a clean version 6 database with the expected keyPath schema", async () => {
     const db = await getVinemaDb();
     const nodesStore = db.transaction(NODES_STORE).objectStore(NODES_STORE);
     const contextsStore = db
@@ -113,6 +114,12 @@ describe("IndexedDB repositories", () => {
     const relationsStore = db
       .transaction(NODE_CONTEXT_RELATIONS_STORE)
       .objectStore(NODE_CONTEXT_RELATIONS_STORE);
+    const syncMutationsStore = db
+      .transaction(SYNC_MUTATIONS_STORE)
+      .objectStore(SYNC_MUTATIONS_STORE);
+    const syncMetadataStore = db
+      .transaction(SYNC_METADATA_STORE)
+      .objectStore(SYNC_METADATA_STORE);
 
     expect(db.version).toBe(VINEMA_DB_VERSION);
     expect(nodesStore.keyPath).toBe("id");
@@ -128,6 +135,17 @@ describe("IndexedDB repositories", () => {
     expect(relationsStore.indexNames.contains("by-node-and-context")).toBe(true);
     expect(relationsStore.indexNames.contains("by-related-node")).toBe(true);
     expect(relationsStore.indexNames.contains("by-relation-type")).toBe(true);
+    expect(syncMutationsStore.keyPath).toBe("mutationId");
+    expect(syncMutationsStore.indexNames.contains("by-workspace")).toBe(true);
+    expect(syncMutationsStore.indexNames.contains("by-status")).toBe(true);
+    expect(syncMutationsStore.indexNames.contains("by-created-at")).toBe(true);
+    expect(syncMutationsStore.indexNames.contains("by-workspace-and-status")).toBe(
+      true,
+    );
+    expect(syncMutationsStore.indexNames.contains("by-next-at")).toBe(true);
+    expect(syncMetadataStore.keyPath).toEqual(["workspaceId", "deviceId"]);
+    expect(syncMetadataStore.indexNames.contains("by-workspace")).toBe(true);
+    expect(syncMetadataStore.indexNames.contains("by-device")).toBe(true);
     expect(
       db.transaction(WORKSPACES_STORE).objectStore(WORKSPACES_STORE).keyPath,
     ).toBe("id");
@@ -303,7 +321,7 @@ describe("IndexedDB repositories", () => {
     const relationStore = migratedDb
       .transaction(NODE_CONTEXT_RELATIONS_STORE)
       .objectStore(NODE_CONTEXT_RELATIONS_STORE);
-    expect(migratedDb.version).toBe(5);
+    expect(migratedDb.version).toBe(VINEMA_DB_VERSION);
     expect(relationStore.indexNames.contains("by-workspace")).toBe(true);
     expect(relationStore.indexNames.contains("by-related-node")).toBe(true);
     expect(relationStore.indexNames.contains("by-relation-type")).toBe(true);
@@ -386,7 +404,7 @@ describe("IndexedDB repositories", () => {
     await expect(repository.findById(oldNode.id)).resolves.toEqual(oldNode);
 
     const db = await getVinemaDb();
-    expect(db.version).toBe(5);
+    expect(db.version).toBe(VINEMA_DB_VERSION);
     expect(db.transaction(NODES_STORE).objectStore(NODES_STORE).keyPath).toBe("id");
     await expect(repository.listActive()).resolves.toHaveLength(1);
   });
@@ -418,7 +436,7 @@ describe("IndexedDB repositories", () => {
     const relationRepository = new IndexedDbNodeContextRelationRepository();
     const nodeRepository = new IndexedDbNodeRepository();
 
-    expect(db.version).toBe(5);
+    expect(db.version).toBe(VINEMA_DB_VERSION);
     expect(db.objectStoreNames.contains(NODE_CONTEXT_RELATIONS_STORE)).toBe(true);
     await expect(nodeRepository.findById(legacyNode.id)).resolves.toEqual(
       legacyNode,
@@ -476,7 +494,7 @@ describe("IndexedDB repositories", () => {
     expect(relationStore.indexNames.contains("by-relation-type")).toBe(true);
   });
 
-  it("treats a missing relation store in an already-version-5 database as no relations for reads", async () => {
+  it("repairs a missing relation store when upgrading an anomalous version 5 database", async () => {
     const legacyNode = makeNode({
       id: "version-five-without-relations-store",
       content:
@@ -505,8 +523,8 @@ describe("IndexedDB repositories", () => {
 
     expect(suggestions).toHaveLength(1);
     await expect(
-      relationRepository.save(makeRelation({ id: "cannot-write" })),
-    ).rejects.toBeInstanceOf(VinemaDatabaseSchemaError);
+      relationRepository.save(makeRelation({ id: "can-write-after-v6-upgrade" })),
+    ).resolves.toMatchObject({ id: "can-write-after-v6-upgrade" });
   });
 
   it("saves and reloads associations after migrating a version 4 database without the relation store", async () => {

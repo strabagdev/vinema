@@ -186,7 +186,7 @@ migraciones.
 
 ## IndexedDB
 
-Base `vinema`, version 5:
+Base `vinema`, version 6:
 
 - `key-value`: out-of-line, legado VIN-002 para preservar datos existentes.
 - `app_settings`: out-of-line con clave string.
@@ -197,6 +197,11 @@ Base `vinema`, version 5:
 - `node_context_relations`: in-line con `keyPath: "id"` e indices
   `by-workspace`, `by-node`, `by-context`, `by-node-and-context`,
   `by-related-node` y `by-relation-type`.
+- `sync_mutations`: in-line con `keyPath: "mutationId"` e indices
+  `by-workspace`, `by-status`, `by-created-at`, `by-workspace-and-status` y
+  `by-next-at`.
+- `sync_metadata`: in-line con `keyPath: ["workspaceId", "deviceId"]` e
+  indices `by-workspace` y `by-device`.
 
 Los recursos locales creados en IndexedDB se abren con rutas estaticas y query
 params. Las notas usan `/notes/detail?nodeId=<id>` en lugar de segmentos
