@@ -30,13 +30,22 @@ enum SyncOperation {
 }
 
 model User {
-  id          String   @id @default(uuid())
-  email       String   @unique
-  displayName String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                  String    @id @default(uuid())
+  email               String
+  normalizedEmail     String    @unique
+  passwordHash        String
+  displayName         String?
+  personalWorkspaceId String
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  disabledAt          DateTime?
 
   memberships WorkspaceMember[]
+
+  personalWorkspace Workspace @relation("PersonalWorkspace", fields: [personalWorkspaceId], references: [id], onDelete: Restrict)
+
+  @@unique([email])
+  @@index([personalWorkspaceId])
 }
 
 model Workspace {
@@ -49,6 +58,7 @@ model Workspace {
   captures Capture[]
   concepts Concept[]
   changes  SyncChange[]
+  personalUsers User[] @relation("PersonalWorkspace")
 }
 
 model WorkspaceMember {

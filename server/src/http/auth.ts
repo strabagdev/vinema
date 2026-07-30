@@ -1,24 +1,48 @@
 import { timingSafeEqual } from "node:crypto";
 import type { FastifyRequest } from "fastify";
+import { verifyAccessToken, type AuthContext } from "../auth/access-token";
+import type { AuthTokenConfig } from "../auth/auth-config";
+import { AuthError } from "../auth/auth-errors";
 
-export function isAuthorizedRequest(request: FastifyRequest, apiKey: string) {
+export function getAuthContext(
+  request: FastifyRequest,
+  tokenConfig: AuthTokenConfig,
+): AuthContext {
   const authorization = request.headers.authorization;
 
+  if (!authorization) {
+    throw new AuthError("TOKEN_MISSING", "Token requerido.", 401);
+  }
+
+  if (!authorization.startsWith("Bearer ")) {
+    throw new AuthError("TOKEN_INVALID", "Token invalido.", 401);
+  }
+
+  return verifyAccessToken(
+    authorization.slice("Bearer ".length),
+    tokenConfig,
+  );
+}
+
+export function isAuthorizedTestApiKey(request: FastifyRequest, apiKey?: string) {
+  if (process.env.NODE_ENV !== "test" || !apiKey) {
+    return false;
+  }
+
+  const authorization = request.headers.authorization;
   if (!authorization?.startsWith("Bearer ")) {
     return false;
   }
 
-  const token = authorization.slice("Bearer ".length);
-  return timingSafeCompare(token, apiKey);
+  return timingSafeCompare(authorization.slice("Bearer ".length), apiKey);
 }
 
 function timingSafeCompare(first: string, second: string) {
   const firstBuffer = Buffer.from(first);
   const secondBuffer = Buffer.from(second);
 
-  if (firstBuffer.length !== secondBuffer.length) {
-    return false;
-  }
-
-  return timingSafeEqual(firstBuffer, secondBuffer);
+  return (
+    firstBuffer.length === secondBuffer.length &&
+    timingSafeEqual(firstBuffer, secondBuffer)
+  );
 }

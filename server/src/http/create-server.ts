@@ -1,10 +1,22 @@
 import cors from "@fastify/cors";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, {
+  type FastifyInstance,
+  type FastifyReply,
+  type FastifyRequest,
+} from "fastify";
 import {
+  currentSessionResponseSchema,
+  loginRequestSchema,
+  loginResponseSchema,
   pullRequestSchema,
   pushRequestSchema,
+  registerRequestSchema,
+  registerResponseSchema,
 } from "@vinema/sync-contracts";
-import { isAuthorizedRequest } from "./auth";
+import { AuthError, authErrorResponse } from "../auth/auth-errors";
+import type { AuthTokenConfig } from "../auth/auth-config";
+import type { IdentityService } from "../auth/identity-service";
+import { getAuthContext, isAuthorizedTestApiKey } from "./auth";
 import { syncError } from "./errors";
 import { processPull, processPush } from "../sync/sync-service";
 import type { SyncStore } from "../sync/sync-store";
@@ -17,11 +29,15 @@ const DEFAULT_ALLOWED_ORIGINS = [
 
 export function createVinemaApiServer({
   store,
+  identityService,
+  tokenConfig,
   apiKey,
   allowedOrigins = parseAllowedOrigins(process.env.VINEMA_ALLOWED_ORIGINS),
 }: {
   store: SyncStore;
-  apiKey: string;
+  identityService?: IdentityService;
+  tokenConfig?: AuthTokenConfig;
+  apiKey?: string;
   allowedOrigins?: string[];
 }): FastifyInstance {
   const app = Fastify({ logger: process.env.NODE_ENV !== "test" });
@@ -50,13 +66,61 @@ export function createVinemaApiServer({
     });
   });
 
-  app.post("/api/sync/push", async (request, reply) => {
-    if (!isAuthorizedRequest(request, apiKey)) {
+  app.post("/auth/register", async (request, reply) => {
+    if (!identityService) {
+      return reply.status(500).send(authErrorResponse("SERVER_ERROR", "Auth no configurado."));
+    }
+    const parsed = registerRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
       return reply
-        .status(401)
-        .send(syncError("UNAUTHORIZED", "No autorizado."));
+        .status(400)
+        .send(authErrorResponse("VALIDATION_ERROR", "La solicitud no es valida.", parsed.error.issues));
     }
 
+    try {
+      const response = await identityService.register(parsed.data);
+      const parsedResponse = registerResponseSchema.parse(response);
+      return reply.status(201).send(parsedResponse);
+    } catch (error) {
+      return sendAuthError(reply, error);
+    }
+  });
+
+  app.post("/auth/login", async (request, reply) => {
+    if (!identityService) {
+      return reply.status(500).send(authErrorResponse("SERVER_ERROR", "Auth no configurado."));
+    }
+    const parsed = loginRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply
+        .status(400)
+        .send(authErrorResponse("VALIDATION_ERROR", "La solicitud no es valida.", parsed.error.issues));
+    }
+
+    try {
+      const response = await identityService.login(parsed.data);
+      const parsedResponse = loginResponseSchema.parse(response);
+      return reply.send(parsedResponse);
+    } catch (error) {
+      return sendAuthError(reply, error);
+    }
+  });
+
+  app.get("/auth/session", async (request, reply) => {
+    if (!identityService || !tokenConfig) {
+      return reply.status(500).send(authErrorResponse("SERVER_ERROR", "Auth no configurado."));
+    }
+    try {
+      const authContext = getAuthContext(request, tokenConfig);
+      const response = await identityService.getCurrentSession(authContext);
+      const parsedResponse = currentSessionResponseSchema.parse(response);
+      return reply.send(parsedResponse);
+    } catch (error) {
+      return sendAuthError(reply, error);
+    }
+  });
+
+  app.post("/api/sync/push", async (request, reply) => {
     const parsed = pushRequestSchema.safeParse(request.body);
 
     if (!parsed.success) {
@@ -69,17 +133,27 @@ export function createVinemaApiServer({
       );
     }
 
+    const authContext = authorizeSyncRequest({
+      request,
+      workspaceId: parsed.data.workspaceId,
+      tokenConfig,
+      apiKey,
+    });
+    if (authContext instanceof AuthError) {
+      return sendAuthError(reply, authContext);
+    }
+
+    if (parsed.data.workspaceId !== authContext.workspaceId) {
+      return reply
+        .status(403)
+        .send(authErrorResponse("WORKSPACE_FORBIDDEN", "Workspace no permitido."));
+    }
+
     const response = await processPush(store, parsed.data);
     return reply.send(response);
   });
 
   app.get("/api/sync/pull", async (request, reply) => {
-    if (!isAuthorizedRequest(request, apiKey)) {
-      return reply
-        .status(401)
-        .send(syncError("UNAUTHORIZED", "No autorizado."));
-    }
-
     const parsed = pullRequestSchema.safeParse(request.query);
 
     if (!parsed.success) {
@@ -90,6 +164,22 @@ export function createVinemaApiServer({
           parsed.error.issues,
         ),
       );
+    }
+
+    const authContext = authorizeSyncRequest({
+      request,
+      workspaceId: parsed.data.workspaceId,
+      tokenConfig,
+      apiKey,
+    });
+    if (authContext instanceof AuthError) {
+      return sendAuthError(reply, authContext);
+    }
+
+    if (parsed.data.workspaceId !== authContext.workspaceId) {
+      return reply
+        .status(403)
+        .send(authErrorResponse("WORKSPACE_FORBIDDEN", "Workspace no permitido."));
     }
 
     if (!(await store.workspaceExists(parsed.data.workspaceId))) {
@@ -109,6 +199,58 @@ export function createVinemaApiServer({
   });
 
   return app;
+}
+
+function authorizeSyncRequest({
+  request,
+  workspaceId,
+  tokenConfig,
+  apiKey,
+}: {
+  request: FastifyRequest;
+  workspaceId: string;
+  tokenConfig?: AuthTokenConfig;
+  apiKey?: string;
+}) {
+  if (isAuthorizedTestApiKey(request, apiKey)) {
+    return {
+      userId: "test-user",
+      workspaceId,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      claims: {
+        sub: "test-user",
+        workspaceId,
+        iat: 0,
+        exp: 9_999_999_999,
+        iss: "test",
+        aud: "test",
+      },
+    };
+  }
+
+  if (!tokenConfig) {
+    return new AuthError("TOKEN_INVALID", "Token invalido.", 401);
+  }
+
+  try {
+    return getAuthContext(request, tokenConfig);
+  } catch (error) {
+    return error instanceof AuthError
+      ? error
+      : new AuthError("TOKEN_INVALID", "Token invalido.", 401);
+  }
+}
+
+function sendAuthError(reply: FastifyReply, error: unknown) {
+  if (error instanceof AuthError) {
+    return reply
+      .status(error.statusCode)
+      .send(authErrorResponse(error.code, error.message, error.details));
+  }
+
+  return reply
+    .status(500)
+    .send(authErrorResponse("SERVER_ERROR", "Error interno del servidor."));
 }
 
 function parseAllowedOrigins(value: string | undefined) {

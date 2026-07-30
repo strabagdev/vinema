@@ -10,6 +10,7 @@ import {
   type PushResponse,
   type SyncError,
 } from "@vinema/sync-contracts";
+import type { AccessTokenProvider } from "@/features/auth/access-token-provider";
 
 export const DEFAULT_SYNC_CLIENT_TIMEOUT_MS = 10_000;
 
@@ -62,6 +63,7 @@ export type SyncClient = {
 export type SyncClientConfig = {
   baseUrl: string;
   accessToken?: string | null;
+  accessTokenProvider?: AccessTokenProvider;
   timeoutMs?: number;
   fetchFn?: typeof fetch;
 };
@@ -84,6 +86,7 @@ type RequestOptions = RequestInit & {
 export function createSyncClient({
   baseUrl,
   accessToken,
+  accessTokenProvider,
   timeoutMs = DEFAULT_SYNC_CLIENT_TIMEOUT_MS,
   fetchFn = fetch,
 }: SyncClientConfig): SyncClient {
@@ -103,7 +106,7 @@ export function createSyncClient({
     },
 
     async push(input) {
-      assertToken(accessToken);
+      const token = resolveAccessToken(accessToken, accessTokenProvider);
       const { signal, ...requestBody } = input;
       const parsedInput = pushRequestSchema.safeParse(requestBody);
 
@@ -122,7 +125,7 @@ export function createSyncClient({
         signal,
         init: {
           method: "POST",
-          headers: authorizedJsonHeaders(accessToken),
+          headers: authorizedJsonHeaders(token),
           body: JSON.stringify(parsedInput.data),
         },
       });
@@ -137,7 +140,7 @@ export function createSyncClient({
     },
 
     async pull(input) {
-      assertToken(accessToken);
+      const token = resolveAccessToken(accessToken, accessTokenProvider);
       const { signal, ...queryInput } = input;
       const parsedInput = pullRequestSchema.safeParse(queryInput);
 
@@ -157,7 +160,7 @@ export function createSyncClient({
         signal,
         init: {
           method: "GET",
-          headers: authorizationHeaders(accessToken),
+          headers: authorizationHeaders(token),
         },
       });
       const body = await readJson(response);
@@ -334,6 +337,15 @@ function invalidResponse(details?: unknown, cause?: unknown) {
     details,
     cause,
   });
+}
+
+function resolveAccessToken(
+  accessToken: string | null | undefined,
+  accessTokenProvider: AccessTokenProvider | undefined,
+) {
+  const token = accessTokenProvider?.getAccessToken() ?? accessToken;
+  assertToken(token);
+  return token;
 }
 
 function assertToken(token: string | null | undefined): asserts token is string {

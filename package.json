@@ -33,6 +33,7 @@
     "db:seed": "prisma db seed",
     "sync:test-api": "tsx scripts/test-sync-api.ts",
     "sync:test-e2e": "node scripts/test-sync-e2e.mjs",
+    "auth:test-api": "npm run sync:test-api",
     "test:sync-api": "npm run sync:test-api",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"

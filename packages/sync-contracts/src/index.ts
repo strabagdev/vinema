@@ -4,6 +4,8 @@ export const MAX_CAPTURE_CONTENT_LENGTH = 50_000;
 export const MAX_CONCEPT_LABEL_LENGTH = 200;
 export const MAX_PUSH_MUTATIONS = 100;
 export const MAX_PULL_LIMIT = 500;
+export const MIN_AUTH_PASSWORD_LENGTH = 8;
+export const MAX_AUTH_PASSWORD_LENGTH = 512;
 
 const uuidSchema = z.uuid();
 const isoDateSchema = z.iso.datetime({ offset: true });
@@ -172,6 +174,62 @@ export const syncErrorSchema = z.object({
   }),
 });
 
+export const authenticatedUserSchema = z.object({
+  id: uuidSchema,
+  email: z.email(),
+  displayName: z.string().min(1).max(200).nullable(),
+});
+
+export const authenticatedSessionSchema = z.object({
+  user: authenticatedUserSchema,
+  workspaceId: uuidSchema,
+  accessToken: z.string().min(1),
+  accessTokenExpiresAt: isoDateSchema,
+});
+
+export const registerRequestSchema = z.object({
+  email: z.email(),
+  password: z.string().min(MIN_AUTH_PASSWORD_LENGTH).max(MAX_AUTH_PASSWORD_LENGTH),
+  displayName: z.string().trim().min(1).max(200).optional(),
+});
+
+export const registerResponseSchema = authenticatedSessionSchema;
+
+export const loginRequestSchema = z.object({
+  email: z.email(),
+  password: z.string().min(1).max(MAX_AUTH_PASSWORD_LENGTH),
+});
+
+export const loginResponseSchema = authenticatedSessionSchema;
+
+export const currentSessionResponseSchema = z.object({
+  user: authenticatedUserSchema,
+  workspaceId: uuidSchema,
+  tokenExpiresAt: isoDateSchema,
+});
+
+export const authErrorCodeSchema = z.enum([
+  "VALIDATION_ERROR",
+  "EMAIL_ALREADY_EXISTS",
+  "INVALID_CREDENTIALS",
+  "USER_DISABLED",
+  "TOKEN_MISSING",
+  "TOKEN_INVALID",
+  "TOKEN_EXPIRED",
+  "WORKSPACE_FORBIDDEN",
+  "NETWORK_ERROR",
+  "SERVER_ERROR",
+  "UNEXPECTED_ERROR",
+]);
+
+export const authErrorResponseSchema = z.object({
+  error: z.object({
+    code: authErrorCodeSchema,
+    message: z.string(),
+    details: z.array(z.unknown()).optional(),
+  }),
+});
+
 export type CaptureEntity = z.infer<typeof captureEntitySchema>;
 export type ConceptEntity = z.infer<typeof conceptEntitySchema>;
 export type CaptureConceptEntity = z.infer<typeof captureConceptEntitySchema>;
@@ -183,3 +241,12 @@ export type PullRequest = z.infer<typeof pullRequestSchema>;
 export type PullResponse = z.infer<typeof pullResponseSchema>;
 export type SyncConflict = z.infer<typeof syncConflictSchema>;
 export type SyncError = z.infer<typeof syncErrorSchema>;
+export type AuthenticatedUser = z.infer<typeof authenticatedUserSchema>;
+export type AuthenticatedSession = z.infer<typeof authenticatedSessionSchema>;
+export type RegisterRequest = z.infer<typeof registerRequestSchema>;
+export type RegisterResponse = z.infer<typeof registerResponseSchema>;
+export type LoginRequest = z.infer<typeof loginRequestSchema>;
+export type LoginResponse = z.infer<typeof loginResponseSchema>;
+export type CurrentSessionResponse = z.infer<typeof currentSessionResponseSchema>;
+export type AuthErrorCode = z.infer<typeof authErrorCodeSchema>;
+export type AuthErrorResponse = z.infer<typeof authErrorResponseSchema>;

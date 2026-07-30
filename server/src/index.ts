@@ -1,17 +1,21 @@
 import { createVinemaApiServer } from "./http/create-server";
 import { prisma } from "./db/prisma";
 import { PrismaSyncStore } from "./db/prisma-sync-store";
+import { loadAuthTokenConfig } from "./auth/auth-config";
+import { createIdentityService } from "./auth/identity-service";
+import { PrismaIdentityRepository } from "./auth/identity-repository";
 
 const port = Number(process.env.PORT ?? 8000);
-const apiKey = process.env.VINEMA_SYNC_API_KEY;
-
-if (!apiKey) {
-  throw new Error("VINEMA_SYNC_API_KEY is required to start Vinema API.");
-}
+const tokenConfig = loadAuthTokenConfig(process.env);
+const identityService = createIdentityService({
+  repository: new PrismaIdentityRepository(prisma),
+  tokenConfig,
+});
 
 const app = createVinemaApiServer({
   store: new PrismaSyncStore(prisma),
-  apiKey,
+  identityService,
+  tokenConfig,
 });
 
 app.listen({ host: "0.0.0.0", port }).catch((error) => {

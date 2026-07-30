@@ -1,56 +1,56 @@
 import { prisma } from "../src/db/prisma";
+import { normalizeEmail } from "../src/auth/email";
+import { hashPassword } from "../src/auth/password";
 
 async function main() {
   const email = process.env.VINEMA_SEED_EMAIL;
+  const password = process.env.VINEMA_SEED_PASSWORD;
   const workspaceName = process.env.VINEMA_SEED_WORKSPACE_NAME ?? "Personal";
 
-  if (!email) {
-    throw new Error("VINEMA_SEED_EMAIL is required for db seed.");
+  if (!email || !password) {
+    throw new Error("VINEMA_SEED_EMAIL and VINEMA_SEED_PASSWORD are required for db seed.");
   }
 
-  const user = await prisma.user.upsert({
-    where: { email },
-    create: { email },
-    update: {},
-  });
-  const existingMembership = await prisma.workspaceMember.findFirst({
-    where: { userId: user.id, role: "OWNER" },
-    include: { workspace: true },
-  });
-  const workspace =
-    existingMembership?.workspace ??
-    (await prisma.workspace.create({
+  const normalizedEmail = normalizeEmail(email);
+  const passwordHash = await hashPassword(password);
+
+  const result = await prisma.$transaction(async (tx) => {
+    const existingUser = await tx.user.findUnique({ where: { normalizedEmail } });
+    if (existingUser) {
+      return {
+        user: existingUser,
+        workspace: await tx.workspace.findUniqueOrThrow({
+          where: { id: existingUser.personalWorkspaceId },
+        }),
+      };
+    }
+
+    const workspace = await tx.workspace.create({
+      data: { name: workspaceName },
+    });
+    const user = await tx.user.create({
       data: {
-        name: workspaceName,
-        members: {
+        email: email.trim(),
+        normalizedEmail,
+        passwordHash,
+        personalWorkspaceId: workspace.id,
+        memberships: {
           create: {
-            userId: user.id,
+            workspaceId: workspace.id,
             role: "OWNER",
           },
         },
       },
-    }));
+    });
 
-  await prisma.workspaceMember.upsert({
-    where: {
-      workspaceId_userId: {
-        workspaceId: workspace.id,
-        userId: user.id,
-      },
-    },
-    create: {
-      workspaceId: workspace.id,
-      userId: user.id,
-      role: "OWNER",
-    },
-    update: { role: "OWNER" },
+    return { user, workspace };
   });
 
   console.log(
     JSON.stringify({
-      userId: user.id,
-      workspaceId: workspace.id,
-      workspaceName: workspace.name,
+      userId: result.user.id,
+      workspaceId: result.workspace.id,
+      workspaceName: result.workspace.name,
     }),
   );
 }

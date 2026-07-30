@@ -45,10 +45,17 @@ describe("Vinema sync API", () => {
     });
 
     await expect(
-      app.inject({ method: "POST", url: "/api/sync/push", payload: {} }),
+      app.inject({
+        method: "POST",
+        url: "/api/sync/push",
+        payload: { workspaceId, deviceId, mutations: [] },
+      }),
     ).resolves.toMatchObject({ statusCode: 401 });
     await expect(
-      app.inject({ method: "GET", url: "/api/sync/pull" }),
+      app.inject({
+        method: "GET",
+        url: `/api/sync/pull?workspaceId=${workspaceId}&cursor=0&limit=1`,
+      }),
     ).resolves.toMatchObject({ statusCode: 401 });
     await expect(
       app.inject({
