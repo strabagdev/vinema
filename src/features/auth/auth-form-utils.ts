@@ -44,6 +44,8 @@ export function getAuthFormError(error: unknown) {
       return "Email o contrasena incorrectos.";
     case "EMAIL_ALREADY_EXISTS":
       return "Ese email ya esta registrado.";
+    case "DEVICE_REVOKED":
+      return "Este dispositivo ya no tiene acceso. Vuelve a iniciar sesion desde un dispositivo autorizado.";
     case "NETWORK_ERROR":
       return "No se pudo conectar con la API.";
     case "SERVER_ERROR":

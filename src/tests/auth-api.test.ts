@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import { createVinemaApiServer } from "../../server/src/http/create-server";
 import { loadAuthTokenConfig } from "../../server/src/auth/auth-config";
 import { issueAccessToken } from "../../server/src/auth/access-token";
+import { createDeviceService } from "../../server/src/auth/device-service";
 import { createIdentityService } from "../../server/src/auth/identity-service";
 import { hashPassword } from "../../server/src/auth/password";
+import { InMemoryDeviceRepository } from "../../server/src/testing/in-memory-device-repository";
 import { InMemoryIdentityRepository } from "../../server/src/testing/in-memory-identity-repository";
 import { InMemorySyncStore } from "../../server/src/testing/in-memory-sync-store";
 
@@ -16,7 +18,7 @@ const tokenConfig = loadAuthTokenConfig({
 });
 
 describe("Vinema auth API", () => {
-  it("registers with normalized email, hashes password and creates a personal workspace", async () => {
+  it("registers with normalized email, hashes password, creates workspace and device", async () => {
     const setup = createSetup();
     const response = await register(setup.app, "User@Example.Test", "password-123");
 
@@ -24,6 +26,7 @@ describe("Vinema auth API", () => {
     expect(response.json()).toMatchObject({
       user: { email: "User@Example.Test", displayName: "Test User" },
       workspaceId: expect.any(String),
+      deviceId: expect.any(String),
       accessToken: expect.any(String),
       accessTokenExpiresAt: expect.any(String),
     });
@@ -35,6 +38,13 @@ describe("Vinema auth API", () => {
     expect(stored?.passwordHash).not.toBe("password-123");
     expect(stored?.personalWorkspaceId).toBe(response.json().workspaceId);
     expect(setup.sync.workspaces.has(response.json().workspaceId)).toBe(true);
+    expect([...setup.devices.devices.values()][0]).toMatchObject({
+      id: response.json().deviceId,
+      userId: response.json().user.id,
+      clientDeviceId: "register-device",
+      appType: "WEB",
+      revokedAt: null,
+    });
   });
 
   it("rejects duplicate email, invalid password and invalid credentials safely", async () => {
@@ -46,7 +56,11 @@ describe("Vinema auth API", () => {
     const invalid = await setup.app.inject({
       method: "POST",
       url: "/auth/login",
-      payload: { email: "missing@example.test", password: "bad-password" },
+      payload: {
+        email: "missing@example.test",
+        password: "bad-password",
+        device: devicePayload("missing-device"),
+      },
     });
 
     expect(duplicate.statusCode).toBe(409);
@@ -57,25 +71,38 @@ describe("Vinema auth API", () => {
     expect(invalid.body).not.toContain("passwordHash");
   });
 
-  it("logs in case-insensitively, rejects disabled users and returns current session", async () => {
+  it("logs in case-insensitively, rejects disabled users and returns current session/device", async () => {
     const setup = createSetup();
     const registered = await register(setup.app, "Case@Example.Test", "password-123");
     const login = await setup.app.inject({
       method: "POST",
       url: "/auth/login",
-      payload: { email: "case@example.test", password: "password-123" },
+      payload: {
+        email: "case@example.test",
+        password: "password-123",
+        device: devicePayload("login-device"),
+      },
     });
     const session = await setup.app.inject({
       method: "GET",
       url: "/auth/session",
-      headers: { Authorization: `Bearer ${login.json().accessToken}` },
+      headers: authHeaders(login.json().accessToken),
+    });
+    const currentDevice = await setup.app.inject({
+      method: "GET",
+      url: "/auth/device",
+      headers: authHeaders(login.json().accessToken),
     });
     const user = await setup.identity.findUserByNormalizedEmail("case@example.test");
     setup.identity.disableUser(user!.id);
     const disabled = await setup.app.inject({
       method: "POST",
       url: "/auth/login",
-      payload: { email: "case@example.test", password: "password-123" },
+      payload: {
+        email: "case@example.test",
+        password: "password-123",
+        device: devicePayload("disabled-device"),
+      },
     });
 
     expect(login.statusCode).toBe(200);
@@ -83,7 +110,14 @@ describe("Vinema auth API", () => {
     expect(session.statusCode).toBe(200);
     expect(session.json()).toMatchObject({
       workspaceId: registered.json().workspaceId,
+      deviceId: login.json().deviceId,
       tokenExpiresAt: expect.any(String),
+    });
+    expect(currentDevice.statusCode).toBe(200);
+    expect(currentDevice.json().device).toMatchObject({
+      id: login.json().deviceId,
+      clientDeviceId: "login-device",
+      appType: "WEB",
     });
     expect(disabled.statusCode).toBe(401);
     expect(disabled.json().error.code).toBe("USER_DISABLED");
@@ -105,19 +139,71 @@ describe("Vinema auth API", () => {
         Authorization: `Bearer ${issueAccessToken({
           userId: registered.json().user.id,
           workspaceId: registered.json().workspaceId,
+          deviceId: registered.json().deviceId,
           config: { ...tokenConfig, accessTokenTtlSeconds: 1 },
           now: new Date("2026-07-30T12:00:00.000Z"),
         }).accessToken}`,
       },
     });
-    const wrongIssuer = tokenWith({ issuer: "wrong", workspaceId: registered.json().workspaceId, userId: registered.json().user.id });
-    const wrongAudience = tokenWith({ audience: "wrong", workspaceId: registered.json().workspaceId, userId: registered.json().user.id });
+    const wrongIssuer = tokenWith({
+      issuer: "wrong",
+      workspaceId: registered.json().workspaceId,
+      userId: registered.json().user.id,
+      deviceId: registered.json().deviceId,
+    });
+    const wrongAudience = tokenWith({
+      audience: "wrong",
+      workspaceId: registered.json().workspaceId,
+      userId: registered.json().user.id,
+      deviceId: registered.json().deviceId,
+    });
 
     expect(missing.json().error.code).toBe("TOKEN_MISSING");
     expect(invalid.json().error.code).toBe("TOKEN_INVALID");
     expect(expired.json().error.code).toBe("TOKEN_EXPIRED");
     await expectSessionRejected(setup.app, wrongIssuer, "TOKEN_INVALID");
     await expectSessionRejected(setup.app, wrongAudience, "TOKEN_INVALID");
+  });
+
+  it("reuses devices per user, allows same clientDeviceId for other users and rejects revoked devices", async () => {
+    const setup = createSetup();
+    const first = await register(setup.app, "device-a@example.test", "password-123", "shared-client");
+    const secondLogin = await setup.app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: {
+        email: "device-a@example.test",
+        password: "password-123",
+        device: devicePayload("shared-client", { name: "Renamed Device" }),
+      },
+    });
+    const otherUser = await register(setup.app, "device-b@example.test", "password-123", "shared-client");
+
+    expect(secondLogin.statusCode).toBe(200);
+    expect(secondLogin.json().deviceId).toBe(first.json().deviceId);
+    expect(setup.devices.devices.size).toBe(2);
+    expect(otherUser.json().deviceId).not.toBe(first.json().deviceId);
+
+    setup.devices.revoke(first.json().deviceId);
+    const revokedLogin = await setup.app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: {
+        email: "device-a@example.test",
+        password: "password-123",
+        device: devicePayload("shared-client"),
+      },
+    });
+    const revokedDevice = await setup.app.inject({
+      method: "GET",
+      url: "/auth/device",
+      headers: authHeaders(first.json().accessToken),
+    });
+
+    expect(revokedLogin.statusCode).toBe(403);
+    expect(revokedLogin.json().error.code).toBe("DEVICE_REVOKED");
+    expect(revokedDevice.statusCode).toBe(403);
+    expect(revokedDevice.json().error.code).toBe("DEVICE_REVOKED");
   });
 
   it("protects sync with real auth and forbids cross-user workspaces", async () => {
@@ -185,8 +271,11 @@ describe("Vinema auth API", () => {
 function createSetup() {
   const sync = new InMemorySyncStore();
   const identity = new InMemoryIdentityRepository();
+  const devices = new InMemoryDeviceRepository();
+  const deviceService = createDeviceService({ repository: devices });
   const identityService = createIdentityService({
     repository: identity,
+    deviceService,
     tokenConfig,
     onWorkspaceCreated: (workspaceId) => {
       sync.workspaces.add(workspaceId);
@@ -198,15 +287,31 @@ function createSetup() {
     tokenConfig,
   });
 
-  return { app, identity, sync };
+  return { app, identity, sync, devices };
 }
 
-function register(app: ReturnType<typeof createVinemaApiServer>, email: string, password: string) {
+function register(
+  app: ReturnType<typeof createVinemaApiServer>,
+  email: string,
+  password: string,
+  clientDeviceId = "register-device",
+) {
   return app.inject({
     method: "POST",
     url: "/auth/register",
-    payload: { email, password, displayName: "Test User" },
+    payload: { email, password, displayName: "Test User", device: devicePayload(clientDeviceId) },
   });
+}
+
+function devicePayload(clientDeviceId: string, overrides: Record<string, unknown> = {}) {
+  return {
+    clientDeviceId,
+    name: "Vinema Web",
+    platform: "web",
+    appType: "WEB",
+    appVersion: "test",
+    ...overrides,
+  };
 }
 
 function authHeaders(accessToken: string) {
@@ -216,17 +321,20 @@ function authHeaders(accessToken: string) {
 function tokenWith({
   userId,
   workspaceId,
+  deviceId,
   issuer = tokenConfig.issuer,
   audience = tokenConfig.audience,
 }: {
   userId: string;
   workspaceId: string;
+  deviceId: string;
   issuer?: string;
   audience?: string;
 }) {
   return issueAccessToken({
     userId,
     workspaceId,
+    deviceId,
     config: { ...tokenConfig, issuer, audience },
   }).accessToken;
 }

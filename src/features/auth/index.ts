@@ -6,4 +6,5 @@ export * from "@/features/auth/auth-provider";
 export * from "@/features/auth/auth-service";
 export * from "@/features/auth/auth-state-engine";
 export * from "@/features/auth/auth-sync-state-bridge";
+export * from "@/features/auth/device-identity-provider";
 export * from "@/features/auth/public-api-url";

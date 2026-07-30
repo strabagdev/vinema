@@ -183,14 +183,59 @@ export const authenticatedUserSchema = z.object({
 export const authenticatedSessionSchema = z.object({
   user: authenticatedUserSchema,
   workspaceId: uuidSchema,
+  deviceId: uuidSchema,
   accessToken: z.string().min(1),
   accessTokenExpiresAt: isoDateSchema,
+});
+
+export const devicePlatformSchema = z.enum([
+  "windows",
+  "macos",
+  "linux",
+  "android",
+  "ios",
+  "web",
+  "unknown",
+]);
+
+export const deviceAppTypeSchema = z.enum(["WEB", "PWA", "TAURI", "UNKNOWN"]);
+
+export const registerDeviceRequestSchema = z.object({
+  clientDeviceId: z.string().trim().min(1).max(200),
+  name: z.string().trim().min(1).max(200),
+  platform: devicePlatformSchema,
+  appType: deviceAppTypeSchema,
+  appVersion: z.string().trim().min(1).max(100).optional(),
+});
+
+export const deviceSummarySchema = z.object({
+  id: uuidSchema,
+  userId: uuidSchema,
+  clientDeviceId: z.string().min(1).max(200),
+  name: z.string().min(1).max(200),
+  platform: devicePlatformSchema,
+  appType: deviceAppTypeSchema,
+  appVersion: z.string().min(1).max(100).nullable(),
+  createdAt: isoDateSchema,
+  updatedAt: isoDateSchema,
+  lastSeenAt: isoDateSchema,
+  revokedAt: nullableIsoDateSchema,
+});
+
+export const registerDeviceResponseSchema = z.object({
+  device: deviceSummarySchema,
+  created: z.boolean(),
+});
+
+export const currentDeviceResponseSchema = z.object({
+  device: deviceSummarySchema,
 });
 
 export const registerRequestSchema = z.object({
   email: z.email(),
   password: z.string().min(MIN_AUTH_PASSWORD_LENGTH).max(MAX_AUTH_PASSWORD_LENGTH),
   displayName: z.string().trim().min(1).max(200).optional(),
+  device: registerDeviceRequestSchema,
 });
 
 export const registerResponseSchema = authenticatedSessionSchema;
@@ -198,6 +243,7 @@ export const registerResponseSchema = authenticatedSessionSchema;
 export const loginRequestSchema = z.object({
   email: z.email(),
   password: z.string().min(1).max(MAX_AUTH_PASSWORD_LENGTH),
+  device: registerDeviceRequestSchema,
 });
 
 export const loginResponseSchema = authenticatedSessionSchema;
@@ -205,6 +251,7 @@ export const loginResponseSchema = authenticatedSessionSchema;
 export const currentSessionResponseSchema = z.object({
   user: authenticatedUserSchema,
   workspaceId: uuidSchema,
+  deviceId: uuidSchema,
   tokenExpiresAt: isoDateSchema,
 });
 
@@ -216,6 +263,7 @@ export const authErrorCodeSchema = z.enum([
   "TOKEN_MISSING",
   "TOKEN_INVALID",
   "TOKEN_EXPIRED",
+  "DEVICE_REVOKED",
   "WORKSPACE_FORBIDDEN",
   "NETWORK_ERROR",
   "SERVER_ERROR",
@@ -243,6 +291,12 @@ export type SyncConflict = z.infer<typeof syncConflictSchema>;
 export type SyncError = z.infer<typeof syncErrorSchema>;
 export type AuthenticatedUser = z.infer<typeof authenticatedUserSchema>;
 export type AuthenticatedSession = z.infer<typeof authenticatedSessionSchema>;
+export type DevicePlatform = z.infer<typeof devicePlatformSchema>;
+export type DeviceAppType = z.infer<typeof deviceAppTypeSchema>;
+export type RegisterDeviceRequest = z.infer<typeof registerDeviceRequestSchema>;
+export type RegisterDeviceResponse = z.infer<typeof registerDeviceResponseSchema>;
+export type CurrentDeviceResponse = z.infer<typeof currentDeviceResponseSchema>;
+export type DeviceSummary = z.infer<typeof deviceSummarySchema>;
 export type RegisterRequest = z.infer<typeof registerRequestSchema>;
 export type RegisterResponse = z.infer<typeof registerResponseSchema>;
 export type LoginRequest = z.infer<typeof loginRequestSchema>;

@@ -2,8 +2,6 @@
 
 import type {
   AuthenticatedUser,
-  LoginRequest,
-  RegisterRequest,
 } from "@vinema/sync-contracts";
 import React, {
   createContext,
@@ -16,6 +14,8 @@ import React, {
 import { createAuthClient } from "@/features/auth/auth-client";
 import {
   createAuthService,
+  type AuthLoginInput,
+  type AuthRegisterInput,
   type AuthService,
 } from "@/features/auth/auth-service";
 import {
@@ -25,6 +25,7 @@ import {
   type AuthStateEngine,
 } from "@/features/auth/auth-state-engine";
 import { createAuthSyncStateBridge } from "@/features/auth/auth-sync-state-bridge";
+import { createDeviceIdentityProvider } from "@/features/auth/device-identity-provider";
 import {
   getPublicApiUrl,
   PublicApiUrlError,
@@ -39,8 +40,8 @@ export type AuthContextValue = {
   isAuthenticated: boolean;
   isLoading: boolean;
   error: AuthState["error"];
-  register(input: RegisterRequest): Promise<void>;
-  login(input: LoginRequest): Promise<void>;
+  register(input: AuthRegisterInput): Promise<void>;
+  login(input: AuthLoginInput): Promise<void>;
   logout(): void;
 };
 
@@ -72,7 +73,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [runtime]);
 
   const register = useCallback(
-    async (input: RegisterRequest) => {
+    async (input: AuthRegisterInput) => {
       assertAuthConfigured(runtime);
       await runtime.service.register(input);
       setAccessToken(runtime.service.getAccessToken());
@@ -81,7 +82,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const login = useCallback(
-    async (input: LoginRequest) => {
+    async (input: AuthLoginInput) => {
       assertAuthConfigured(runtime);
       await runtime.service.login(input);
       setAccessToken(runtime.service.getAccessToken());
@@ -140,6 +141,7 @@ function createAuthRuntime(): AuthRuntime {
   const service = createAuthService({
     authClient: createAuthClient({ baseUrl }),
     authStateEngine,
+    deviceIdentityProvider: createDeviceIdentityProvider(),
     logger: process.env.NODE_ENV === "development" ? console : undefined,
   });
 

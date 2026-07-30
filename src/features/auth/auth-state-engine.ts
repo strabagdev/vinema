@@ -17,6 +17,7 @@ export type AuthState = {
   status: AuthStatus;
   user: AuthenticatedUser | null;
   workspaceId: string | null;
+  deviceId: string | null;
   accessTokenExpiresAt: string | null;
   lastAuthenticatedAt: string | null;
   error: AuthStateError | null;
@@ -29,6 +30,7 @@ export type AuthEvent =
       at: string;
       user: AuthenticatedUser;
       workspaceId: string;
+      deviceId: string;
       accessTokenExpiresAt: string;
     }
   | { type: "AUTH_FAILED"; at: string; code?: string; message: string }
@@ -46,6 +48,7 @@ export const initialAuthState: AuthState = {
   status: "UNKNOWN",
   user: null,
   workspaceId: null,
+  deviceId: null,
   accessTokenExpiresAt: null,
   lastAuthenticatedAt: null,
   error: null,
@@ -60,6 +63,7 @@ export function reduceAuthState(state: AuthState, event: AuthEvent): AuthState {
         status: "AUTHENTICATED",
         user: { ...event.user },
         workspaceId: event.workspaceId,
+        deviceId: event.deviceId,
         accessTokenExpiresAt: event.accessTokenExpiresAt,
         lastAuthenticatedAt: event.at,
         error: null,
@@ -79,6 +83,7 @@ export function reduceAuthState(state: AuthState, event: AuthEvent): AuthState {
         status: "UNAUTHENTICATED",
         user: null,
         workspaceId: null,
+        deviceId: null,
         accessTokenExpiresAt: null,
         lastAuthenticatedAt: state.lastAuthenticatedAt,
         error: null,

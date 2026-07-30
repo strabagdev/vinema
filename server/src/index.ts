@@ -2,13 +2,19 @@ import { createVinemaApiServer } from "./http/create-server";
 import { prisma } from "./db/prisma";
 import { PrismaSyncStore } from "./db/prisma-sync-store";
 import { loadAuthTokenConfig } from "./auth/auth-config";
+import { PrismaDeviceRepository } from "./auth/device-repository";
+import { createDeviceService } from "./auth/device-service";
 import { createIdentityService } from "./auth/identity-service";
 import { PrismaIdentityRepository } from "./auth/identity-repository";
 
 const port = Number(process.env.PORT ?? 8000);
 const tokenConfig = loadAuthTokenConfig(process.env);
+const deviceService = createDeviceService({
+  repository: new PrismaDeviceRepository(prisma),
+});
 const identityService = createIdentityService({
   repository: new PrismaIdentityRepository(prisma),
+  deviceService,
   tokenConfig,
 });
 

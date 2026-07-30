@@ -27,10 +27,12 @@ const user = {
   displayName: "User",
 };
 const workspaceId = "22222222-2222-4222-8222-222222222222";
+const deviceId = "33333333-3333-4333-8333-333333333333";
 const accessTokenExpiresAt = "2026-07-30T12:15:00.000Z";
 const session = {
   user,
   workspaceId,
+  deviceId,
   accessToken: "access-token",
   accessTokenExpiresAt,
 };
@@ -272,6 +274,9 @@ describe("minimal authentication UI", () => {
     expect(
       getAuthFormError(new AuthClientError("EMAIL_ALREADY_EXISTS", "Exists", 409)),
     ).toBe("Ese email ya esta registrado.");
+    expect(
+      getAuthFormError(new AuthClientError("DEVICE_REVOKED", "Revoked", 403)),
+    ).toContain("Este dispositivo ya no tiene acceso");
   });
 
   async function render(element: React.ReactNode) {

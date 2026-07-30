@@ -11,6 +11,7 @@ import {
   reduceAuthState,
 } from "@/features/auth/auth-state-engine";
 import { createAuthSyncStateBridge } from "@/features/auth/auth-sync-state-bridge";
+import type { DeviceIdentityProvider } from "@/features/auth/device-identity-provider";
 import { createSyncStateEngine } from "@/features/sync/sync-state-engine";
 
 const user = {
@@ -19,12 +20,33 @@ const user = {
   displayName: "User",
 };
 const workspaceId = "22222222-2222-4222-8222-222222222222";
+const deviceId = "33333333-3333-4333-8333-333333333333";
 const accessTokenExpiresAt = "2026-07-30T12:15:00.000Z";
 const session = {
   user,
   workspaceId,
+  deviceId,
   accessToken: "access-token",
   accessTokenExpiresAt,
+};
+const deviceMetadata = {
+  clientDeviceId: "local-device",
+  name: "Vinema Web",
+  platform: "web" as const,
+  appType: "WEB" as const,
+  appVersion: "test",
+};
+const currentDevice = {
+  device: {
+    id: deviceId,
+    userId: user.id,
+    ...deviceMetadata,
+    appVersion: "test",
+    createdAt: "2026-07-30T12:00:00.000Z",
+    updatedAt: "2026-07-30T12:00:00.000Z",
+    lastSeenAt: "2026-07-30T12:00:00.000Z",
+    revokedAt: null,
+  },
 };
 
 describe("auth client and state", () => {
@@ -32,20 +54,22 @@ describe("auth client and state", () => {
     const fetchFn = createFetch([
       jsonResponse(session, 201),
       jsonResponse(session),
-      jsonResponse({ user, workspaceId, tokenExpiresAt: accessTokenExpiresAt }),
+      jsonResponse({ user, workspaceId, deviceId, tokenExpiresAt: accessTokenExpiresAt }),
+      jsonResponse(currentDevice),
     ]);
     const client = createAuthClient({ baseUrl: "https://api.example.test", fetchFn });
 
     await expect(
-      client.register({ email: user.email, password: "password-123" }),
+      client.register({ email: user.email, password: "password-123", device: deviceMetadata }),
     ).resolves.toEqual(session);
     await expect(
-      client.login({ email: user.email, password: "password-123" }),
+      client.login({ email: user.email, password: "password-123", device: deviceMetadata }),
     ).resolves.toEqual(session);
     await expect(client.getSession("access-token")).resolves.toMatchObject({
       workspaceId,
     });
-    expect(fetchFn).toHaveBeenCalledTimes(3);
+    await expect(client.getCurrentDevice("access-token")).resolves.toEqual(currentDevice);
+    expect(fetchFn).toHaveBeenCalledTimes(4);
   });
 
   it("AuthClient maps validation, credentials, token expired, network and abort errors", async () => {
@@ -56,7 +80,7 @@ describe("auth client and state", () => {
       ]),
     });
     await expect(
-      validation.register({ email: user.email, password: "password-123" }),
+      validation.register({ email: user.email, password: "password-123", device: deviceMetadata }),
     ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
 
     const invalid = createAuthClient({
@@ -66,7 +90,7 @@ describe("auth client and state", () => {
       ]),
     });
     await expect(
-      invalid.login({ email: user.email, password: "bad" }),
+      invalid.login({ email: user.email, password: "bad", device: deviceMetadata }),
     ).rejects.toMatchObject({ code: "INVALID_CREDENTIALS" });
 
     const expired = createAuthClient({
@@ -101,6 +125,7 @@ describe("auth client and state", () => {
       at: "2026-07-30T12:01:00.000Z",
       user,
       workspaceId,
+      deviceId,
       accessTokenExpiresAt,
     });
     const failed = reduceAuthState(succeeded, {
@@ -149,17 +174,25 @@ describe("auth client and state", () => {
       getSession: vi.fn(async () => ({
         user,
         workspaceId,
+        deviceId,
         tokenExpiresAt: accessTokenExpiresAt,
       })),
+      getCurrentDevice: vi.fn(async () => currentDevice),
     };
     const service = createAuthService({
       authClient: client,
       authStateEngine: engine,
+      deviceIdentityProvider: createDeviceIdentityProvider(),
       clock: createClock(),
     });
 
     await service.register({ email: user.email, password: "password-123" });
     expect(service.getAccessToken()).toBe("access-token");
+    expect(client.register).toHaveBeenCalledWith({
+      email: user.email,
+      password: "password-123",
+      device: deviceMetadata,
+    });
     expect(service.getState()).not.toHaveProperty("accessToken");
 
     await service.getCurrentSession();
@@ -171,17 +204,22 @@ describe("auth client and state", () => {
 
     await service.login({ email: user.email, password: "password-123" });
     expect(service.getAccessToken()).toBe("access-token");
+    await expect(service.getCurrentDevice()).resolves.toEqual(currentDevice);
   });
 
   it("AuthService clears session on invalid or expired token", async () => {
     const client = {
       register: vi.fn(async () => session),
       login: vi.fn(async () => session),
+      getCurrentDevice: vi.fn(async () => currentDevice),
       getSession: vi.fn(async () => {
         throw new AuthClientError("TOKEN_EXPIRED", "Expired");
       }),
     };
-    const service = createAuthService({ authClient: client });
+    const service = createAuthService({
+      authClient: client,
+      deviceIdentityProvider: createDeviceIdentityProvider(),
+    });
 
     await service.login({ email: user.email, password: "password-123" });
     await expect(service.getCurrentSession()).rejects.toMatchObject({
@@ -203,6 +241,7 @@ describe("auth client and state", () => {
       at: "2026-07-30T12:00:00.000Z",
       user,
       workspaceId,
+      deviceId,
       accessTokenExpiresAt,
     });
     expect(sync.getState().authentication).toBe("AUTHENTICATED");
@@ -241,5 +280,12 @@ function createClock() {
     const value = new Date(current).toISOString();
     current += 1_000;
     return value;
+  };
+}
+
+function createDeviceIdentityProvider(): DeviceIdentityProvider {
+  return {
+    getClientDeviceId: async () => deviceMetadata.clientDeviceId,
+    getDeviceMetadata: async () => deviceMetadata,
   };
 }

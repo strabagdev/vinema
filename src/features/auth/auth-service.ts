@@ -1,11 +1,13 @@
 import type {
   AuthenticatedSession,
+  CurrentDeviceResponse,
   CurrentSessionResponse,
   LoginRequest,
   RegisterRequest,
 } from "@vinema/sync-contracts";
 import type { AccessTokenProvider } from "@/features/auth/access-token-provider";
 import { AuthClientError, type AuthClient } from "@/features/auth/auth-client";
+import type { DeviceIdentityProvider } from "@/features/auth/device-identity-provider";
 import {
   createAuthStateEngine,
   type AuthState,
@@ -13,23 +15,29 @@ import {
 } from "@/features/auth/auth-state-engine";
 
 export type AuthService = AccessTokenProvider & {
-  register(input: RegisterRequest): Promise<AuthenticatedSession>;
-  login(input: LoginRequest): Promise<AuthenticatedSession>;
+  register(input: AuthRegisterInput): Promise<AuthenticatedSession>;
+  login(input: AuthLoginInput): Promise<AuthenticatedSession>;
   getCurrentSession(): Promise<CurrentSessionResponse>;
+  getCurrentDevice(): Promise<CurrentDeviceResponse>;
   isAuthenticated(): boolean;
   clearLocalSession(): void;
   subscribe(listener: (state: AuthState) => void): () => void;
   getState(): AuthState;
 };
 
+export type AuthRegisterInput = Omit<RegisterRequest, "device">;
+export type AuthLoginInput = Omit<LoginRequest, "device">;
+
 export function createAuthService({
   authClient,
   authStateEngine = createAuthStateEngine(),
+  deviceIdentityProvider,
   clock = () => new Date().toISOString(),
   logger,
 }: {
   authClient: AuthClient;
   authStateEngine?: AuthStateEngine;
+  deviceIdentityProvider: DeviceIdentityProvider;
   clock?: () => string;
   logger?: { warn?(message: string, context?: Record<string, unknown>): void };
 }): AuthService {
@@ -47,6 +55,7 @@ export function createAuthService({
         at: clock(),
         user: session.user,
         workspaceId: session.workspaceId,
+        deviceId: session.deviceId,
         accessTokenExpiresAt: session.accessTokenExpiresAt,
       });
       return session;
@@ -64,10 +73,20 @@ export function createAuthService({
 
   return {
     register(input) {
-      return authenticate(() => authClient.register(input));
+      return authenticate(async () =>
+        authClient.register({
+          ...input,
+          device: await deviceIdentityProvider.getDeviceMetadata(),
+        }),
+      );
     },
     login(input) {
-      return authenticate(() => authClient.login(input));
+      return authenticate(async () =>
+        authClient.login({
+          ...input,
+          device: await deviceIdentityProvider.getDeviceMetadata(),
+        }),
+      );
     },
     async getCurrentSession() {
       if (!accessToken) {
@@ -81,6 +100,7 @@ export function createAuthService({
           at: clock(),
           user: session.user,
           workspaceId: session.workspaceId,
+          deviceId: session.deviceId,
           accessTokenExpiresAt: session.tokenExpiresAt,
         });
         return session;
@@ -100,6 +120,13 @@ export function createAuthService({
         }
         throw error;
       }
+    },
+    async getCurrentDevice() {
+      if (!accessToken) {
+        throw new AuthClientError("TOKEN_MISSING", "No hay sesion local.");
+      }
+
+      return authClient.getCurrentDevice(accessToken);
     },
     getAccessToken() {
       return accessToken;

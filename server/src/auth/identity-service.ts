@@ -1,6 +1,7 @@
 import {
   type AuthenticatedUser,
   type CurrentSessionResponse,
+  type CurrentDeviceResponse,
   type LoginRequest,
   type LoginResponse,
   type RegisterRequest,
@@ -9,6 +10,7 @@ import {
 import { issueAccessToken, type AuthContext } from "./access-token";
 import type { AuthTokenConfig } from "./auth-config";
 import { AuthError } from "./auth-errors";
+import type { DeviceService } from "./device-service";
 import { normalizeEmail } from "./email";
 import type { IdentityRepository, IdentityUserRecord } from "./identity-repository";
 import { hashPassword, verifyPassword } from "./password";
@@ -17,15 +19,18 @@ export type IdentityService = {
   register(input: RegisterRequest): Promise<RegisterResponse>;
   login(input: LoginRequest): Promise<LoginResponse>;
   getCurrentSession(authContext: AuthContext): Promise<CurrentSessionResponse>;
+  getCurrentDevice(authContext: AuthContext): Promise<CurrentDeviceResponse>;
 };
 
 export function createIdentityService({
   repository,
+  deviceService,
   tokenConfig,
   clock = () => new Date(),
   onWorkspaceCreated,
 }: {
   repository: IdentityRepository;
+  deviceService: DeviceService;
   tokenConfig: AuthTokenConfig;
   clock?: () => Date;
   onWorkspaceCreated?: (workspaceId: string) => void | Promise<void>;
@@ -47,8 +52,12 @@ export function createIdentityService({
         workspaceName: "Personal",
       });
       await onWorkspaceCreated?.(workspace.id);
+      const { device } = await deviceService.registerOrUpdateDevice({
+        userId: user.id,
+        ...input.device,
+      });
 
-      return sessionResponse(user, workspace.id, tokenConfig, clock());
+      return sessionResponse(user, workspace.id, device.id, tokenConfig, clock());
     },
 
     async login(input) {
@@ -67,7 +76,12 @@ export function createIdentityService({
         throw new AuthError("USER_DISABLED", "Usuario deshabilitado.", 401);
       }
 
-      return sessionResponse(user, user.personalWorkspaceId, tokenConfig, clock());
+      const { device } = await deviceService.registerOrUpdateDevice({
+        userId: user.id,
+        ...input.device,
+      });
+
+      return sessionResponse(user, user.personalWorkspaceId, device.id, tokenConfig, clock());
     },
 
     async getCurrentSession(authContext) {
@@ -85,11 +99,18 @@ export function createIdentityService({
         throw new AuthError("TOKEN_INVALID", "Token invalido.", 401);
       }
 
+      await deviceService.getCurrentDevice(authContext);
+
       return {
         user: toAuthenticatedUser(user),
         workspaceId: workspace.id,
+        deviceId: authContext.deviceId,
         tokenExpiresAt: authContext.expiresAt,
       };
+    },
+
+    getCurrentDevice(authContext) {
+      return deviceService.getCurrentDevice(authContext);
     },
   };
 }
@@ -97,12 +118,14 @@ export function createIdentityService({
 function sessionResponse(
   user: IdentityUserRecord,
   workspaceId: string,
+  deviceId: string,
   tokenConfig: AuthTokenConfig,
   now: Date,
 ): RegisterResponse {
   const token = issueAccessToken({
     userId: user.id,
     workspaceId,
+    deviceId,
     config: tokenConfig,
     now,
   });
@@ -110,6 +133,7 @@ function sessionResponse(
   return {
     user: toAuthenticatedUser(user),
     workspaceId,
+    deviceId,
     accessToken: token.accessToken,
     accessTokenExpiresAt: token.accessTokenExpiresAt,
   };

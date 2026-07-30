@@ -1,12 +1,14 @@
 import {
   authErrorResponseSchema,
   currentSessionResponseSchema,
+  currentDeviceResponseSchema,
   loginRequestSchema,
   loginResponseSchema,
   registerRequestSchema,
   registerResponseSchema,
   type AuthErrorCode,
   type CurrentSessionResponse,
+  type CurrentDeviceResponse,
   type LoginRequest,
   type LoginResponse,
   type RegisterRequest,
@@ -32,6 +34,10 @@ export type AuthClient = {
     accessToken: string,
     options?: AuthClientOptions,
   ): Promise<CurrentSessionResponse>;
+  getCurrentDevice(
+    accessToken: string,
+    options?: AuthClientOptions,
+  ): Promise<CurrentDeviceResponse>;
 };
 
 export type AuthClientOptions = {
@@ -115,6 +121,21 @@ export function createAuthClient({
       const response = currentSessionResponseSchema.safeParse(body);
       if (!response.success) {
         logger?.warn?.("auth session invalid response");
+        throw new AuthClientError("UNEXPECTED_ERROR", "Respuesta invalida.");
+      }
+
+      return response.data;
+    },
+
+    async getCurrentDevice(accessToken, options = {}) {
+      const body = await requestJson(fetchFn, buildUrl(normalizedBaseUrl, "/auth/device"), {
+        method: "GET",
+        signal: options.signal,
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const response = currentDeviceResponseSchema.safeParse(body);
+      if (!response.success) {
+        logger?.warn?.("auth device invalid response");
         throw new AuthClientError("UNEXPECTED_ERROR", "Respuesta invalida.");
       }
 

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { parseEnv } from "node:util";
 import type {
+  CurrentDeviceResponse,
   LoginResponse,
   PullResponse,
   PushResponse,
@@ -18,7 +19,6 @@ if (!apiUrl) {
 
 const now = new Date().toISOString();
 const runLabel = `E2E_AUTH_SYNC_${now.replace(/[^0-9]/g, "")}`;
-const deviceId = crypto.randomUUID();
 const captureId = crypto.randomUUID();
 const conceptId = crypto.randomUUID();
 const relationId = crypto.randomUUID();
@@ -31,24 +31,52 @@ async function main() {
 
   const passwordA = `temporary-${crypto.randomUUID()}-password`;
   const passwordB = `temporary-${crypto.randomUUID()}-password`;
-  const userA = await register(`${runLabel.toLowerCase()}-a@example.test`, passwordA);
-  const userB = await register(`${runLabel.toLowerCase()}-b@example.test`, passwordB);
-  const loginA = await login(userA.user.email, passwordA);
+  const userA = await register(
+    `${runLabel.toLowerCase()}-a@example.test`,
+    passwordA,
+    "test-device-user-a",
+  );
+  const userB = await register(
+    `${runLabel.toLowerCase()}-b@example.test`,
+    passwordB,
+    "test-device-user-b",
+  );
+  const loginA = await login(userA.user.email, passwordA, "test-device-user-a");
   assert(loginA.workspaceId === userA.workspaceId, "login workspace mismatch");
+  assert(loginA.deviceId === userA.deviceId, "same clientDeviceId created duplicate device");
 
   const session = await getSession(loginA.accessToken);
   assert(session.workspaceId === userA.workspaceId, "session workspace mismatch");
+  assert(session.deviceId === userA.deviceId, "session device mismatch");
+
+  const currentDevice = await getCurrentDevice(loginA.accessToken);
+  assert(currentDevice.device.id === userA.deviceId, "current device mismatch");
+  assert(currentDevice.device.clientDeviceId === "test-device-user-a", "client device id mismatch");
+
+  const secondDeviceLogin = await login(
+    userA.user.email,
+    passwordA,
+    "test-device-user-a-secondary",
+  );
+  assert(
+    secondDeviceLogin.deviceId !== userA.deviceId,
+    "different clientDeviceId did not create another device",
+  );
+  assert(
+    userB.deviceId !== userA.deviceId,
+    "different users collided on device id",
+  );
 
   await expectUnauthorizedRequests(userA.workspaceId);
 
-  const firstPush = await push(userA.accessToken, userA.workspaceId, [
+  const firstPush = await push(userA.accessToken, userA.workspaceId, userA.deviceId, [
     captureMutation(crypto.randomUUID(), captureId, null),
     conceptMutation(crypto.randomUUID(), conceptId, null),
     relationMutation(crypto.randomUUID(), relationId, captureId, conceptId, null),
   ]);
   assert(firstPush.accepted.length === 3, "initial push did not accept all mutations");
 
-  const pullResponse = await pull(userA.accessToken, userA.workspaceId, "0");
+  const pullResponse = await pull(userA.accessToken, userA.workspaceId, userA.deviceId, "0");
   assert(pullResponse.changes.length >= 3, "pull did not return pushed changes");
   assert(
     pullResponse.changes.some((change) => change.entity.id === captureId),
@@ -56,13 +84,14 @@ async function main() {
   );
   const cursorAfterFirstPush = pullResponse.nextCursor;
 
-  const idempotentPush = await push(userA.accessToken, userA.workspaceId, [
+  const idempotentPush = await push(userA.accessToken, userA.workspaceId, userA.deviceId, [
     captureMutation(firstPush.accepted[0]!.mutationId, captureId, null),
   ]);
   assert(idempotentPush.accepted[0]?.version === 1, "idempotency changed version");
   const afterIdempotencyPull = await pull(
     userA.accessToken,
     userA.workspaceId,
+    userA.deviceId,
     cursorAfterFirstPush,
   );
   assert(
@@ -70,7 +99,7 @@ async function main() {
     "idempotency created duplicate changes",
   );
 
-  const updatePush = await push(userA.accessToken, userA.workspaceId, [
+  const updatePush = await push(userA.accessToken, userA.workspaceId, userA.deviceId, [
     captureMutation(
       crypto.randomUUID(),
       captureId,
@@ -80,14 +109,14 @@ async function main() {
   ]);
   assert(updatePush.accepted[0]?.version === 2, "capture update did not advance version");
 
-  const conflict = await push(userA.accessToken, userA.workspaceId, [
+  const conflict = await push(userA.accessToken, userA.workspaceId, userA.deviceId, [
     captureMutation(crypto.randomUUID(), captureId, 1, "Conflicto esperado."),
   ]);
   assert(conflict.conflicts.length === 1, "conflict was not reported");
   assert(conflict.accepted.length === 0, "conflict mutation was accepted");
 
   await expectForbiddenWorkspace(userA.accessToken, userB.workspaceId);
-  const bPull = await pull(userB.accessToken, userB.workspaceId, "0");
+  const bPull = await pull(userB.accessToken, userB.workspaceId, userB.deviceId, "0");
   assert(
     bPull.changes.every((change) => change.entity.workspaceId === userB.workspaceId),
     "user B saw user A workspace data",
@@ -108,7 +137,11 @@ function loadLocalEnvFile(path: string) {
   }
 }
 
-async function register(email: string, password: string): Promise<RegisterResponse> {
+async function register(
+  email: string,
+  password: string,
+  clientDeviceId: string,
+): Promise<RegisterResponse> {
   const response = await fetch(`${apiUrl}/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -116,6 +149,7 @@ async function register(email: string, password: string): Promise<RegisterRespon
       email,
       password,
       displayName: "Vinema E2E",
+      device: devicePayload(clientDeviceId),
     }),
   });
 
@@ -123,13 +157,18 @@ async function register(email: string, password: string): Promise<RegisterRespon
   return response.json() as Promise<RegisterResponse>;
 }
 
-async function login(email: string, password: string): Promise<LoginResponse> {
+async function login(
+  email: string,
+  password: string,
+  clientDeviceId: string,
+): Promise<LoginResponse> {
   const response = await fetch(`${apiUrl}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       email: email.toUpperCase(),
       password: "invalid-on-purpose",
+      device: devicePayload(clientDeviceId),
     }),
   });
   assert(response.status === 401, "invalid login did not fail");
@@ -137,10 +176,24 @@ async function login(email: string, password: string): Promise<LoginResponse> {
   const valid = await fetch(`${apiUrl}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email: email.toUpperCase(), password }),
+    body: JSON.stringify({
+      email: email.toUpperCase(),
+      password,
+      device: devicePayload(clientDeviceId),
+    }),
   });
   assert(valid.ok, `valid login failed with ${valid.status}`);
   return valid.json() as Promise<LoginResponse>;
+}
+
+function devicePayload(clientDeviceId: string) {
+  return {
+    clientDeviceId,
+    name: `Vinema E2E ${clientDeviceId}`,
+    platform: "web",
+    appType: "WEB",
+    appVersion: "test",
+  };
 }
 
 async function getSession(accessToken: string) {
@@ -149,12 +202,22 @@ async function getSession(accessToken: string) {
   });
 
   assert(response.ok, `session failed with ${response.status}`);
-  return response.json() as Promise<{ workspaceId: string }>;
+  return response.json() as Promise<{ workspaceId: string; deviceId: string }>;
+}
+
+async function getCurrentDevice(accessToken: string): Promise<CurrentDeviceResponse> {
+  const response = await fetch(`${apiUrl}/auth/device`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  assert(response.ok, `current device failed with ${response.status}`);
+  return response.json() as Promise<CurrentDeviceResponse>;
 }
 
 async function push(
   accessToken: string,
   workspaceId: string,
+  deviceId: string,
   mutations: unknown[],
 ): Promise<PushResponse> {
   const response = await fetch(`${apiUrl}/api/sync/push`, {
@@ -173,6 +236,7 @@ async function push(
 async function pull(
   accessToken: string,
   workspaceId: string,
+  deviceId: string,
   cursor: string,
 ): Promise<PullResponse> {
   const response = await fetch(
@@ -188,7 +252,7 @@ async function expectUnauthorizedRequests(workspaceId: string) {
   const withoutKey = await fetch(`${apiUrl}/api/sync/push`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ workspaceId, deviceId, mutations: [] }),
+    body: JSON.stringify({ workspaceId, deviceId: crypto.randomUUID(), mutations: [] }),
   });
   assert(withoutKey.status === 401, "push without token did not fail with 401");
 
@@ -206,7 +270,7 @@ async function expectForbiddenWorkspace(accessToken: string, workspaceId: string
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ workspaceId, deviceId, mutations: [] }),
+    body: JSON.stringify({ workspaceId, deviceId: crypto.randomUUID(), mutations: [] }),
   });
   assert(forbiddenPush.status === 403, "cross-workspace push was not forbidden");
 

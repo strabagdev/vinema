@@ -6,6 +6,7 @@ import Fastify, {
 } from "fastify";
 import {
   currentSessionResponseSchema,
+  currentDeviceResponseSchema,
   loginRequestSchema,
   loginResponseSchema,
   pullRequestSchema,
@@ -120,6 +121,20 @@ export function createVinemaApiServer({
     }
   });
 
+  app.get("/auth/device", async (request, reply) => {
+    if (!identityService || !tokenConfig) {
+      return reply.status(500).send(authErrorResponse("SERVER_ERROR", "Auth no configurado."));
+    }
+    try {
+      const authContext = getAuthContext(request, tokenConfig);
+      const response = await identityService.getCurrentDevice(authContext);
+      const parsedResponse = currentDeviceResponseSchema.parse(response);
+      return reply.send(parsedResponse);
+    } catch (error) {
+      return sendAuthError(reply, error);
+    }
+  });
+
   app.post("/api/sync/push", async (request, reply) => {
     const parsed = pushRequestSchema.safeParse(request.body);
 
@@ -216,10 +231,12 @@ function authorizeSyncRequest({
     return {
       userId: "test-user",
       workspaceId,
+      deviceId: "test-device",
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
       claims: {
         sub: "test-user",
         workspaceId,
+        deviceId: "test-device",
         iat: 0,
         exp: 9_999_999_999,
         iss: "test",

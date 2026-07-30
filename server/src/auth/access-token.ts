@@ -5,6 +5,7 @@ import type { AuthTokenConfig } from "./auth-config";
 export type AccessTokenClaims = {
   sub: string;
   workspaceId: string;
+  deviceId: string;
   iat: number;
   exp: number;
   iss: string;
@@ -14,6 +15,7 @@ export type AccessTokenClaims = {
 export type AuthContext = {
   userId: string;
   workspaceId: string;
+  deviceId: string;
   expiresAt: string;
   claims: AccessTokenClaims;
 };
@@ -21,11 +23,13 @@ export type AuthContext = {
 export function issueAccessToken({
   userId,
   workspaceId,
+  deviceId,
   config,
   now = new Date(),
 }: {
   userId: string;
   workspaceId: string;
+  deviceId: string;
   config: AuthTokenConfig;
   now?: Date;
 }) {
@@ -34,6 +38,7 @@ export function issueAccessToken({
   const claims: AccessTokenClaims = {
     sub: userId,
     workspaceId,
+    deviceId,
     iat,
     exp,
     iss: config.issuer,
@@ -86,6 +91,7 @@ export function verifyAccessToken(
   return {
     userId: claims.sub,
     workspaceId: claims.workspaceId,
+    deviceId: claims.deviceId,
     expiresAt: new Date(claims.exp * 1000).toISOString(),
     claims,
   };
@@ -125,6 +131,7 @@ function parseClaims(value: string): AccessTokenClaims {
   if (
     typeof claims.sub !== "string" ||
     typeof claims.workspaceId !== "string" ||
+    typeof claims.deviceId !== "string" ||
     typeof claims.iat !== "number" ||
     typeof claims.exp !== "number" ||
     typeof claims.iss !== "string" ||
