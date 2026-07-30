@@ -574,10 +574,14 @@ export function NoteDetailView({
   }
 
   function handleKeyDown(event: React.KeyboardEvent) {
+    const key = typeof event.key === "string"
+      ? event.key.toLowerCase()
+      : "";
+
     if (
       mode === "edit" &&
       (event.metaKey || event.ctrlKey) &&
-      event.key.toLowerCase() === "s"
+      key === "s"
     ) {
       event.preventDefault();
       void handleKeyboardSave();

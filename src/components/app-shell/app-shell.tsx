@@ -49,11 +49,15 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (
-        event.key.toLowerCase() !== "k" ||
-        event.shiftKey !== true ||
-        (!event.ctrlKey && !event.metaKey)
-      ) {
+      const key = typeof event.key === "string"
+        ? event.key.toLowerCase()
+        : "";
+      const isShortcut =
+        key === "k" &&
+        event.shiftKey === true &&
+        (event.ctrlKey === true || event.metaKey === true);
+
+      if (!isShortcut) {
         return;
       }
 

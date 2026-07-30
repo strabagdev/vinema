@@ -31,6 +31,7 @@ vi.mock("@/features/auth/auth-provider", () => ({
     error: null,
     register: vi.fn(),
     login: vi.fn(),
+    refresh: vi.fn(),
     logout: vi.fn(),
   }),
 }));
@@ -62,7 +63,7 @@ describe("Global writing entry", () => {
     expect(document.querySelector("#quick-capture-editor")).toBeNull();
   });
 
-  it("uses Ctrl/Cmd+Shift+K to focus writing without opening a second editor", async () => {
+  it("uses Ctrl+Shift+K to focus writing without opening a second editor", async () => {
     await renderAppShell();
 
     await keydown({ key: "K", ctrlKey: true, shiftKey: true });
@@ -70,6 +71,38 @@ describe("Global writing entry", () => {
     expect(mocks.push).toHaveBeenCalledWith("/#capture");
     expect(document.querySelector("[role='dialog']")).toBeNull();
     expect(document.querySelector("#quick-capture-editor")).toBeNull();
+  });
+
+  it("uses Cmd+Shift+K to focus writing and accepts uppercase keys", async () => {
+    await renderAppShell();
+
+    await keydown({ key: "K", metaKey: true, shiftKey: true });
+
+    expect(mocks.push).toHaveBeenCalledTimes(1);
+    expect(mocks.push).toHaveBeenCalledWith("/#capture");
+  });
+
+  it("ignores partial shortcut combinations and other keys", async () => {
+    await renderAppShell();
+
+    await keydown({ key: "k", ctrlKey: true });
+    await keydown({ key: "k", shiftKey: true });
+    await keydown({ key: "x", ctrlKey: true, shiftKey: true });
+
+    expect(mocks.push).not.toHaveBeenCalled();
+  });
+
+  it("ignores incomplete keydown events without throwing", async () => {
+    await renderAppShell();
+
+    expect(() => {
+      window.dispatchEvent(new Event("keydown"));
+    }).not.toThrow();
+    expect(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true }));
+    }).not.toThrow();
+
+    expect(mocks.push).not.toHaveBeenCalled();
   });
 
   it("dispatches focus when the user is already on Inicio", async () => {
@@ -96,24 +129,55 @@ describe("Global writing entry", () => {
 
     expect(mocks.push).not.toHaveBeenCalled();
   });
+
+  it("removes the keydown listener on unmount", async () => {
+    const addEventListener = vi.spyOn(window, "addEventListener");
+    const removeEventListener = vi.spyOn(window, "removeEventListener");
+    const { root } = await renderAppShell();
+    const added = addEventListener.mock.calls.find(
+      ([type]) => type === "keydown",
+    );
+
+    await act(async () => {
+      root.unmount();
+      await flushPromises();
+    });
+    currentRoot = null;
+
+    const removed = removeEventListener.mock.calls.find(
+      ([type, listener]) => type === "keydown" && listener === added?.[1],
+    );
+
+    expect(added).toBeTruthy();
+    expect(removed).toBeTruthy();
+  });
+
+  it("does not duplicate the shortcut after repeated mounts", async () => {
+    const first = await renderAppShell();
+    await act(async () => {
+      first.root.unmount();
+      await flushPromises();
+    });
+    currentRoot = null;
+    await renderAppShell();
+
+    await keydown({ key: "k", ctrlKey: true, shiftKey: true });
+
+    expect(mocks.push).toHaveBeenCalledTimes(1);
+  });
 });
 
-async function renderAppShell() {
+async function renderAppShell(): Promise<{ container: HTMLDivElement; root: Root }> {
   const container = document.createElement("div");
   document.body.replaceChildren(container);
-  let root: Root | null = null;
+  const root = createRoot(container);
 
   await act(async () => {
-    root = createRoot(container);
     root.render(createElement(AppShell, null, createElement("div", null, "Ruta")));
     await flushPromises();
   });
 
   currentRoot = root;
-  if (!root) {
-    throw new Error("Root was not created");
-  }
-
   return { container, root };
 }
 
