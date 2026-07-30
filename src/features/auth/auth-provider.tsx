@@ -42,7 +42,8 @@ export type AuthContextValue = {
   error: AuthState["error"];
   register(input: AuthRegisterInput): Promise<void>;
   login(input: AuthLoginInput): Promise<void>;
-  logout(): void;
+  refresh(): Promise<void>;
+  logout(): Promise<void>;
 };
 
 type AuthRuntime = {
@@ -90,8 +91,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [runtime],
   );
 
-  const logout = useCallback(() => {
-    runtime.service.clearLocalSession();
+  const refresh = useCallback(async () => {
+    assertAuthConfigured(runtime);
+    await runtime.service.refresh();
+    setAccessToken(runtime.service.getAccessToken());
+  }, [runtime]);
+
+  const logout = useCallback(async () => {
+    await runtime.service.logout();
     setAccessToken(undefined);
   }, [runtime]);
 
@@ -104,9 +111,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isLoading: state.status === "UNKNOWN" || state.status === "AUTHENTICATING",
     error: state.error,
     register,
+    refresh,
     login,
     logout,
-  }), [accessToken, login, logout, register, state]);
+  }), [accessToken, login, logout, refresh, register, state]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

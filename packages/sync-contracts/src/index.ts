@@ -180,14 +180,6 @@ export const authenticatedUserSchema = z.object({
   displayName: z.string().min(1).max(200).nullable(),
 });
 
-export const authenticatedSessionSchema = z.object({
-  user: authenticatedUserSchema,
-  workspaceId: uuidSchema,
-  deviceId: uuidSchema,
-  accessToken: z.string().min(1),
-  accessTokenExpiresAt: isoDateSchema,
-});
-
 export const devicePlatformSchema = z.enum([
   "windows",
   "macos",
@@ -231,6 +223,38 @@ export const currentDeviceResponseSchema = z.object({
   device: deviceSummarySchema,
 });
 
+export const authenticatedSessionSchema = z.object({
+  user: authenticatedUserSchema,
+  workspaceId: uuidSchema,
+  deviceId: uuidSchema,
+  device: deviceSummarySchema,
+  sessionId: uuidSchema,
+  accessToken: z.string().min(1),
+  accessTokenExpiresAt: isoDateSchema,
+  refreshToken: z.string().min(1),
+  refreshTokenExpiresAt: isoDateSchema,
+});
+
+export const authTokenPairSchema = z.object({
+  accessToken: z.string().min(1),
+  accessTokenExpiresAt: isoDateSchema,
+  refreshToken: z.string().min(1),
+  refreshTokenExpiresAt: isoDateSchema,
+});
+
+export const authSessionSummarySchema = z.object({
+  id: uuidSchema,
+  userId: uuidSchema,
+  deviceId: uuidSchema,
+  tokenFamilyId: uuidSchema,
+  generation: z.number().int().positive(),
+  createdAt: isoDateSchema,
+  updatedAt: isoDateSchema,
+  lastUsedAt: nullableIsoDateSchema,
+  expiresAt: isoDateSchema,
+  revokedAt: nullableIsoDateSchema,
+});
+
 export const registerRequestSchema = z.object({
   email: z.email(),
   password: z.string().min(MIN_AUTH_PASSWORD_LENGTH).max(MAX_AUTH_PASSWORD_LENGTH),
@@ -252,8 +276,33 @@ export const currentSessionResponseSchema = z.object({
   user: authenticatedUserSchema,
   workspaceId: uuidSchema,
   deviceId: uuidSchema,
+  sessionId: uuidSchema,
   tokenExpiresAt: isoDateSchema,
 });
+
+export const refreshSessionRequestSchema = z.object({
+  refreshToken: z.string().trim().min(1),
+});
+
+export const refreshSessionResponseSchema = authenticatedSessionSchema;
+
+export const logoutRequestSchema = z.object({
+  refreshToken: z.string().trim().min(1),
+});
+
+export const logoutResponseSchema = z.object({
+  ok: z.literal(true),
+});
+
+export const authSessionErrorCodeSchema = z.enum([
+  "REFRESH_TOKEN_INVALID",
+  "REFRESH_TOKEN_EXPIRED",
+  "REFRESH_TOKEN_REVOKED",
+  "REFRESH_TOKEN_REUSED",
+  "DEVICE_REVOKED",
+  "SESSION_NOT_FOUND",
+  "SESSION_INVALID",
+]);
 
 export const authErrorCodeSchema = z.enum([
   "VALIDATION_ERROR",
@@ -263,6 +312,12 @@ export const authErrorCodeSchema = z.enum([
   "TOKEN_MISSING",
   "TOKEN_INVALID",
   "TOKEN_EXPIRED",
+  "REFRESH_TOKEN_INVALID",
+  "REFRESH_TOKEN_EXPIRED",
+  "REFRESH_TOKEN_REVOKED",
+  "REFRESH_TOKEN_REUSED",
+  "SESSION_NOT_FOUND",
+  "SESSION_INVALID",
   "DEVICE_REVOKED",
   "WORKSPACE_FORBIDDEN",
   "NETWORK_ERROR",
@@ -291,6 +346,8 @@ export type SyncConflict = z.infer<typeof syncConflictSchema>;
 export type SyncError = z.infer<typeof syncErrorSchema>;
 export type AuthenticatedUser = z.infer<typeof authenticatedUserSchema>;
 export type AuthenticatedSession = z.infer<typeof authenticatedSessionSchema>;
+export type AuthTokenPair = z.infer<typeof authTokenPairSchema>;
+export type AuthSessionSummary = z.infer<typeof authSessionSummarySchema>;
 export type DevicePlatform = z.infer<typeof devicePlatformSchema>;
 export type DeviceAppType = z.infer<typeof deviceAppTypeSchema>;
 export type RegisterDeviceRequest = z.infer<typeof registerDeviceRequestSchema>;
@@ -302,5 +359,10 @@ export type RegisterResponse = z.infer<typeof registerResponseSchema>;
 export type LoginRequest = z.infer<typeof loginRequestSchema>;
 export type LoginResponse = z.infer<typeof loginResponseSchema>;
 export type CurrentSessionResponse = z.infer<typeof currentSessionResponseSchema>;
+export type RefreshSessionRequest = z.infer<typeof refreshSessionRequestSchema>;
+export type RefreshSessionResponse = z.infer<typeof refreshSessionResponseSchema>;
+export type LogoutRequest = z.infer<typeof logoutRequestSchema>;
+export type LogoutResponse = z.infer<typeof logoutResponseSchema>;
+export type AuthSessionErrorCode = z.infer<typeof authSessionErrorCodeSchema>;
 export type AuthErrorCode = z.infer<typeof authErrorCodeSchema>;
 export type AuthErrorResponse = z.infer<typeof authErrorResponseSchema>;

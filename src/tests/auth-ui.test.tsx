@@ -28,13 +28,32 @@ const user = {
 };
 const workspaceId = "22222222-2222-4222-8222-222222222222";
 const deviceId = "33333333-3333-4333-8333-333333333333";
+const sessionId = "44444444-4444-4444-8444-444444444444";
 const accessTokenExpiresAt = "2026-07-30T12:15:00.000Z";
+const refreshTokenExpiresAt = "2026-08-29T12:00:00.000Z";
+const device = {
+  id: deviceId,
+  userId: user.id,
+  clientDeviceId: "local-device",
+  name: "Vinema Web",
+  platform: "web",
+  appType: "WEB",
+  appVersion: "test",
+  createdAt: "2026-07-30T12:00:00.000Z",
+  updatedAt: "2026-07-30T12:00:00.000Z",
+  lastSeenAt: "2026-07-30T12:00:00.000Z",
+  revokedAt: null,
+};
 const session = {
   user,
   workspaceId,
   deviceId,
+  device,
+  sessionId,
   accessToken: "access-token",
   accessTokenExpiresAt,
+  refreshToken: "refresh-token",
+  refreshTokenExpiresAt,
 };
 
 describe("minimal authentication UI", () => {
@@ -62,7 +81,7 @@ describe("minimal authentication UI", () => {
   });
 
   it("AuthProvider starts anonymous, logs in, exposes token and logs out locally", async () => {
-    globalThis.fetch = createFetch([jsonResponse(session)]);
+    globalThis.fetch = createFetch([jsonResponse(session), jsonResponse({ ok: true })]);
 
     function Probe() {
       const auth = useAuth();

@@ -21,14 +21,9 @@ const user = {
 };
 const workspaceId = "22222222-2222-4222-8222-222222222222";
 const deviceId = "33333333-3333-4333-8333-333333333333";
+const sessionId = "44444444-4444-4444-8444-444444444444";
 const accessTokenExpiresAt = "2026-07-30T12:15:00.000Z";
-const session = {
-  user,
-  workspaceId,
-  deviceId,
-  accessToken: "access-token",
-  accessTokenExpiresAt,
-};
+const refreshTokenExpiresAt = "2026-08-29T12:00:00.000Z";
 const deviceMetadata = {
   clientDeviceId: "local-device",
   name: "Vinema Web",
@@ -48,13 +43,26 @@ const currentDevice = {
     revokedAt: null,
   },
 };
+const session = {
+  user,
+  workspaceId,
+  deviceId,
+  device: currentDevice.device,
+  sessionId,
+  accessToken: "access-token",
+  accessTokenExpiresAt,
+  refreshToken: "refresh-token",
+  refreshTokenExpiresAt,
+};
 
 describe("auth client and state", () => {
   it("AuthClient registers, logs in and gets session", async () => {
     const fetchFn = createFetch([
       jsonResponse(session, 201),
       jsonResponse(session),
-      jsonResponse({ user, workspaceId, deviceId, tokenExpiresAt: accessTokenExpiresAt }),
+      jsonResponse({ ...session, accessToken: "refreshed-access", refreshToken: "refresh-2" }),
+      jsonResponse({ ok: true }),
+      jsonResponse({ user, workspaceId, deviceId, sessionId, tokenExpiresAt: accessTokenExpiresAt }),
       jsonResponse(currentDevice),
     ]);
     const client = createAuthClient({ baseUrl: "https://api.example.test", fetchFn });
@@ -65,11 +73,16 @@ describe("auth client and state", () => {
     await expect(
       client.login({ email: user.email, password: "password-123", device: deviceMetadata }),
     ).resolves.toEqual(session);
+    await expect(client.refresh({ refreshToken: "refresh-token" })).resolves.toMatchObject({
+      accessToken: "refreshed-access",
+      refreshToken: "refresh-2",
+    });
+    await expect(client.logout({ refreshToken: "refresh-2" })).resolves.toEqual({ ok: true });
     await expect(client.getSession("access-token")).resolves.toMatchObject({
       workspaceId,
     });
     await expect(client.getCurrentDevice("access-token")).resolves.toEqual(currentDevice);
-    expect(fetchFn).toHaveBeenCalledTimes(4);
+    expect(fetchFn).toHaveBeenCalledTimes(6);
   });
 
   it("AuthClient maps validation, credentials, token expired, network and abort errors", async () => {
@@ -126,7 +139,9 @@ describe("auth client and state", () => {
       user,
       workspaceId,
       deviceId,
+      sessionId,
       accessTokenExpiresAt,
+      refreshTokenExpiresAt,
     });
     const failed = reduceAuthState(succeeded, {
       type: "AUTH_FAILED",
@@ -171,10 +186,17 @@ describe("auth client and state", () => {
     const client = {
       register: vi.fn(async () => session),
       login: vi.fn(async () => session),
+      refresh: vi.fn(async () => ({
+        ...session,
+        accessToken: "refreshed-access-token",
+        refreshToken: "refresh-token-2",
+      })),
+      logout: vi.fn(async () => ({ ok: true as const })),
       getSession: vi.fn(async () => ({
         user,
         workspaceId,
         deviceId,
+        sessionId,
         tokenExpiresAt: accessTokenExpiresAt,
       })),
       getCurrentDevice: vi.fn(async () => currentDevice),
@@ -194,9 +216,13 @@ describe("auth client and state", () => {
       device: deviceMetadata,
     });
     expect(service.getState()).not.toHaveProperty("accessToken");
+    expect(service.getState()).not.toHaveProperty("refreshToken");
 
     await service.getCurrentSession();
     expect(service.isAuthenticated()).toBe(true);
+
+    await service.refresh();
+    expect(service.getAccessToken()).toBe("refreshed-access-token");
 
     service.clearLocalSession();
     expect(service.getAccessToken()).toBeUndefined();
@@ -211,6 +237,8 @@ describe("auth client and state", () => {
     const client = {
       register: vi.fn(async () => session),
       login: vi.fn(async () => session),
+      refresh: vi.fn(async () => session),
+      logout: vi.fn(async () => ({ ok: true as const })),
       getCurrentDevice: vi.fn(async () => currentDevice),
       getSession: vi.fn(async () => {
         throw new AuthClientError("TOKEN_EXPIRED", "Expired");
@@ -242,7 +270,9 @@ describe("auth client and state", () => {
       user,
       workspaceId,
       deviceId,
+      sessionId,
       accessTokenExpiresAt,
+      refreshTokenExpiresAt,
     });
     expect(sync.getState().authentication).toBe("AUTHENTICATED");
 

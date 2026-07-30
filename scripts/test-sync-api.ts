@@ -3,6 +3,7 @@ import { parseEnv } from "node:util";
 import type {
   CurrentDeviceResponse,
   LoginResponse,
+  RefreshSessionResponse,
   PullResponse,
   PushResponse,
   RegisterResponse,
@@ -48,8 +49,19 @@ async function main() {
   const session = await getSession(loginA.accessToken);
   assert(session.workspaceId === userA.workspaceId, "session workspace mismatch");
   assert(session.deviceId === userA.deviceId, "session device mismatch");
+  assert(session.sessionId === loginA.sessionId, "session id mismatch");
 
-  const currentDevice = await getCurrentDevice(loginA.accessToken);
+  const refreshedA = await refresh(loginA.refreshToken);
+  assert(refreshedA.sessionId !== loginA.sessionId, "refresh did not rotate session");
+  assert(refreshedA.refreshToken !== loginA.refreshToken, "refresh did not rotate token");
+  await expectRefreshRejected(loginA.refreshToken);
+  const refreshedSession = await getSession(refreshedA.accessToken);
+  assert(
+    refreshedSession.sessionId === refreshedA.sessionId,
+    "refreshed access token session mismatch",
+  );
+
+  const currentDevice = await getCurrentDevice(refreshedA.accessToken);
   assert(currentDevice.device.id === userA.deviceId, "current device mismatch");
   assert(currentDevice.device.clientDeviceId === "test-device-user-a", "client device id mismatch");
 
@@ -69,14 +81,14 @@ async function main() {
 
   await expectUnauthorizedRequests(userA.workspaceId);
 
-  const firstPush = await push(userA.accessToken, userA.workspaceId, userA.deviceId, [
+  const firstPush = await push(refreshedA.accessToken, userA.workspaceId, userA.deviceId, [
     captureMutation(crypto.randomUUID(), captureId, null),
     conceptMutation(crypto.randomUUID(), conceptId, null),
     relationMutation(crypto.randomUUID(), relationId, captureId, conceptId, null),
   ]);
   assert(firstPush.accepted.length === 3, "initial push did not accept all mutations");
 
-  const pullResponse = await pull(userA.accessToken, userA.workspaceId, userA.deviceId, "0");
+  const pullResponse = await pull(refreshedA.accessToken, userA.workspaceId, userA.deviceId, "0");
   assert(pullResponse.changes.length >= 3, "pull did not return pushed changes");
   assert(
     pullResponse.changes.some((change) => change.entity.id === captureId),
@@ -84,12 +96,12 @@ async function main() {
   );
   const cursorAfterFirstPush = pullResponse.nextCursor;
 
-  const idempotentPush = await push(userA.accessToken, userA.workspaceId, userA.deviceId, [
+  const idempotentPush = await push(refreshedA.accessToken, userA.workspaceId, userA.deviceId, [
     captureMutation(firstPush.accepted[0]!.mutationId, captureId, null),
   ]);
   assert(idempotentPush.accepted[0]?.version === 1, "idempotency changed version");
   const afterIdempotencyPull = await pull(
-    userA.accessToken,
+    refreshedA.accessToken,
     userA.workspaceId,
     userA.deviceId,
     cursorAfterFirstPush,
@@ -99,7 +111,7 @@ async function main() {
     "idempotency created duplicate changes",
   );
 
-  const updatePush = await push(userA.accessToken, userA.workspaceId, userA.deviceId, [
+  const updatePush = await push(refreshedA.accessToken, userA.workspaceId, userA.deviceId, [
     captureMutation(
       crypto.randomUUID(),
       captureId,
@@ -109,18 +121,20 @@ async function main() {
   ]);
   assert(updatePush.accepted[0]?.version === 2, "capture update did not advance version");
 
-  const conflict = await push(userA.accessToken, userA.workspaceId, userA.deviceId, [
+  const conflict = await push(refreshedA.accessToken, userA.workspaceId, userA.deviceId, [
     captureMutation(crypto.randomUUID(), captureId, 1, "Conflicto esperado."),
   ]);
   assert(conflict.conflicts.length === 1, "conflict was not reported");
   assert(conflict.accepted.length === 0, "conflict mutation was accepted");
 
-  await expectForbiddenWorkspace(userA.accessToken, userB.workspaceId);
+  await expectForbiddenWorkspace(refreshedA.accessToken, userB.workspaceId);
   const bPull = await pull(userB.accessToken, userB.workspaceId, userB.deviceId, "0");
   assert(
     bPull.changes.every((change) => change.entity.workspaceId === userB.workspaceId),
     "user B saw user A workspace data",
   );
+  await logout(refreshedA.refreshToken);
+  await expectRefreshRejected(refreshedA.refreshToken);
 
   console.log("Sync API authenticated integration test passed.");
 }
@@ -202,7 +216,37 @@ async function getSession(accessToken: string) {
   });
 
   assert(response.ok, `session failed with ${response.status}`);
-  return response.json() as Promise<{ workspaceId: string; deviceId: string }>;
+  return response.json() as Promise<{ workspaceId: string; deviceId: string; sessionId: string }>;
+}
+
+async function refresh(refreshToken: string): Promise<RefreshSessionResponse> {
+  const response = await fetch(`${apiUrl}/auth/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refreshToken }),
+  });
+
+  assert(response.ok, `refresh failed with ${response.status}`);
+  return response.json() as Promise<RefreshSessionResponse>;
+}
+
+async function logout(refreshToken: string) {
+  const response = await fetch(`${apiUrl}/auth/logout`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refreshToken }),
+  });
+
+  assert(response.ok, `logout failed with ${response.status}`);
+}
+
+async function expectRefreshRejected(refreshToken: string) {
+  const response = await fetch(`${apiUrl}/auth/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refreshToken }),
+  });
+  assert(response.status === 401, "refresh token was unexpectedly accepted");
 }
 
 async function getCurrentDevice(accessToken: string): Promise<CurrentDeviceResponse> {

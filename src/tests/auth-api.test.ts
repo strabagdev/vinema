@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import { createVinemaApiServer } from "../../server/src/http/create-server";
 import { loadAuthTokenConfig } from "../../server/src/auth/auth-config";
 import { issueAccessToken } from "../../server/src/auth/access-token";
+import { createAuthSessionService } from "../../server/src/auth/auth-session-service";
 import { createDeviceService } from "../../server/src/auth/device-service";
 import { createIdentityService } from "../../server/src/auth/identity-service";
 import { hashPassword } from "../../server/src/auth/password";
+import { createRefreshTokenCodec } from "../../server/src/auth/refresh-token-codec";
+import { InMemoryAuthSessionRepository } from "../../server/src/testing/in-memory-auth-session-repository";
 import { InMemoryDeviceRepository } from "../../server/src/testing/in-memory-device-repository";
 import { InMemoryIdentityRepository } from "../../server/src/testing/in-memory-identity-repository";
 import { InMemorySyncStore } from "../../server/src/testing/in-memory-sync-store";
@@ -27,10 +30,14 @@ describe("Vinema auth API", () => {
       user: { email: "User@Example.Test", displayName: "Test User" },
       workspaceId: expect.any(String),
       deviceId: expect.any(String),
+      sessionId: expect.any(String),
       accessToken: expect.any(String),
       accessTokenExpiresAt: expect.any(String),
+      refreshToken: expect.any(String),
+      refreshTokenExpiresAt: expect.any(String),
     });
     expect(response.body).not.toContain("passwordHash");
+    expect(response.body).not.toContain("refreshTokenHash");
     expect(response.body).not.toContain("password-123");
 
     const stored = await setup.identity.findUserByNormalizedEmail("user@example.test");
@@ -111,6 +118,7 @@ describe("Vinema auth API", () => {
     expect(session.json()).toMatchObject({
       workspaceId: registered.json().workspaceId,
       deviceId: login.json().deviceId,
+      sessionId: login.json().sessionId,
       tokenExpiresAt: expect.any(String),
     });
     expect(currentDevice.statusCode).toBe(200);
@@ -140,6 +148,7 @@ describe("Vinema auth API", () => {
           userId: registered.json().user.id,
           workspaceId: registered.json().workspaceId,
           deviceId: registered.json().deviceId,
+          sessionId: registered.json().sessionId,
           config: { ...tokenConfig, accessTokenTtlSeconds: 1 },
           now: new Date("2026-07-30T12:00:00.000Z"),
         }).accessToken}`,
@@ -254,6 +263,87 @@ describe("Vinema auth API", () => {
     expect(pullB.json().changes).toHaveLength(0);
   });
 
+  it("refreshes by rotating refresh tokens and rejects reused generations", async () => {
+    const setup = createSetup();
+    const registered = await register(setup.app, "refresh@example.test", "password-123");
+    const firstRefreshToken = registered.json().refreshToken;
+    const firstSessionId = registered.json().sessionId;
+    const refreshed = await setup.app.inject({
+      method: "POST",
+      url: "/auth/refresh",
+      payload: { refreshToken: firstRefreshToken },
+    });
+    const reused = await setup.app.inject({
+      method: "POST",
+      url: "/auth/refresh",
+      payload: { refreshToken: firstRefreshToken },
+    });
+    const familyRevoked = await setup.app.inject({
+      method: "POST",
+      url: "/auth/refresh",
+      payload: { refreshToken: refreshed.json().refreshToken },
+    });
+
+    expect(refreshed.statusCode).toBe(200);
+    expect(refreshed.json()).toMatchObject({
+      user: { id: registered.json().user.id },
+      workspaceId: registered.json().workspaceId,
+      deviceId: registered.json().deviceId,
+      sessionId: expect.any(String),
+      accessToken: expect.any(String),
+      refreshToken: expect.any(String),
+    });
+    expect(refreshed.json().sessionId).not.toBe(firstSessionId);
+    expect(refreshed.json().refreshToken).not.toBe(firstRefreshToken);
+    expect(setup.sessions.sessions.get(firstSessionId)?.replacedBySessionId).toBe(
+      refreshed.json().sessionId,
+    );
+    expect(reused.statusCode).toBe(401);
+    expect(reused.json().error.code).toBe("REFRESH_TOKEN_REUSED");
+    expect(familyRevoked.statusCode).toBe(401);
+  });
+
+  it("logout revokes only the current session and is idempotent", async () => {
+    const setup = createSetup();
+    const first = await register(setup.app, "logout@example.test", "password-123", "device-a");
+    const second = await setup.app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: {
+        email: "logout@example.test",
+        password: "password-123",
+        device: devicePayload("device-b"),
+      },
+    });
+    const logout = await setup.app.inject({
+      method: "POST",
+      url: "/auth/logout",
+      payload: { refreshToken: first.json().refreshToken },
+    });
+    const logoutAgain = await setup.app.inject({
+      method: "POST",
+      url: "/auth/logout",
+      payload: { refreshToken: first.json().refreshToken },
+    });
+    const firstRefresh = await setup.app.inject({
+      method: "POST",
+      url: "/auth/refresh",
+      payload: { refreshToken: first.json().refreshToken },
+    });
+    const secondRefresh = await setup.app.inject({
+      method: "POST",
+      url: "/auth/refresh",
+      payload: { refreshToken: second.json().refreshToken },
+    });
+
+    expect(logout.statusCode).toBe(200);
+    expect(logout.json()).toEqual({ ok: true });
+    expect(logoutAgain.statusCode).toBe(200);
+    expect(firstRefresh.statusCode).toBe(401);
+    expect(firstRefresh.json().error.code).toBe("REFRESH_TOKEN_REVOKED");
+    expect(secondRefresh.statusCode).toBe(200);
+  });
+
   it("requires auth secret outside tests", () => {
     expect(() =>
       loadAuthTokenConfig({ NODE_ENV: "production" }),
@@ -272,11 +362,19 @@ function createSetup() {
   const sync = new InMemorySyncStore();
   const identity = new InMemoryIdentityRepository();
   const devices = new InMemoryDeviceRepository();
+  const sessions = new InMemoryAuthSessionRepository();
   const deviceService = createDeviceService({ repository: devices });
+  const sessionService = createAuthSessionService({
+    repository: sessions,
+    identityRepository: identity,
+    deviceRepository: devices,
+    tokenConfig,
+    refreshTokenCodec: createRefreshTokenCodec(),
+  });
   const identityService = createIdentityService({
     repository: identity,
     deviceService,
-    tokenConfig,
+    sessionService,
     onWorkspaceCreated: (workspaceId) => {
       sync.workspaces.add(workspaceId);
     },
@@ -287,7 +385,7 @@ function createSetup() {
     tokenConfig,
   });
 
-  return { app, identity, sync, devices };
+  return { app, identity, sync, devices, sessions };
 }
 
 function register(
@@ -335,6 +433,7 @@ function tokenWith({
     userId,
     workspaceId,
     deviceId,
+    sessionId: crypto.randomUUID(),
     config: { ...tokenConfig, issuer, audience },
   }).accessToken;
 }

@@ -4,6 +4,10 @@ import {
   currentDeviceResponseSchema,
   loginRequestSchema,
   loginResponseSchema,
+  logoutRequestSchema,
+  logoutResponseSchema,
+  refreshSessionRequestSchema,
+  refreshSessionResponseSchema,
   registerRequestSchema,
   registerResponseSchema,
   type AuthErrorCode,
@@ -11,6 +15,10 @@ import {
   type CurrentDeviceResponse,
   type LoginRequest,
   type LoginResponse,
+  type LogoutRequest,
+  type LogoutResponse,
+  type RefreshSessionRequest,
+  type RefreshSessionResponse,
   type RegisterRequest,
   type RegisterResponse,
 } from "@vinema/sync-contracts";
@@ -30,6 +38,11 @@ export class AuthClientError extends Error {
 export type AuthClient = {
   register(input: RegisterRequest, options?: AuthClientOptions): Promise<RegisterResponse>;
   login(input: LoginRequest, options?: AuthClientOptions): Promise<LoginResponse>;
+  refresh(
+    input: RefreshSessionRequest,
+    options?: AuthClientOptions,
+  ): Promise<RefreshSessionResponse>;
+  logout(input: LogoutRequest, options?: AuthClientOptions): Promise<LogoutResponse>;
   getSession(
     accessToken: string,
     options?: AuthClientOptions,
@@ -106,6 +119,58 @@ export function createAuthClient({
       const response = loginResponseSchema.safeParse(body);
       if (!response.success) {
         logger?.warn?.("auth login invalid response");
+        throw new AuthClientError("UNEXPECTED_ERROR", "Respuesta invalida.");
+      }
+
+      return response.data;
+    },
+
+    async refresh(input, options = {}) {
+      const parsed = refreshSessionRequestSchema.safeParse(input);
+      if (!parsed.success) {
+        throw new AuthClientError(
+          "VALIDATION_ERROR",
+          "La solicitud de refresh no es valida.",
+          undefined,
+          parsed.error.issues,
+        );
+      }
+
+      const body = await requestJson(fetchFn, buildUrl(normalizedBaseUrl, "/auth/refresh"), {
+        method: "POST",
+        signal: options.signal,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(parsed.data),
+      });
+      const response = refreshSessionResponseSchema.safeParse(body);
+      if (!response.success) {
+        logger?.warn?.("auth refresh invalid response");
+        throw new AuthClientError("UNEXPECTED_ERROR", "Respuesta invalida.");
+      }
+
+      return response.data;
+    },
+
+    async logout(input, options = {}) {
+      const parsed = logoutRequestSchema.safeParse(input);
+      if (!parsed.success) {
+        throw new AuthClientError(
+          "VALIDATION_ERROR",
+          "La solicitud de logout no es valida.",
+          undefined,
+          parsed.error.issues,
+        );
+      }
+
+      const body = await requestJson(fetchFn, buildUrl(normalizedBaseUrl, "/auth/logout"), {
+        method: "POST",
+        signal: options.signal,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(parsed.data),
+      });
+      const response = logoutResponseSchema.safeParse(body);
+      if (!response.success) {
+        logger?.warn?.("auth logout invalid response");
         throw new AuthClientError("UNEXPECTED_ERROR", "Respuesta invalida.");
       }
 

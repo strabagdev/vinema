@@ -4,11 +4,16 @@ import {
   type CurrentDeviceResponse,
   type LoginRequest,
   type LoginResponse,
+  type LogoutRequest,
+  type LogoutResponse,
+  type RefreshSessionRequest,
+  type RefreshSessionResponse,
+  type DeviceSummary,
   type RegisterRequest,
   type RegisterResponse,
 } from "@vinema/sync-contracts";
-import { issueAccessToken, type AuthContext } from "./access-token";
-import type { AuthTokenConfig } from "./auth-config";
+import { type AuthContext } from "./access-token";
+import type { AuthSessionService } from "./auth-session-service";
 import { AuthError } from "./auth-errors";
 import type { DeviceService } from "./device-service";
 import { normalizeEmail } from "./email";
@@ -18,6 +23,8 @@ import { hashPassword, verifyPassword } from "./password";
 export type IdentityService = {
   register(input: RegisterRequest): Promise<RegisterResponse>;
   login(input: LoginRequest): Promise<LoginResponse>;
+  refresh(input: RefreshSessionRequest): Promise<RefreshSessionResponse>;
+  logout(input: LogoutRequest): Promise<LogoutResponse>;
   getCurrentSession(authContext: AuthContext): Promise<CurrentSessionResponse>;
   getCurrentDevice(authContext: AuthContext): Promise<CurrentDeviceResponse>;
 };
@@ -25,13 +32,13 @@ export type IdentityService = {
 export function createIdentityService({
   repository,
   deviceService,
-  tokenConfig,
+  sessionService,
   clock = () => new Date(),
   onWorkspaceCreated,
 }: {
   repository: IdentityRepository;
   deviceService: DeviceService;
-  tokenConfig: AuthTokenConfig;
+  sessionService: AuthSessionService;
   clock?: () => Date;
   onWorkspaceCreated?: (workspaceId: string) => void | Promise<void>;
 }): IdentityService {
@@ -57,7 +64,7 @@ export function createIdentityService({
         ...input.device,
       });
 
-      return sessionResponse(user, workspace.id, device.id, tokenConfig, clock());
+      return sessionResponse(user, workspace.id, device, sessionService, clock());
     },
 
     async login(input) {
@@ -81,7 +88,30 @@ export function createIdentityService({
         ...input.device,
       });
 
-      return sessionResponse(user, user.personalWorkspaceId, device.id, tokenConfig, clock());
+      return sessionResponse(
+        user,
+        user.personalWorkspaceId,
+        device,
+        sessionService,
+        clock(),
+        true,
+      );
+    },
+
+    refresh(input) {
+      return sessionService.refreshSession({
+        refreshToken: input.refreshToken,
+        now: clock(),
+      });
+    },
+
+    async logout(input) {
+      await sessionService.revokeSession({
+        refreshToken: input.refreshToken,
+        reason: "USER_LOGOUT",
+        now: clock(),
+      });
+      return { ok: true };
     },
 
     async getCurrentSession(authContext) {
@@ -105,6 +135,7 @@ export function createIdentityService({
         user: toAuthenticatedUser(user),
         workspaceId: workspace.id,
         deviceId: authContext.deviceId,
+        sessionId: authContext.sessionId,
         tokenExpiresAt: authContext.expiresAt,
       };
     },
@@ -115,27 +146,32 @@ export function createIdentityService({
   };
 }
 
-function sessionResponse(
+async function sessionResponse(
   user: IdentityUserRecord,
   workspaceId: string,
-  deviceId: string,
-  tokenConfig: AuthTokenConfig,
+  device: DeviceSummary,
+  sessionService: AuthSessionService,
   now: Date,
-): RegisterResponse {
-  const token = issueAccessToken({
+  revokeExistingForDevice = false,
+): Promise<RegisterResponse> {
+  const session = await sessionService.createSession({
     userId: user.id,
     workspaceId,
-    deviceId,
-    config: tokenConfig,
+    deviceId: device.id,
     now,
+    revokeExistingForDevice,
   });
 
   return {
     user: toAuthenticatedUser(user),
     workspaceId,
-    deviceId,
-    accessToken: token.accessToken,
-    accessTokenExpiresAt: token.accessTokenExpiresAt,
+    deviceId: device.id,
+    device,
+    sessionId: session.session.id,
+    accessToken: session.accessToken,
+    accessTokenExpiresAt: session.accessTokenExpiresAt,
+    refreshToken: session.refreshToken,
+    refreshTokenExpiresAt: session.refreshTokenExpiresAt,
   };
 }
 

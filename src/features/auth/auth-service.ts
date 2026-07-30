@@ -17,6 +17,8 @@ import {
 export type AuthService = AccessTokenProvider & {
   register(input: AuthRegisterInput): Promise<AuthenticatedSession>;
   login(input: AuthLoginInput): Promise<AuthenticatedSession>;
+  refresh(): Promise<AuthenticatedSession>;
+  logout(): Promise<void>;
   getCurrentSession(): Promise<CurrentSessionResponse>;
   getCurrentDevice(): Promise<CurrentDeviceResponse>;
   isAuthenticated(): boolean;
@@ -42,6 +44,7 @@ export function createAuthService({
   logger?: { warn?(message: string, context?: Record<string, unknown>): void };
 }): AuthService {
   let accessToken: string | undefined;
+  let refreshToken: string | undefined;
 
   async function authenticate(
     operation: () => Promise<AuthenticatedSession>,
@@ -50,13 +53,16 @@ export function createAuthService({
     try {
       const session = await operation();
       accessToken = session.accessToken;
+      refreshToken = session.refreshToken;
       authStateEngine.dispatch({
         type: "AUTH_SUCCEEDED",
         at: clock(),
         user: session.user,
         workspaceId: session.workspaceId,
         deviceId: session.deviceId,
+        sessionId: session.sessionId,
         accessTokenExpiresAt: session.accessTokenExpiresAt,
+        refreshTokenExpiresAt: session.refreshTokenExpiresAt,
       });
       return session;
     } catch (error) {
@@ -101,7 +107,10 @@ export function createAuthService({
           user: session.user,
           workspaceId: session.workspaceId,
           deviceId: session.deviceId,
+          sessionId: session.sessionId,
           accessTokenExpiresAt: session.tokenExpiresAt,
+          refreshTokenExpiresAt:
+            authStateEngine.getState().refreshTokenExpiresAt ?? session.tokenExpiresAt,
         });
         return session;
       } catch (error) {
@@ -131,11 +140,63 @@ export function createAuthService({
     getAccessToken() {
       return accessToken;
     },
+    async refresh() {
+      if (!refreshToken) {
+        throw new AuthClientError("TOKEN_MISSING", "No hay sesion local.");
+      }
+
+      authStateEngine.dispatch({ type: "REFRESH_STARTED", at: clock() });
+      try {
+        const session = await authClient.refresh({ refreshToken });
+        accessToken = session.accessToken;
+        refreshToken = session.refreshToken;
+        authStateEngine.dispatch({
+          type: "REFRESH_SUCCEEDED",
+          at: clock(),
+          user: session.user,
+          workspaceId: session.workspaceId,
+          deviceId: session.deviceId,
+          sessionId: session.sessionId,
+          accessTokenExpiresAt: session.accessTokenExpiresAt,
+          refreshTokenExpiresAt: session.refreshTokenExpiresAt,
+        });
+        return session;
+      } catch (error) {
+        const authError = toAuthError(error);
+        accessToken = undefined;
+        refreshToken = undefined;
+        authStateEngine.dispatch({
+          type: "REFRESH_FAILED",
+          at: clock(),
+          code: authError.code,
+          message: authError.message,
+        });
+        authStateEngine.dispatch({ type: "AUTH_CLEARED", at: clock() });
+        throw error;
+      }
+    },
+    async logout() {
+      const token = refreshToken;
+      authStateEngine.dispatch({ type: "LOGOUT_STARTED", at: clock() });
+      accessToken = undefined;
+      refreshToken = undefined;
+      try {
+        if (token) {
+          await authClient.logout({ refreshToken: token });
+        }
+      } catch (error) {
+        const authError = toAuthError(error);
+        logger?.warn?.("auth logout remote failed", { code: authError.code });
+      } finally {
+        authStateEngine.dispatch({ type: "LOGOUT_COMPLETED", at: clock() });
+      }
+    },
     isAuthenticated() {
       return Boolean(accessToken) && authStateEngine.getState().status === "AUTHENTICATED";
     },
     clearLocalSession() {
       accessToken = undefined;
+      refreshToken = undefined;
       authStateEngine.dispatch({ type: "AUTH_CLEARED", at: clock() });
     },
     subscribe(listener) {

@@ -9,8 +9,12 @@ import {
   currentDeviceResponseSchema,
   loginRequestSchema,
   loginResponseSchema,
+  logoutRequestSchema,
+  logoutResponseSchema,
   pullRequestSchema,
   pushRequestSchema,
+  refreshSessionRequestSchema,
+  refreshSessionResponseSchema,
   registerRequestSchema,
   registerResponseSchema,
 } from "@vinema/sync-contracts";
@@ -101,6 +105,46 @@ export function createVinemaApiServer({
     try {
       const response = await identityService.login(parsed.data);
       const parsedResponse = loginResponseSchema.parse(response);
+      return reply.send(parsedResponse);
+    } catch (error) {
+      return sendAuthError(reply, error);
+    }
+  });
+
+  app.post("/auth/refresh", async (request, reply) => {
+    if (!identityService) {
+      return reply.status(500).send(authErrorResponse("SERVER_ERROR", "Auth no configurado."));
+    }
+    const parsed = refreshSessionRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply
+        .status(400)
+        .send(authErrorResponse("VALIDATION_ERROR", "La solicitud no es valida.", parsed.error.issues));
+    }
+
+    try {
+      const response = await identityService.refresh(parsed.data);
+      const parsedResponse = refreshSessionResponseSchema.parse(response);
+      return reply.send(parsedResponse);
+    } catch (error) {
+      return sendAuthError(reply, error);
+    }
+  });
+
+  app.post("/auth/logout", async (request, reply) => {
+    if (!identityService) {
+      return reply.status(500).send(authErrorResponse("SERVER_ERROR", "Auth no configurado."));
+    }
+    const parsed = logoutRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply
+        .status(400)
+        .send(authErrorResponse("VALIDATION_ERROR", "La solicitud no es valida.", parsed.error.issues));
+    }
+
+    try {
+      const response = await identityService.logout(parsed.data);
+      const parsedResponse = logoutResponseSchema.parse(response);
       return reply.send(parsedResponse);
     } catch (error) {
       return sendAuthError(reply, error);
@@ -232,11 +276,13 @@ function authorizeSyncRequest({
       userId: "test-user",
       workspaceId,
       deviceId: "test-device",
+      sessionId: "test-session",
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
       claims: {
         sub: "test-user",
         workspaceId,
         deviceId: "test-device",
+        sessionId: "test-session",
         iat: 0,
         exp: 9_999_999_999,
         iss: "test",

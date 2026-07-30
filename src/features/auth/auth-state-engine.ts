@@ -3,6 +3,8 @@ import type { AuthenticatedUser } from "@vinema/sync-contracts";
 export type AuthStatus =
   | "UNKNOWN"
   | "AUTHENTICATING"
+  | "REFRESHING"
+  | "LOGGING_OUT"
   | "AUTHENTICATED"
   | "UNAUTHENTICATED"
   | "ERROR";
@@ -18,7 +20,9 @@ export type AuthState = {
   user: AuthenticatedUser | null;
   workspaceId: string | null;
   deviceId: string | null;
+  sessionId: string | null;
   accessTokenExpiresAt: string | null;
+  refreshTokenExpiresAt: string | null;
   lastAuthenticatedAt: string | null;
   error: AuthStateError | null;
 };
@@ -31,8 +35,24 @@ export type AuthEvent =
       user: AuthenticatedUser;
       workspaceId: string;
       deviceId: string;
+      sessionId: string;
       accessTokenExpiresAt: string;
+      refreshTokenExpiresAt: string;
     }
+  | { type: "REFRESH_STARTED"; at: string }
+  | {
+      type: "REFRESH_SUCCEEDED";
+      at: string;
+      user: AuthenticatedUser;
+      workspaceId: string;
+      deviceId: string;
+      sessionId: string;
+      accessTokenExpiresAt: string;
+      refreshTokenExpiresAt: string;
+    }
+  | { type: "REFRESH_FAILED"; at: string; code?: string; message: string }
+  | { type: "LOGOUT_STARTED"; at: string }
+  | { type: "LOGOUT_COMPLETED"; at: string }
   | { type: "AUTH_FAILED"; at: string; code?: string; message: string }
   | { type: "AUTH_CLEARED"; at: string }
   | { type: "AUTH_RESET" };
@@ -49,7 +69,9 @@ export const initialAuthState: AuthState = {
   user: null,
   workspaceId: null,
   deviceId: null,
+  sessionId: null,
   accessTokenExpiresAt: null,
+  refreshTokenExpiresAt: null,
   lastAuthenticatedAt: null,
   error: null,
 };
@@ -58,16 +80,24 @@ export function reduceAuthState(state: AuthState, event: AuthEvent): AuthState {
   switch (event.type) {
     case "AUTH_STARTED":
       return { ...state, status: "AUTHENTICATING", error: null };
+    case "REFRESH_STARTED":
+      return { ...state, status: "REFRESHING", error: null };
+    case "LOGOUT_STARTED":
+      return { ...state, status: "LOGGING_OUT", error: null };
     case "AUTH_SUCCEEDED":
+    case "REFRESH_SUCCEEDED":
       return {
         status: "AUTHENTICATED",
         user: { ...event.user },
         workspaceId: event.workspaceId,
         deviceId: event.deviceId,
+        sessionId: event.sessionId,
         accessTokenExpiresAt: event.accessTokenExpiresAt,
+        refreshTokenExpiresAt: event.refreshTokenExpiresAt,
         lastAuthenticatedAt: event.at,
         error: null,
       };
+    case "REFRESH_FAILED":
     case "AUTH_FAILED":
       return {
         ...state,
@@ -84,10 +114,14 @@ export function reduceAuthState(state: AuthState, event: AuthEvent): AuthState {
         user: null,
         workspaceId: null,
         deviceId: null,
+        sessionId: null,
         accessTokenExpiresAt: null,
+        refreshTokenExpiresAt: null,
         lastAuthenticatedAt: state.lastAuthenticatedAt,
         error: null,
       };
+    case "LOGOUT_COMPLETED":
+      return reduceAuthState(state, { type: "AUTH_CLEARED", at: event.at });
     case "AUTH_RESET":
       return cloneState(initialAuthState);
     default:
