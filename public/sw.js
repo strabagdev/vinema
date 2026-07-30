@@ -1,4 +1,4 @@
-const CACHE_NAME = "vinema-shell-v2";
+const CACHE_NAME = "vinema-shell-v3";
 const SHELL_ASSETS = [
   "/",
   "/login",
@@ -38,6 +38,14 @@ self.addEventListener("fetch", (event) => {
   }
 
   const requestUrl = new URL(event.request.url);
+
+  if (
+    requestUrl.origin !== self.location.origin ||
+    requestUrl.pathname.startsWith("/auth") ||
+    requestUrl.pathname.startsWith("/api")
+  ) {
+    return;
+  }
 
   if (requestUrl.origin === self.location.origin && requestUrl.pathname === "/search") {
     event.respondWith(
