@@ -31,6 +31,7 @@ export async function attachCaptureAssociation(
     contextId: pair.relatedNodeId,
     relationType: "CAPTURE_ASSOCIATION",
     relatedNodeId: pair.relatedNodeId,
+    version: 1,
     createdAt: new Date().toISOString(),
   });
 }

@@ -8,6 +8,7 @@ export interface Context {
   type: ContextType;
   name: string;
   description: string | null;
+  version: number;
   createdAt: string;
   updatedAt: string;
   archivedAt: string | null;

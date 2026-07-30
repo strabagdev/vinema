@@ -5,5 +5,6 @@ export interface NodeContextRelation {
   contextId: string;
   relationType?: "CONTEXT" | "CAPTURE_ASSOCIATION";
   relatedNodeId?: string;
+  version: number;
   createdAt: string;
 }

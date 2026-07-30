@@ -56,6 +56,8 @@ export function mapLocalRelationToCaptureConceptMutation(input: {
   mutationId: string;
   relation: NodeContextRelation;
   baseVersion: number | null;
+  updatedAt?: string;
+  archivedAt?: string | null;
 }): SyncMutation {
   return {
     mutationId: input.mutationId,
@@ -68,8 +70,8 @@ export function mapLocalRelationToCaptureConceptMutation(input: {
       conceptId: input.relation.contextId,
       source: "USER_CONFIRMED",
       createdAt: input.relation.createdAt,
-      updatedAt: input.relation.createdAt,
-      archivedAt: null,
+      updatedAt: input.updatedAt ?? input.relation.createdAt,
+      archivedAt: input.archivedAt ?? null,
     },
   };
 }
@@ -107,6 +109,7 @@ export function mapRemoteConceptToLocalContext(concept: ConceptEntity): Context 
     description: concept.mergedIntoId
       ? `Fusionado en ${concept.mergedIntoId}.`
       : null,
+    version: concept.version,
     createdAt: concept.createdAt,
     updatedAt: concept.updatedAt,
     archivedAt: concept.archivedAt,
@@ -122,6 +125,7 @@ export function mapRemoteCaptureConceptToLocalRelation(
     nodeId: relation.captureId,
     contextId: relation.conceptId,
     relationType: "CONTEXT",
+    version: relation.version,
     createdAt: relation.createdAt,
   };
 }

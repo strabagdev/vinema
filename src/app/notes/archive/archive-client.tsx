@@ -25,6 +25,7 @@ import type { RecoveryResult } from "@/features/recovery/recovery-result";
 import { searchNodes } from "@/features/recovery/search-nodes";
 import {
   contextRepository,
+  createLocalSyncRepositorySet,
   nodeContextRelationRepository,
   nodeRepository,
 } from "@/infrastructure/repositories";
@@ -52,6 +53,16 @@ export function ArchiveClient() {
     () => searchResults.slice(0, visibleCount),
     [searchResults, visibleCount],
   );
+  const localRepositories = useMemo(() => {
+    if (vinemaContext.status !== "ready") {
+      return null;
+    }
+
+    return createLocalSyncRepositorySet({
+      workspaceId: vinemaContext.workspace.id,
+      deviceId: vinemaContext.device.id,
+    });
+  }, [vinemaContext]);
   const resultCount = activeQuery ? searchResults.length : archiveTotal;
   const visibleResultCount = activeQuery
     ? visibleSearchResults.length
@@ -141,7 +152,7 @@ export function ArchiveClient() {
   }, [activeQuery, draftQuery, router]);
 
   async function handleRestore(nodeId: string) {
-    if (restoringId || vinemaContext.status !== "ready") {
+    if (restoringId || vinemaContext.status !== "ready" || !localRepositories) {
       return;
     }
 
@@ -150,7 +161,11 @@ export function ArchiveClient() {
     setError(null);
 
     try {
-      await restoreNode(nodeRepository, nodeId, vinemaContext.device);
+      await restoreNode(
+        localRepositories.nodeRepository,
+        nodeId,
+        vinemaContext.device,
+      );
       setFeedback("Captura restaurada. Ya vuelve a estar en la Base de Conocimiento.");
       await loadArchive();
     } catch {

@@ -67,6 +67,7 @@ function makeContext(overrides: Partial<Context> = {}): Context {
     type: "AREA",
     name: "Trabajo",
     description: null,
+    version: 1,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     archivedAt: null,
@@ -325,6 +326,7 @@ describe("Node context relations", () => {
           workspaceId: workspace.id,
           nodeId: node.id,
           contextId: area.id,
+          version: 1,
           createdAt: "2026-01-01T00:00:00.000Z",
         },
         {
@@ -332,6 +334,7 @@ describe("Node context relations", () => {
           workspaceId: workspace.id,
           nodeId: node.id,
           contextId: archivedProject.id,
+          version: 1,
           createdAt: "2026-01-01T00:00:00.000Z",
         },
       ]),

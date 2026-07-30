@@ -47,6 +47,7 @@ export async function updateContext(
     ...existingContext,
     name: validated.name,
     description: validated.description,
+    version: existingContext.version + 1,
     updatedAt,
   });
 }

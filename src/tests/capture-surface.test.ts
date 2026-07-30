@@ -318,6 +318,7 @@ describe("CaptureSurface", () => {
         workspaceId: workspace.id,
         nodeId: "rare-carbon",
         contextId: "perfumes",
+        version: 1,
         createdAt: "2026-01-05T00:00:00.000Z",
       },
     ]);
@@ -400,6 +401,7 @@ describe("CaptureSurface", () => {
         workspaceId: workspace.id,
         nodeId: "reunion-1",
         contextId: "reuniones",
+        version: 1,
         createdAt: "2026-01-05T00:00:00.000Z",
       },
       {
@@ -407,6 +409,7 @@ describe("CaptureSurface", () => {
         workspaceId: workspace.id,
         nodeId: "reunion-2",
         contextId: "reuniones",
+        version: 1,
         createdAt: "2026-01-06T00:00:00.000Z",
       },
     ]);
@@ -747,6 +750,7 @@ function createContext({
     type,
     name,
     description: null,
+    version: 1,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     archivedAt: null,

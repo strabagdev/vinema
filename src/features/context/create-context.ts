@@ -36,6 +36,7 @@ export async function createContext(
     type: validated.type,
     name: validated.name,
     description: validated.description,
+    version: 1,
     createdAt: now,
     updatedAt: now,
     archivedAt: null,

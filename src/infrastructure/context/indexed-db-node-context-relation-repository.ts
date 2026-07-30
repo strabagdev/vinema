@@ -43,7 +43,10 @@ export class IndexedDbNodeContextRelationRepository
       return [];
     }
 
-    return db.getAll(NODE_CONTEXT_RELATIONS_STORE);
+    const relations = await db.getAll(NODE_CONTEXT_RELATIONS_STORE);
+    return relations
+      .map(normalizeStoredNodeContextRelation)
+      .filter((relation): relation is NodeContextRelation => relation !== null);
   }
 
   async save(
@@ -57,8 +60,9 @@ export class IndexedDbNodeContextRelationRepository
       );
     }
 
-    await db.put(NODE_CONTEXT_RELATIONS_STORE, relation);
-    return relation;
+    const storedRelation = toStoredNodeContextRelation(relation);
+    await db.put(NODE_CONTEXT_RELATIONS_STORE, storedRelation);
+    return storedRelation;
   }
 
   async delete(id: string): Promise<void> {
@@ -72,4 +76,51 @@ export class IndexedDbNodeContextRelationRepository
 
     await db.delete(NODE_CONTEXT_RELATIONS_STORE, id);
   }
+}
+
+export function normalizeStoredNodeContextRelation(
+  value: unknown,
+): NodeContextRelation | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+
+  const record = value as Partial<NodeContextRelation>;
+
+  if (
+    typeof record.id !== "string" ||
+    typeof record.workspaceId !== "string" ||
+    typeof record.nodeId !== "string" ||
+    typeof record.contextId !== "string" ||
+    typeof record.createdAt !== "string" ||
+    (record.relationType !== undefined &&
+      record.relationType !== "CONTEXT" &&
+      record.relationType !== "CAPTURE_ASSOCIATION") ||
+    (record.relatedNodeId !== undefined && typeof record.relatedNodeId !== "string")
+  ) {
+    return null;
+  }
+
+  return toStoredNodeContextRelation({
+    id: record.id,
+    workspaceId: record.workspaceId,
+    nodeId: record.nodeId,
+    contextId: record.contextId,
+    relationType: record.relationType,
+    relatedNodeId: record.relatedNodeId,
+    version:
+      typeof record.version === "number" && record.version > 0
+        ? record.version
+        : 1,
+    createdAt: record.createdAt,
+  });
+}
+
+export function toStoredNodeContextRelation(
+  relation: NodeContextRelation,
+): NodeContextRelation {
+  return {
+    ...relation,
+    version: relation.version > 0 ? relation.version : 1,
+  };
 }

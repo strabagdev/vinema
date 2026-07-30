@@ -19,6 +19,7 @@ export async function archiveContext(
   return repository.archive({
     ...existingContext,
     archivedAt: now,
+    version: existingContext.version + 1,
     updatedAt: now,
   });
 }

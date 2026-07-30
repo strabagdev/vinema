@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Archive } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ import { getNodeDetailPath } from "@/features/node/node-routes";
 import { getReturnToFromSearchParams } from "@/features/recovery/recovery-routes";
 import {
   contextRepository,
+  createLocalSyncRepositorySet,
   nodeContextRelationRepository,
   nodeRepository,
 } from "@/infrastructure/repositories";
@@ -64,6 +65,16 @@ function ContextDetailLoader({
   returnTo: string | null;
 }) {
   const vinemaContext = useVinemaContext();
+  const localRepositories = useMemo(() => {
+    if (vinemaContext.status !== "ready") {
+      return null;
+    }
+
+    return createLocalSyncRepositorySet({
+      workspaceId: vinemaContext.workspace.id,
+      deviceId: vinemaContext.device.id,
+    });
+  }, [vinemaContext]);
   const [context, setContext] = useState<Context | null>(null);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [loading, setLoading] = useState(true);
@@ -134,12 +145,22 @@ function ContextDetailLoader({
     );
   }
 
+  if (!localRepositories) {
+    return (
+      <section className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 lg:px-8">
+        <div className="rounded-lg border border-zinc-200 bg-white p-6 text-sm text-zinc-500">
+          Cargando contexto local...
+        </div>
+      </section>
+    );
+  }
+
   return (
     <ContextDetailView
       context={context}
       nodes={nodes}
       onSave={async ({ name, description }) => {
-        const updatedContext = await updateContext(contextRepository, {
+        const updatedContext = await updateContext(localRepositories.contextRepository, {
           id: context.id,
           name,
           description,
@@ -148,11 +169,17 @@ function ContextDetailLoader({
         return updatedContext;
       }}
       onArchive={async () => {
-        const archivedContext = await archiveContext(contextRepository, context.id);
+        const archivedContext = await archiveContext(
+          localRepositories.contextRepository,
+          context.id,
+        );
         setContext(archivedContext);
       }}
       onRestore={async () => {
-        const restoredContext = await restoreContext(contextRepository, context.id);
+        const restoredContext = await restoreContext(
+          localRepositories.contextRepository,
+          context.id,
+        );
         setContext(restoredContext);
       }}
       returnTo={returnTo}

@@ -107,13 +107,13 @@ export class IndexedDbSyncOutboxRepository {
   constructor(private readonly now: () => string = () => new Date().toISOString()) {}
 
   async enqueue(input: SyncMutationEnqueueInput): Promise<SyncMutationOutboxRecord> {
-    const record = createOutboxRecord(input, input.createdAt ?? this.now());
+    const record = createSyncMutationOutboxRecord(input, input.createdAt ?? this.now());
     const db = await getVinemaDb();
     const transaction = db.transaction(SYNC_MUTATIONS_STORE, "readwrite");
     const existing = await transaction.store.get(record.mutationId);
 
     if (existing) {
-      if (!sameEnqueuedMutation(existing, record)) {
+      if (!isSameEnqueuedMutation(existing, record)) {
         throw new SyncOutboxError(
           "DUPLICATE_MUTATION_CONFLICT",
           "La mutacion ya existe con contenido distinto.",
@@ -429,7 +429,7 @@ export class IndexedDbSyncMetadataRepository {
   }
 }
 
-function createOutboxRecord(
+export function createSyncMutationOutboxRecord(
   input: SyncMutationEnqueueInput,
   now: string,
 ): SyncMutationOutboxRecord {
@@ -458,7 +458,7 @@ function createOutboxRecord(
   };
 }
 
-function sameEnqueuedMutation(
+export function isSameEnqueuedMutation(
   existing: SyncMutationOutboxRecord,
   next: SyncMutationOutboxRecord,
 ) {

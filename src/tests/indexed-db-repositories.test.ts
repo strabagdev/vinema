@@ -74,6 +74,7 @@ function makeContext(overrides: Partial<Context> = {}): Context {
     type: "AREA",
     name: "Trabajo",
     description: null,
+    version: 1,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     archivedAt: null,
@@ -89,6 +90,7 @@ function makeRelation(
     workspaceId,
     nodeId: "node-1",
     contextId: "context-1",
+    version: 1,
     createdAt: "2026-01-01T00:00:00.000Z",
     ...overrides,
   };

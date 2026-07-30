@@ -18,6 +18,7 @@ export async function restoreContext(
   return repository.restore({
     ...existingContext,
     archivedAt: null,
+    version: existingContext.version + 1,
     updatedAt: new Date().toISOString(),
   });
 }

@@ -20,6 +20,7 @@ import { listContextsByType } from "@/features/context/list-contexts";
 import { useVinemaContext } from "@/features/node/hooks/use-vinema-context";
 import {
   contextRepository,
+  createLocalSyncRepositorySet,
   nodeContextRelationRepository,
 } from "@/infrastructure/repositories";
 
@@ -45,6 +46,16 @@ export function ContextListClient({ type }: { type: ContextType }) {
       ),
     [contexts, view],
   );
+  const localRepositories = useMemo(() => {
+    if (vinemaContext.status !== "ready") {
+      return null;
+    }
+
+    return createLocalSyncRepositorySet({
+      workspaceId: vinemaContext.workspace.id,
+      deviceId: vinemaContext.device.id,
+    });
+  }, [vinemaContext]);
 
   const loadContexts = useCallback(async () => {
     if (vinemaContext.status !== "ready") {
@@ -85,7 +96,7 @@ export function ContextListClient({ type }: { type: ContextType }) {
   async function handleCreate(event: React.FormEvent) {
     event.preventDefault();
 
-    if (vinemaContext.status !== "ready") {
+    if (vinemaContext.status !== "ready" || !localRepositories) {
       return;
     }
 
@@ -93,7 +104,7 @@ export function ContextListClient({ type }: { type: ContextType }) {
     setCreateError(null);
 
     try {
-      await createContext(contextRepository, {
+      await createContext(localRepositories.contextRepository, {
         workspaceId: vinemaContext.workspace.id,
         type,
         name,

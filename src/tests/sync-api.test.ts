@@ -568,6 +568,7 @@ function makeContext(): Context {
     type: "AREA",
     name: "Rare Carbon",
     description: null,
+    version: 1,
     createdAt: now,
     updatedAt: now,
     archivedAt: null,
@@ -580,6 +581,7 @@ function makeRelation(nodeId: string, contextId: string): NodeContextRelation {
     workspaceId,
     nodeId,
     contextId,
+    version: 1,
     createdAt: now,
   };
 }

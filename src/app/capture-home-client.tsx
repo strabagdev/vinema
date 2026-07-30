@@ -3,9 +3,7 @@
 import { CaptureSurface } from "@/features/capture/capture-surface";
 import { useVinemaContext } from "@/features/node/hooks/use-vinema-context";
 import {
-  contextRepository,
-  nodeContextRelationRepository,
-  nodeRepository,
+  createLocalSyncRepositorySet,
   storageAdapter,
 } from "@/infrastructure/repositories";
 
@@ -37,11 +35,10 @@ export function CaptureHomeClient() {
       device={context.device}
       workspace={context.workspace}
       storage={storageAdapter}
-      repositories={{
-        contextRepository,
-        nodeContextRelationRepository,
-        nodeRepository,
-      }}
+      repositories={createLocalSyncRepositorySet({
+        workspaceId: context.workspace.id,
+        deviceId: context.device.id,
+      })}
     />
   );
 }

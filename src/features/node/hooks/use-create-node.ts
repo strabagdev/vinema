@@ -5,7 +5,7 @@ import type { Device } from "@/domain/device/device";
 import type { Node, NodeOrganizationStatus, NodeType } from "@/domain/node/node";
 import type { Workspace } from "@/domain/workspace/workspace";
 import { createNode } from "@/features/node/create-node";
-import { nodeRepository } from "@/infrastructure/repositories";
+import { createLocalSyncRepositorySet } from "@/infrastructure/repositories";
 
 export function useCreateNode() {
   const [saving, setSaving] = useState(false);
@@ -22,7 +22,11 @@ export function useCreateNode() {
     setError(null);
 
     try {
-      return await createNode(nodeRepository, input);
+      const repositories = createLocalSyncRepositorySet({
+        workspaceId: input.workspace.id,
+        deviceId: input.device.id,
+      });
+      return await createNode(repositories.nodeRepository, input);
     } catch (caughtError) {
       setError(
         caughtError instanceof Error

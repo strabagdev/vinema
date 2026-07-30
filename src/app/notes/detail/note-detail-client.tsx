@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Archive } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,8 +27,8 @@ import { getReturnToFromSearchParams } from "@/features/recovery/recovery-routes
 import { validateEditableNode } from "@/features/node/node-validation";
 import {
   contextRepository,
+  createLocalSyncRepositorySet,
   nodeContextRelationRepository,
-  nodeRepository,
 } from "@/infrastructure/repositories";
 import { formatShortDate } from "@/components/app-shell/note-list-item";
 
@@ -66,6 +66,16 @@ function NoteDetailLoader({
   const router = useRouter();
   const context = useVinemaContext();
   const { node, loading, error, setNode } = useNode(nodeId);
+  const localRepositories = useMemo(() => {
+    if (context.status !== "ready") {
+      return null;
+    }
+
+    return createLocalSyncRepositorySet({
+      workspaceId: context.workspace.id,
+      deviceId: context.device.id,
+    });
+  }, [context]);
   const [relatedContexts, setRelatedContexts] = useState<Context[]>([]);
   const [contextOptions, setContextOptions] = useState<Context[]>([]);
   const [contextError, setContextError] = useState<string | null>(null);
@@ -154,6 +164,16 @@ function NoteDetailLoader({
     );
   }
 
+  if (!localRepositories) {
+    return (
+      <section className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 lg:px-8">
+        <div className="rounded-lg border border-zinc-200 bg-white p-6 text-sm text-zinc-500">
+          Cargando sincronizacion local...
+        </div>
+      </section>
+    );
+  }
+
   return (
     <NoteDetailView
       node={node}
@@ -161,7 +181,7 @@ function NoteDetailLoader({
       contextOptions={contextOptions}
       contextError={contextError}
       onSave={async ({ content }) => {
-        const updatedNode = await updateNode(nodeRepository, {
+        const updatedNode = await updateNode(localRepositories.nodeRepository, {
           id: node.id,
           content,
           device: context.device,
@@ -170,11 +190,15 @@ function NoteDetailLoader({
         return updatedNode;
       }}
       onArchive={async () => {
-        await archiveNode(nodeRepository, node.id, context.device);
+        await archiveNode(localRepositories.nodeRepository, node.id, context.device);
         router.push(returnTo ?? "/notes");
       }}
       onRestore={async () => {
-        const restored = await restoreNode(nodeRepository, node.id, context.device);
+        const restored = await restoreNode(
+          localRepositories.nodeRepository,
+          node.id,
+          context.device,
+        );
         setNode(restored);
         return restored;
       }}
@@ -194,15 +218,16 @@ function NoteDetailLoader({
           ...toAttach.map((contextId) =>
             attachNodeToContext(
               {
-                contextRepository,
-                nodeContextRelationRepository,
-                nodeRepository,
+                contextRepository: localRepositories.contextRepository,
+                nodeContextRelationRepository:
+                  localRepositories.nodeContextRelationRepository,
+                nodeRepository: localRepositories.nodeRepository,
               },
               { nodeId: node.id, contextId },
             ),
           ),
           ...toDetach.map((contextId) =>
-            detachNodeFromContext(nodeContextRelationRepository, {
+            detachNodeFromContext(localRepositories.nodeContextRelationRepository, {
               nodeId: node.id,
               contextId,
             }),

@@ -478,6 +478,7 @@ describe("concept suggestions", () => {
           workspaceId: "workspace-1",
           nodeId: "rare-carbon",
           contextId: "perfumes",
+          version: 1,
           createdAt: "2026-01-01T00:00:00.000Z",
         },
       ],
@@ -824,6 +825,7 @@ function context({
     type: "AREA",
     name,
     description: null,
+    version: 1,
     createdAt,
     updatedAt: "2026-01-01T00:00:00.000Z",
     archivedAt: null,
@@ -844,6 +846,7 @@ function relation(firstNodeId: string, secondNodeId: string): NodeContextRelatio
     contextId: relatedNodeId,
     relatedNodeId,
     relationType: "CAPTURE_ASSOCIATION",
+    version: 1,
     createdAt: "2026-01-01T00:00:00.000Z",
   };
 }
@@ -854,6 +857,7 @@ function contextRelation(nodeId: string, contextId: string): NodeContextRelation
     workspaceId: "workspace-1",
     nodeId,
     contextId,
+    version: 1,
     createdAt: "2026-01-01T00:00:00.000Z",
   };
 }
@@ -864,6 +868,7 @@ function makeLegacyContextRelation(): NodeContextRelation {
     workspaceId: "workspace-1",
     nodeId: "valid",
     contextId: "context-1",
+    version: 1,
     createdAt: "2026-01-01T00:00:00.000Z",
   };
 }

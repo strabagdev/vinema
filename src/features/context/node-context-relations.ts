@@ -49,6 +49,7 @@ export async function attachNodeToContext(
     workspaceId: node.workspaceId,
     nodeId: node.id,
     contextId: context.id,
+    version: 1,
     createdAt: new Date().toISOString(),
   });
 }

@@ -82,6 +82,16 @@ vi.mock("@/infrastructure/repositories", () => ({
   contextRepository: {
     getById: vi.fn(async () => null),
   },
+  createLocalSyncRepositorySet: vi.fn(() => ({
+    contextRepository: {
+      getById: vi.fn(async () => null),
+    },
+    nodeContextRelationRepository: {
+      listByNodeId: vi.fn(async () => []),
+      listByWorkspace: vi.fn(async () => []),
+    },
+    nodeRepository: mocks.nodeRepository,
+  })),
   nodeContextRelationRepository: {
     listByNodeId: vi.fn(async () => []),
     listByWorkspace: vi.fn(async () => []),
