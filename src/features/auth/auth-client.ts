@@ -84,12 +84,17 @@ export function createAuthClient({
         );
       }
 
-      const body = await requestJson(fetchFn, buildUrl(normalizedBaseUrl, "/auth/register"), {
-        method: "POST",
-        signal: options.signal,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(parsed.data),
-      });
+      const body = await requestJson(
+        fetchFn,
+        buildUrl(normalizedBaseUrl, "/auth/register"),
+        {
+          method: "POST",
+          signal: options.signal,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(parsed.data),
+        },
+        logger,
+      );
       const response = registerResponseSchema.safeParse(body);
       if (!response.success) {
         logger?.warn?.("auth register invalid response");
@@ -110,12 +115,17 @@ export function createAuthClient({
         );
       }
 
-      const body = await requestJson(fetchFn, buildUrl(normalizedBaseUrl, "/auth/login"), {
-        method: "POST",
-        signal: options.signal,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(parsed.data),
-      });
+      const body = await requestJson(
+        fetchFn,
+        buildUrl(normalizedBaseUrl, "/auth/login"),
+        {
+          method: "POST",
+          signal: options.signal,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(parsed.data),
+        },
+        logger,
+      );
       const response = loginResponseSchema.safeParse(body);
       if (!response.success) {
         logger?.warn?.("auth login invalid response");
@@ -136,12 +146,17 @@ export function createAuthClient({
         );
       }
 
-      const body = await requestJson(fetchFn, buildUrl(normalizedBaseUrl, "/auth/refresh"), {
-        method: "POST",
-        signal: options.signal,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(parsed.data),
-      });
+      const body = await requestJson(
+        fetchFn,
+        buildUrl(normalizedBaseUrl, "/auth/refresh"),
+        {
+          method: "POST",
+          signal: options.signal,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(parsed.data),
+        },
+        logger,
+      );
       const response = refreshSessionResponseSchema.safeParse(body);
       if (!response.success) {
         logger?.warn?.("auth refresh invalid response");
@@ -162,12 +177,17 @@ export function createAuthClient({
         );
       }
 
-      const body = await requestJson(fetchFn, buildUrl(normalizedBaseUrl, "/auth/logout"), {
-        method: "POST",
-        signal: options.signal,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(parsed.data),
-      });
+      const body = await requestJson(
+        fetchFn,
+        buildUrl(normalizedBaseUrl, "/auth/logout"),
+        {
+          method: "POST",
+          signal: options.signal,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(parsed.data),
+        },
+        logger,
+      );
       const response = logoutResponseSchema.safeParse(body);
       if (!response.success) {
         logger?.warn?.("auth logout invalid response");
@@ -178,11 +198,16 @@ export function createAuthClient({
     },
 
     async getSession(accessToken, options = {}) {
-      const body = await requestJson(fetchFn, buildUrl(normalizedBaseUrl, "/auth/session"), {
-        method: "GET",
-        signal: options.signal,
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
+      const body = await requestJson(
+        fetchFn,
+        buildUrl(normalizedBaseUrl, "/auth/session"),
+        {
+          method: "GET",
+          signal: options.signal,
+          headers: { Authorization: `Bearer ${accessToken}` },
+        },
+        logger,
+      );
       const response = currentSessionResponseSchema.safeParse(body);
       if (!response.success) {
         logger?.warn?.("auth session invalid response");
@@ -193,11 +218,16 @@ export function createAuthClient({
     },
 
     async getCurrentDevice(accessToken, options = {}) {
-      const body = await requestJson(fetchFn, buildUrl(normalizedBaseUrl, "/auth/device"), {
-        method: "GET",
-        signal: options.signal,
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
+      const body = await requestJson(
+        fetchFn,
+        buildUrl(normalizedBaseUrl, "/auth/device"),
+        {
+          method: "GET",
+          signal: options.signal,
+          headers: { Authorization: `Bearer ${accessToken}` },
+        },
+        logger,
+      );
       const response = currentDeviceResponseSchema.safeParse(body);
       if (!response.success) {
         logger?.warn?.("auth device invalid response");
@@ -213,18 +243,19 @@ async function requestJson(
   fetchFn: typeof fetch,
   url: URL,
   init: RequestInit,
+  logger: AuthClientConfig["logger"],
 ) {
   let response: Response;
   try {
     response = await fetchFn(url, init);
   } catch (error) {
-    if (isAbortError(error)) {
-      throw error;
-    }
-
+    logger?.warn?.("auth request network failure", {
+      url: safeUrlForLog(url),
+      error: error instanceof Error ? error.name : "Unknown",
+    });
     throw new AuthClientError(
       "NETWORK_ERROR",
-      "No se pudo conectar con la API de autenticacion.",
+      "No se pudo establecer conexion con la API.",
     );
   }
 
@@ -240,6 +271,10 @@ async function requestJson(
       );
     }
 
+    logger?.warn?.("auth request failed without valid error body", {
+      url: safeUrlForLog(url),
+      status: response.status,
+    });
     throw new AuthClientError(
       response.status >= 500 ? "SERVER_ERROR" : "UNEXPECTED_ERROR",
       "La solicitud de autenticacion fallo.",
@@ -260,6 +295,6 @@ function buildUrl(baseUrl: URL, path: string) {
   return new URL(`${baseUrl.pathname}${path}`, baseUrl);
 }
 
-function isAbortError(error: unknown) {
-  return error instanceof DOMException && error.name === "AbortError";
+function safeUrlForLog(url: URL) {
+  return `${url.origin}${url.pathname}`;
 }

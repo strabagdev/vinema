@@ -30,6 +30,10 @@ const DATABASE_HEALTHCHECK_TIMEOUT_MS = 2_000;
 const DEFAULT_ALLOWED_ORIGINS = [
   "https://vinema-web.up.railway.app",
   "http://localhost:3000",
+  "http://localhost:3001",
+  "http://localhost:3456",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:3456",
 ];
 
 export function createVinemaApiServer({

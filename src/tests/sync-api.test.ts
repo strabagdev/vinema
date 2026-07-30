@@ -91,6 +91,38 @@ describe("Vinema sync API", () => {
     );
   });
 
+  it("allows configured web origins through auth CORS preflight", async () => {
+    const app = createVinemaApiServer({
+      store: new InMemorySyncStore([workspaceId]),
+      apiKey,
+    });
+
+    for (const origin of [
+      "https://vinema-web.up.railway.app",
+      "http://localhost:3000",
+      "http://localhost:3001",
+      "http://localhost:3456",
+      "http://127.0.0.1:3000",
+      "http://127.0.0.1:3456",
+    ]) {
+      const response = await app.inject({
+        method: "OPTIONS",
+        url: "/auth/register",
+        headers: {
+          Origin: origin,
+          "Access-Control-Request-Method": "POST",
+          "Access-Control-Request-Headers": "content-type",
+        },
+      });
+
+      expect(response.statusCode).toBe(204);
+      expect(response.headers["access-control-allow-origin"]).toBe(origin);
+      expect(response.headers["access-control-allow-headers"]).toContain(
+        "Content-Type",
+      );
+    }
+  });
+
   it("does not open CORS to unexpected browser origins", async () => {
     const app = createVinemaApiServer({
       store: new InMemorySyncStore([workspaceId]),

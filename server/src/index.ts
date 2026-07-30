@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import { parseEnv } from "node:util";
 import { createVinemaApiServer } from "./http/create-server";
 import { prisma } from "./db/prisma";
 import { PrismaSyncStore } from "./db/prisma-sync-store";
@@ -9,6 +11,9 @@ import { createDeviceService } from "./auth/device-service";
 import { createIdentityService } from "./auth/identity-service";
 import { PrismaIdentityRepository } from "./auth/identity-repository";
 import { createRefreshTokenCodec } from "./auth/refresh-token-codec";
+
+loadLocalEnvFile(".env");
+loadLocalEnvFile(".env.local");
 
 const port = Number(process.env.PORT ?? 8000);
 const tokenConfig = loadAuthTokenConfig(process.env);
@@ -49,4 +54,16 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
       process.exit(0);
     });
   });
+}
+
+function loadLocalEnvFile(path: string) {
+  if (process.env.NODE_ENV === "production" || !existsSync(path)) {
+    return;
+  }
+
+  const variables = parseEnv(readFileSync(path, "utf8"));
+
+  for (const [key, value] of Object.entries(variables)) {
+    process.env[key] = value;
+  }
 }

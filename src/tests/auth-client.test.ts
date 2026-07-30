@@ -123,7 +123,11 @@ describe("auth client and state", () => {
     });
     await expect(
       validation.register({ email: user.email, password: "password-123", device: deviceMetadata }),
-    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    ).rejects.toMatchObject({
+      code: "VALIDATION_ERROR",
+      status: 400,
+      message: "Bad",
+    });
 
     const invalid = createAuthClient({
       baseUrl: "https://api.example.test",
@@ -153,6 +157,60 @@ describe("auth client and state", () => {
     });
     await expect(network.getSession("token")).rejects.toMatchObject({
       code: "NETWORK_ERROR",
+      message: "No se pudo establecer conexion con la API.",
+    });
+
+    const aborted = createAuthClient({
+      baseUrl: "https://api.example.test",
+      fetchFn: vi.fn(async () => {
+        throw new DOMException("aborted", "AbortError");
+      }) as unknown as typeof fetch,
+    });
+    await expect(aborted.getSession("token")).rejects.toMatchObject({
+      code: "NETWORK_ERROR",
+    });
+  });
+
+  it("AuthClient preserves HTTP auth errors and does not classify them as network errors", async () => {
+    const duplicate = createAuthClient({
+      baseUrl: "https://api.example.test",
+      fetchFn: createFetch([
+        jsonResponse(
+          { error: { code: "EMAIL_ALREADY_EXISTS", message: "Already exists" } },
+          409,
+        ),
+      ]),
+    });
+    await expect(
+      duplicate.register({ email: user.email, password: "password-123", device: deviceMetadata }),
+    ).rejects.toMatchObject({
+      code: "EMAIL_ALREADY_EXISTS",
+      status: 409,
+      message: "Already exists",
+    });
+
+    const server = createAuthClient({
+      baseUrl: "https://api.example.test",
+      fetchFn: createFetch([
+        jsonResponse({ error: { code: "SERVER_ERROR", message: "Try later" } }, 500),
+      ]),
+    });
+    await expect(
+      server.login({ email: user.email, password: "password-123", device: deviceMetadata }),
+    ).rejects.toMatchObject({
+      code: "SERVER_ERROR",
+      status: 500,
+      message: "Try later",
+    });
+
+    const invalidBody = createAuthClient({
+      baseUrl: "https://api.example.test",
+      fetchFn: createFetch([textResponse("Not found", 404)]),
+    });
+    await expect(invalidBody.refresh({ refreshToken: "refresh-token" })).rejects.toMatchObject({
+      code: "UNEXPECTED_ERROR",
+      status: 404,
+      message: "La solicitud de autenticacion fallo.",
     });
   });
 
@@ -333,6 +391,13 @@ function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
+  });
+}
+
+function textResponse(body: string, status = 200) {
+  return new Response(body, {
+    status,
+    headers: { "Content-Type": "text/plain" },
   });
 }
 
