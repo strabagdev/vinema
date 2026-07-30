@@ -288,6 +288,9 @@ describe("minimal authentication UI", () => {
       "https://api.example.test",
     );
     expect(() => getPublicApiUrl({})).toThrow("NEXT_PUBLIC_API_URL");
+    expect(() => getPublicApiUrl({ NEXT_PUBLIC_API_URL: "   " })).toThrow(
+      "NEXT_PUBLIC_API_URL",
+    );
     expect(validateEmail("bad")).toBe("Ingresa un email valido.");
     expect(validatePassword("short")).toContain("al menos 8");
     expect(

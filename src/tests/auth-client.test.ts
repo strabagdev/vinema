@@ -85,6 +85,35 @@ describe("auth client and state", () => {
     expect(fetchFn).toHaveBeenCalledTimes(6);
   });
 
+  it("AuthClient uses the configured base URL for auth endpoints", async () => {
+    const fetchMock = createFetch([
+      jsonResponse(session, 201),
+      jsonResponse(session),
+      jsonResponse({ ...session, accessToken: "refreshed-access", refreshToken: "refresh-2" }),
+      jsonResponse({ ok: true }),
+    ]);
+    const client = createAuthClient({
+      baseUrl: "https://api.example.test/vinema/",
+      fetchFn: fetchMock,
+    });
+
+    await client.register({ email: user.email, password: "password-123", device: deviceMetadata });
+    await client.login({ email: user.email, password: "password-123", device: deviceMetadata });
+    await client.refresh({ refreshToken: "refresh-token" });
+    await client.logout({ refreshToken: "refresh-2" });
+
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+      "https://api.example.test/vinema/auth/register",
+      "https://api.example.test/vinema/auth/login",
+      "https://api.example.test/vinema/auth/refresh",
+      "https://api.example.test/vinema/auth/logout",
+    ]);
+  });
+
+  it("AuthClient rejects empty base URLs before issuing requests", () => {
+    expect(() => createAuthClient({ baseUrl: "" })).toThrow();
+  });
+
   it("AuthClient maps validation, credentials, token expired, network and abort errors", async () => {
     const validation = createAuthClient({
       baseUrl: "https://api.example.test",
@@ -294,7 +323,10 @@ describe("auth client and state", () => {
 });
 
 function createFetch(responses: Response[]) {
-  return vi.fn(async () => responses.shift() ?? jsonResponse({}, 500)) as unknown as typeof fetch;
+  return vi.fn(async (...args: Parameters<typeof fetch>) => {
+    void args;
+    return responses.shift() ?? jsonResponse({}, 500);
+  });
 }
 
 function jsonResponse(body: unknown, status = 200) {

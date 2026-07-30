@@ -28,7 +28,7 @@ Target Port:
 Variables:
 
 ```env
-VINEMA_API_URL=https://vinema-api.up.railway.app
+NEXT_PUBLIC_API_URL=https://vinema-api.up.railway.app
 ```
 
 No configurar `VINEMA_SYNC_API_KEY` como variable publica del cliente web. Si la
@@ -36,6 +36,9 @@ web necesita consumir sincronizacion desde el navegador, debe hacerlo mediante u
 canal server-side autenticado que no exponga la clave al cliente. En el estado
 actual, la UI local de Vinema persiste en IndexedDB y no ejecuta sincronizacion
 remota automatica desde el navegador.
+
+`NEXT_PUBLIC_API_URL` debe estar configurada en `vinema-web` durante el build.
+Cambiarla requiere redeploy del servicio web para generar un nuevo bundle.
 
 ---
 
