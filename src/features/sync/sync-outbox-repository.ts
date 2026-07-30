@@ -53,6 +53,7 @@ export type SyncMetadataRecord = {
   workspaceId: string;
   deviceId: string;
   pullCursor: string;
+  lastPullAttemptAt: string | null;
   lastSuccessfulPushAt: string | null;
   lastSuccessfulPullAt: string | null;
   lastSyncAttemptAt: string | null;
@@ -66,6 +67,7 @@ export type SyncMetadataUpsertInput = {
   workspaceId: string;
   deviceId: string;
   pullCursor?: string;
+  lastPullAttemptAt?: string | null;
   lastSuccessfulPushAt?: string | null;
   lastSuccessfulPullAt?: string | null;
   lastSyncAttemptAt?: string | null;
@@ -329,6 +331,11 @@ export class IndexedDbSyncMetadataRepository {
       workspaceId: input.workspaceId,
       deviceId: input.deviceId,
       pullCursor: pickInput(input, "pullCursor", existing?.pullCursor ?? "0"),
+      lastPullAttemptAt: pickInput(
+        input,
+        "lastPullAttemptAt",
+        existing?.lastPullAttemptAt ?? null,
+      ),
       lastSuccessfulPushAt: pickInput(
         input,
         "lastSuccessfulPushAt",
@@ -380,6 +387,15 @@ export class IndexedDbSyncMetadataRepository {
   ): Promise<SyncMetadataRecord> {
     assertIsoDate("at", at);
     return this.upsert({ workspaceId, deviceId, lastSyncAttemptAt: at, at });
+  }
+
+  async recordPullAttempt(
+    workspaceId: string,
+    deviceId: string,
+    at: string,
+  ): Promise<SyncMetadataRecord> {
+    assertIsoDate("at", at);
+    return this.upsert({ workspaceId, deviceId, lastPullAttemptAt: at, at });
   }
 
   async recordPushSuccess(
@@ -526,6 +542,7 @@ function validateMetadata(record: SyncMetadataRecord) {
   assertNonEmpty("workspaceId", record.workspaceId);
   assertNonEmpty("deviceId", record.deviceId);
   assertCursor(record.pullCursor);
+  assertNullableIsoDate("lastPullAttemptAt", record.lastPullAttemptAt);
   assertIsoDate("createdAt", record.createdAt);
   assertIsoDate("updatedAt", record.updatedAt);
   assertNullableIsoDate("lastSuccessfulPushAt", record.lastSuccessfulPushAt);
