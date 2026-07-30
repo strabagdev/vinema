@@ -45,6 +45,10 @@ export type SyncOutboxFailureInput = {
   nextAttemptAt?: string;
 };
 
+export type SyncOutboxPendingInput = {
+  nextAttemptAt?: string;
+};
+
 export type SyncMetadataRecord = {
   workspaceId: string;
   deviceId: string;
@@ -158,14 +162,21 @@ export class IndexedDbSyncOutboxRepository {
     }));
   }
 
-  async markPending(mutationIds: string[]): Promise<SyncMutationOutboxRecord[]> {
+  async markPending(
+    mutationIds: string[],
+    input: SyncOutboxPendingInput = {},
+  ): Promise<SyncMutationOutboxRecord[]> {
+    if (input.nextAttemptAt !== undefined) {
+      assertIsoDate("nextAttemptAt", input.nextAttemptAt);
+    }
+
     const now = this.now();
     return this.updateMany(mutationIds, (record) => {
       const next = transition(record, "PENDING");
       return removeUndefinedFields({
         ...next,
         updatedAt: now,
-        nextAttemptAt: undefined,
+        nextAttemptAt: input.nextAttemptAt,
       });
     });
   }

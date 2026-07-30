@@ -179,7 +179,9 @@ describe("sync outbox repository", () => {
       failedMutation.mutationId,
       conflictMutation.mutationId,
     ]);
-    await repository.markPending([pendingMutation.mutationId]);
+    await repository.markPending([pendingMutation.mutationId], {
+      nextAttemptAt: "2026-07-29T13:30:00.000Z",
+    });
     await repository.markFailed(failedMutation.mutationId, {
       code: "NETWORK_ERROR",
       message: "Fallo temporal",
@@ -190,6 +192,9 @@ describe("sync outbox repository", () => {
     await expect(repository.listPending(workspaceId, 10)).resolves.toMatchObject([
       { mutationId: pendingMutation.mutationId, status: "PENDING", attemptCount: 1 },
     ]);
+    expect(
+      (await repository.getById(pendingMutation.mutationId))?.nextAttemptAt,
+    ).toBe("2026-07-29T13:30:00.000Z");
     await expect(repository.listFailed(workspaceId, 10)).resolves.toMatchObject([
       {
         mutationId: failedMutation.mutationId,
