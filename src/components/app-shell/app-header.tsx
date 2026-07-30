@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { MoreHorizontal, SquarePen } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { MobileNavigation } from "@/components/app-shell/mobile-navigation";
+import { useAuth } from "@/features/auth/auth-provider";
 import {
   Tooltip,
   TooltipContent,
@@ -23,7 +25,15 @@ export type AppHeaderProps = {
 };
 
 export function AppHeader({ pathname, onFocusWriting }: AppHeaderProps) {
+  const router = useRouter();
+  const { user, logout } = useAuth();
   const onHome = pathname === "/";
+  const identity = user?.displayName || user?.email || "Sesion local";
+
+  function handleLogout() {
+    logout();
+    router.replace("/login");
+  }
 
   return (
     <header className="sticky top-0 z-30 flex h-12 items-center gap-3 border-b border-zinc-100 bg-zinc-50/80 px-4 backdrop-blur sm:px-6">
@@ -58,6 +68,8 @@ export function AppHeader({ pathname, onFocusWriting }: AppHeaderProps) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            <DropdownMenuItem disabled>{identity}</DropdownMenuItem>
+            <DropdownMenuItem onClick={handleLogout}>Cerrar sesion</DropdownMenuItem>
             <DropdownMenuItem disabled>Preferencias</DropdownMenuItem>
             <DropdownMenuItem disabled>Sincronizacion futura</DropdownMenuItem>
           </DropdownMenuContent>

@@ -1,4 +1,5 @@
 import { act, createElement } from "react";
+import type { ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "@/components/app-shell/app-shell";
@@ -15,6 +16,22 @@ vi.mock("next/navigation", () => ({
   usePathname: () => mocks.pathname,
   useRouter: () => ({
     push: mocks.push,
+  }),
+}));
+
+vi.mock("@/features/auth/auth-provider", () => ({
+  AuthProvider: ({ children }: { children: ReactNode }) => children,
+  useAuth: () => ({
+    state: { status: "AUTHENTICATED", error: null },
+    user: { email: "user@example.test", displayName: "User" },
+    workspaceId: "workspace-1",
+    accessToken: "access-token",
+    isAuthenticated: true,
+    isLoading: false,
+    error: null,
+    register: vi.fn(),
+    login: vi.fn(),
+    logout: vi.fn(),
   }),
 }));
 
