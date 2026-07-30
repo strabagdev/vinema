@@ -94,6 +94,7 @@ export interface VinemaDbSchema extends DBSchema {
   };
 }
 
+let activeVinemaDbName = VINEMA_DB_NAME;
 let dbPromise: Promise<IDBPDatabase<VinemaDbSchema>> | undefined;
 type UpgradeTransaction = Parameters<
   NonNullable<OpenDBCallbacks<VinemaDbSchema>["upgrade"]>
@@ -117,7 +118,7 @@ type UpgradeObjectStore = {
 };
 
 export function getVinemaDb() {
-  dbPromise ??= openDB<VinemaDbSchema>(VINEMA_DB_NAME, VINEMA_DB_VERSION, {
+  dbPromise ??= openDB<VinemaDbSchema>(activeVinemaDbName, VINEMA_DB_VERSION, {
     async upgrade(db, _oldVersion, _newVersion, transaction) {
       await ensureVinemaStores(db, transaction);
     },
@@ -167,6 +168,20 @@ export async function resetVinemaDbConnectionForTests() {
   const db = await dbPromise;
   db?.close();
   dbPromise = undefined;
+}
+
+export async function setVinemaDbNameForTests(dbName: string) {
+  if (!dbName.trim()) {
+    throw new Error("Vinema test IndexedDB name cannot be empty.");
+  }
+
+  await resetVinemaDbConnectionForTests();
+  activeVinemaDbName = dbName;
+}
+
+export async function resetVinemaDbNameForTests() {
+  await resetVinemaDbConnectionForTests();
+  activeVinemaDbName = VINEMA_DB_NAME;
 }
 
 function ensureOutOfLineStore(

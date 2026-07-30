@@ -86,7 +86,7 @@ export class IndexedDbLocalSyncNodeRepository implements NodeRepository {
     assertValidSyncContext(options.syncContext);
     this.origin = options.origin ?? "LOCAL";
     assertValidOrigin(this.origin);
-    this.mutationIdFactory = options.mutationIdFactory ?? crypto.randomUUID;
+    this.mutationIdFactory = options.mutationIdFactory ?? (() => crypto.randomUUID());
   }
 
   findById(id: string) {
@@ -179,7 +179,7 @@ export class IndexedDbLocalSyncContextRepository implements ContextRepository {
     assertValidSyncContext(options.syncContext);
     this.origin = options.origin ?? "LOCAL";
     assertValidOrigin(this.origin);
-    this.mutationIdFactory = options.mutationIdFactory ?? crypto.randomUUID;
+    this.mutationIdFactory = options.mutationIdFactory ?? (() => crypto.randomUUID());
   }
 
   getById(id: string) {
@@ -249,7 +249,7 @@ export class IndexedDbLocalSyncNodeContextRelationRepository
     assertValidSyncContext(options.syncContext);
     this.origin = options.origin ?? "LOCAL";
     assertValidOrigin(this.origin);
-    this.mutationIdFactory = options.mutationIdFactory ?? crypto.randomUUID;
+    this.mutationIdFactory = options.mutationIdFactory ?? (() => crypto.randomUUID());
     this.clock = options.clock ?? (() => new Date().toISOString());
   }
 
