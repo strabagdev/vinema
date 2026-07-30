@@ -11,7 +11,10 @@ import {
   validateEmail,
   validatePassword,
 } from "@/features/auth/auth-form-utils";
-import { getPublicApiUrl } from "@/features/auth/public-api-url";
+import {
+  getPublicApiUrl,
+  normalizePublicApiUrl,
+} from "@/features/auth/public-api-url";
 
 const routerReplace = vi.fn();
 let pathname = "/";
@@ -284,13 +287,16 @@ describe("minimal authentication UI", () => {
   });
 
   it("configuration and form helpers normalize public API URL and classify common errors", () => {
-    expect(getPublicApiUrl({ NEXT_PUBLIC_API_URL: "https://api.example.test/" })).toBe(
-      "https://api.example.test",
-    );
-    expect(() => getPublicApiUrl({})).toThrow("NEXT_PUBLIC_API_URL");
-    expect(() => getPublicApiUrl({ NEXT_PUBLIC_API_URL: "   " })).toThrow(
-      "NEXT_PUBLIC_API_URL",
-    );
+    process.env.NEXT_PUBLIC_API_URL = "https://api.example.test/";
+    expect(getPublicApiUrl()).toBe("https://api.example.test");
+    process.env.NEXT_PUBLIC_API_URL = "https://api.example.test////";
+    expect(getPublicApiUrl()).toBe("https://api.example.test");
+    delete process.env.NEXT_PUBLIC_API_URL;
+    expect(getPublicApiUrl()).toBeNull();
+    process.env.NEXT_PUBLIC_API_URL = "   ";
+    expect(getPublicApiUrl()).toBeNull();
+    expect(normalizePublicApiUrl(undefined)).toBeNull();
+    expect(() => normalizePublicApiUrl("bad-url")).toThrow("NEXT_PUBLIC_API_URL");
     expect(validateEmail("bad")).toBe("Ingresa un email valido.");
     expect(validatePassword("short")).toContain("al menos 8");
     expect(
@@ -299,6 +305,45 @@ describe("minimal authentication UI", () => {
     expect(
       getAuthFormError(new AuthClientError("DEVICE_REVOKED", "Revoked", 403)),
     ).toContain("Este dispositivo ya no tiene acceso");
+  });
+
+  it("AuthProvider reports configuration errors only when NEXT_PUBLIC_API_URL is absent", async () => {
+    delete process.env.NEXT_PUBLIC_API_URL;
+    globalThis.fetch = vi.fn(async () => jsonResponse(session)) as unknown as typeof fetch;
+
+    function Probe() {
+      const auth = useAuth();
+      return (
+        <div>
+          <p data-testid="status">{auth.state.status}</p>
+          <p data-testid="error">{auth.error?.message ?? "none"}</p>
+          <button
+            type="button"
+            onClick={() => {
+              void auth.login({
+                email: user.email,
+                password: "password-123",
+              }).catch(() => undefined);
+            }}
+          >
+            Login
+          </button>
+        </div>
+      );
+    }
+
+    await render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    expect(text("[data-testid='status']")).toBe("UNAUTHENTICATED");
+
+    await click("button");
+
+    expect(text("[data-testid='status']")).toBe("ERROR");
+    expect(text("[data-testid='error']")).toBe("La API de Vinema no esta configurada.");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   async function render(element: React.ReactNode) {

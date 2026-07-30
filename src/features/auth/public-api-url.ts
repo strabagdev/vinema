@@ -5,12 +5,19 @@ export class PublicApiUrlError extends Error {
   }
 }
 
-export function getPublicApiUrl(
-  env: Record<string, string | undefined> = process.env,
-): string {
-  const value = env.NEXT_PUBLIC_API_URL?.trim();
+export function getPublicApiUrl(): string | null {
+  const rawValue = process.env.NEXT_PUBLIC_API_URL;
+  return normalizePublicApiUrl(rawValue);
+}
+
+export function normalizePublicApiUrl(rawValue: string | undefined): string | null {
+  if (typeof rawValue !== "string") {
+    return null;
+  }
+
+  const value = rawValue.trim();
   if (!value) {
-    throw new PublicApiUrlError("NEXT_PUBLIC_API_URL no esta configurada.");
+    return null;
   }
 
   let url: URL;

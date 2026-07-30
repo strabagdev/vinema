@@ -11,7 +11,10 @@ import React, {
   useMemo,
   useState,
 } from "react";
-import { createAuthClient } from "@/features/auth/auth-client";
+import {
+  createAuthClient,
+  type AuthClient,
+} from "@/features/auth/auth-client";
 import {
   createAuthService,
   type AuthLoginInput,
@@ -135,25 +138,45 @@ function createAuthRuntime(): AuthRuntime {
   });
 
   let configError: PublicApiUrlError | null = null;
-  let baseUrl = "http://localhost:8000";
+  let authClient: AuthClient;
   try {
-    baseUrl = getPublicApiUrl();
+    const baseUrl = getPublicApiUrl();
+    if (!baseUrl) {
+      throw new PublicApiUrlError("NEXT_PUBLIC_API_URL no esta configurada.");
+    }
+    authClient = createAuthClient({ baseUrl });
   } catch (error) {
     if (error instanceof PublicApiUrlError) {
       configError = error;
+      authClient = createUnavailableAuthClient(error);
     } else {
       throw error;
     }
   }
 
   const service = createAuthService({
-    authClient: createAuthClient({ baseUrl }),
+    authClient,
     authStateEngine,
     deviceIdentityProvider: createDeviceIdentityProvider(),
     logger: process.env.NODE_ENV === "development" ? console : undefined,
   });
 
   return { service, authStateEngine, configError };
+}
+
+function createUnavailableAuthClient(error: PublicApiUrlError): AuthClient {
+  const reject = async (): Promise<never> => {
+    throw error;
+  };
+
+  return {
+    register: reject,
+    login: reject,
+    refresh: reject,
+    logout: reject,
+    getSession: reject,
+    getCurrentDevice: reject,
+  };
 }
 
 function assertAuthConfigured(runtime: AuthRuntime) {
