@@ -226,11 +226,19 @@ export class IndexedDbSyncOutboxRepository {
   }
 
   async countPending(workspaceId: string): Promise<number> {
+    return this.countByStatus(workspaceId, "PENDING");
+  }
+
+  async countByStatus(
+    workspaceId: string,
+    status: SyncMutationOutboxStatus,
+  ): Promise<number> {
     assertNonEmpty("workspaceId", workspaceId);
+    assertValidStatus(status);
     const db = await getVinemaDb();
     return db.countFromIndex(SYNC_MUTATIONS_STORE, "by-workspace-and-status", [
       workspaceId,
-      "PENDING",
+      status,
     ]);
   }
 
@@ -534,6 +542,16 @@ function assertLimit(limit: number) {
       "INVALID_LIMIT",
       "El limite de mutaciones no es valido.",
       { limit, max: SYNC_OUTBOX_MAX_LIST_LIMIT },
+    );
+  }
+}
+
+function assertValidStatus(status: string) {
+  if (!SYNC_MUTATION_STATUSES.includes(status as SyncMutationOutboxStatus)) {
+    throw new SyncOutboxError(
+      "INVALID_STATUS_TRANSITION",
+      "El estado de mutacion no es valido.",
+      { status },
     );
   }
 }
