@@ -18,6 +18,7 @@ import {
 export type AuthService = AccessTokenProvider & {
   register(input: AuthRegisterInput): Promise<AuthenticatedSession>;
   login(input: AuthLoginInput): Promise<AuthenticatedSession>;
+  restoreSession(): Promise<AuthenticatedSession | null>;
   refresh(): Promise<AuthenticatedSession>;
   logout(): Promise<void>;
   getCurrentSession(): Promise<CurrentSessionResponse>;
@@ -48,14 +49,20 @@ export function createAuthService({
 }): AuthService {
   let accessToken: string | undefined;
   let refreshToken: string | undefined;
+  let operationGeneration = 0;
+  let restorePromise: Promise<AuthenticatedSession | null> | null = null;
 
   async function authenticate(
     operation: () => Promise<AuthenticatedSession>,
   ): Promise<AuthenticatedSession> {
     authStateEngine.dispatch({ type: "AUTH_STARTED", at: clock() });
+    const generation = nextOperationGeneration();
     try {
       const session = await operation();
       await persistSessionOrFail(session);
+      if (!isCurrentOperation(generation)) {
+        return session;
+      }
       accessToken = session.accessToken;
       refreshToken = session.refreshToken;
       authStateEngine.dispatch({
@@ -71,6 +78,9 @@ export function createAuthService({
       return session;
     } catch (error) {
       const authError = toAuthError(error);
+      if (!isCurrentOperation(generation)) {
+        throw error;
+      }
       accessToken = undefined;
       refreshToken = undefined;
       authStateEngine.dispatch({
@@ -99,6 +109,13 @@ export function createAuthService({
           device: await deviceIdentityProvider.getDeviceMetadata(),
         }),
       );
+    },
+    restoreSession() {
+      restorePromise ??= restorePersistedSession().finally(() => {
+        restorePromise = null;
+      });
+
+      return restorePromise;
     },
     async getCurrentSession() {
       if (!accessToken) {
@@ -152,9 +169,13 @@ export function createAuthService({
       }
 
       authStateEngine.dispatch({ type: "REFRESH_STARTED", at: clock() });
+      const generation = nextOperationGeneration();
       try {
         const session = await authClient.refresh({ refreshToken });
         await persistSessionOrFail(session);
+        if (!isCurrentOperation(generation)) {
+          return session;
+        }
         accessToken = session.accessToken;
         refreshToken = session.refreshToken;
         authStateEngine.dispatch({
@@ -170,6 +191,9 @@ export function createAuthService({
         return session;
       } catch (error) {
         const authError = toAuthError(error);
+        if (!isCurrentOperation(generation)) {
+          throw error;
+        }
         accessToken = undefined;
         refreshToken = undefined;
         await clearStoredSession(logger);
@@ -184,6 +208,7 @@ export function createAuthService({
       }
     },
     async logout() {
+      nextOperationGeneration();
       const token = refreshToken;
       authStateEngine.dispatch({ type: "LOGOUT_STARTED", at: clock() });
       accessToken = undefined;
@@ -204,6 +229,7 @@ export function createAuthService({
       return Boolean(accessToken) && authStateEngine.getState().status === "AUTHENTICATED";
     },
     clearLocalSession() {
+      nextOperationGeneration();
       accessToken = undefined;
       refreshToken = undefined;
       authStateEngine.dispatch({ type: "AUTH_CLEARED", at: clock() });
@@ -236,6 +262,77 @@ export function createAuthService({
     }
   }
 
+  async function restorePersistedSession(): Promise<AuthenticatedSession | null> {
+    const generation = nextOperationGeneration();
+    authStateEngine.dispatch({ type: "RESTORE_STARTED", at: clock() });
+
+    try {
+      const storedSession = await authSessionStorage.load();
+      if (!storedSession) {
+        if (isCurrentOperation(generation)) {
+          authStateEngine.dispatch({ type: "AUTH_CLEARED", at: clock() });
+        }
+        return null;
+      }
+
+      const session = await authClient.refresh({
+        refreshToken: storedSession.refreshToken,
+      });
+
+      if (session.deviceId !== storedSession.deviceId) {
+        await clearStoredSession(logger);
+        throw new AuthClientError(
+          "UNEXPECTED_ERROR",
+          "La sesion local no coincide con este dispositivo.",
+        );
+      }
+
+      await persistSessionOrFail(session);
+      if (!isCurrentOperation(generation)) {
+        return session;
+      }
+      accessToken = session.accessToken;
+      refreshToken = session.refreshToken;
+      authStateEngine.dispatch({
+        type: "AUTH_SUCCEEDED",
+        at: clock(),
+        user: session.user,
+        workspaceId: session.workspaceId,
+        deviceId: session.deviceId,
+        sessionId: session.sessionId,
+        accessTokenExpiresAt: session.accessTokenExpiresAt,
+        refreshTokenExpiresAt: session.refreshTokenExpiresAt,
+      });
+      return session;
+    } catch (error) {
+      const authError = toAuthError(error);
+
+      if (shouldClearStoredSessionAfterRestoreFailure(authError)) {
+        await clearStoredSession(logger);
+      }
+
+      if (!isCurrentOperation(generation)) {
+        return null;
+      }
+
+      accessToken = undefined;
+      refreshToken = undefined;
+
+      if (authError.code === "NETWORK_ERROR") {
+        authStateEngine.dispatch({
+          type: "RESTORE_FAILED",
+          at: clock(),
+          code: authError.code,
+          message: "No fue posible restaurar la sesion. Puedes iniciar sesion nuevamente.",
+        });
+        return null;
+      }
+
+      authStateEngine.dispatch({ type: "AUTH_CLEARED", at: clock() });
+      return null;
+    }
+  }
+
   async function clearStoredSession(
     clearLogger?: { warn?(message: string, context?: Record<string, unknown>): void },
   ) {
@@ -247,6 +344,15 @@ export function createAuthService({
       });
     }
   }
+
+  function nextOperationGeneration() {
+    operationGeneration += 1;
+    return operationGeneration;
+  }
+
+  function isCurrentOperation(generation: number) {
+    return generation === operationGeneration;
+  }
 }
 
 function toAuthError(error: unknown) {
@@ -255,4 +361,8 @@ function toAuthError(error: unknown) {
   }
 
   return new AuthClientError("UNEXPECTED_ERROR", "Error inesperado.");
+}
+
+function shouldClearStoredSessionAfterRestoreFailure(error: AuthClientError) {
+  return error.code !== "NETWORK_ERROR";
 }

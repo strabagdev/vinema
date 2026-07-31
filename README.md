@@ -79,11 +79,12 @@ Tauri consume el servidor local en desarrollo y empaqueta `out/` en build.
 - Gestion minima de areas, proyectos y personas como contextos relacionales.
 - Busqueda textual local integrada en la Base de Conocimiento.
 - Persistencia local mediante IndexedDB.
+- Autenticacion con sesion restaurable al iniciar mediante refresh token
+  persistido en IndexedDB.
 - API remota Fastify para sincronizacion incremental con PostgreSQL.
 
-Fuera de alcance: markdown avanzado, tags tradicionales, autenticacion,
-realtime automatico, resolucion avanzada de conflictos, IA y busqueda global
-remota o semantica.
+Fuera de alcance: markdown avanzado, tags tradicionales, realtime automatico,
+resolucion avanzada de conflictos, IA y busqueda global remota o semantica.
 
 ## API remota
 

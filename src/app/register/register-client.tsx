@@ -15,7 +15,7 @@ import { useAuth } from "@/features/auth/auth-provider";
 
 export function RegisterClient() {
   const router = useRouter();
-  const { isAuthenticated, isLoading, register } = useAuth();
+  const { isAuthenticated, isLoading, state, register } = useAuth();
   const nameRef = useRef<HTMLInputElement>(null);
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
@@ -61,6 +61,17 @@ export function RegisterClient() {
     } catch (submitError) {
       setError(getAuthFormError(submitError));
     }
+  }
+
+  if (state.status === "RESTORING") {
+    return (
+      <AuthScreen
+        title="Restaurando sesion"
+        description="Estamos comprobando tu sesion local."
+      >
+        <p className="text-sm text-zinc-500">Restaurando sesion...</p>
+      </AuthScreen>
+    );
   }
 
   return (
@@ -129,9 +140,9 @@ export function RegisterClient() {
             required
           />
         </div>
-        {error ? (
+        {error ?? state.error?.message ? (
           <p className="text-sm text-red-700" role="alert" aria-live="polite">
-            {error}
+            {error ?? state.error?.message}
           </p>
         ) : null}
         <Button type="submit" className="w-full" disabled={isLoading}>

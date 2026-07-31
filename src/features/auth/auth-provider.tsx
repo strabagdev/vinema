@@ -84,6 +84,22 @@ export function AuthProvider({
     return () => bridge.dispose();
   }, [runtime]);
 
+  useEffect(() => {
+    let mounted = true;
+
+    runtime.service.restoreSession()
+      .catch(() => undefined)
+      .finally(() => {
+        if (mounted) {
+          setAccessToken(runtime.service.getAccessToken());
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [runtime]);
+
   const register = useCallback(
     async (input: AuthRegisterInput) => {
       assertAuthConfigured(runtime);
@@ -119,7 +135,12 @@ export function AuthProvider({
     workspaceId: state.workspaceId,
     accessToken,
     isAuthenticated: Boolean(accessToken) && state.status === "AUTHENTICATED",
-    isLoading: state.status === "UNKNOWN" || state.status === "AUTHENTICATING",
+    isLoading:
+      state.status === "RESTORING" ||
+      state.status === "UNKNOWN" ||
+      state.status === "AUTHENTICATING" ||
+      state.status === "REFRESHING" ||
+      state.status === "LOGGING_OUT",
     error: state.error,
     register,
     refresh,
@@ -142,7 +163,7 @@ export function useAuth() {
 function createAuthRuntime(authSessionStorage?: AuthSessionStorage): AuthRuntime {
   const authStateEngine = createAuthStateEngine({
     ...initialAuthState,
-    status: "UNAUTHENTICATED",
+    status: "RESTORING",
   });
 
   let configError: PublicApiUrlError | null = null;

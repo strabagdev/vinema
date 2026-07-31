@@ -1,6 +1,7 @@
 import type { AuthenticatedUser } from "@vinema/sync-contracts";
 
 export type AuthStatus =
+  | "RESTORING"
   | "UNKNOWN"
   | "AUTHENTICATING"
   | "REFRESHING"
@@ -50,6 +51,8 @@ export type AuthEvent =
       accessTokenExpiresAt: string;
       refreshTokenExpiresAt: string;
     }
+  | { type: "RESTORE_STARTED"; at: string }
+  | { type: "RESTORE_FAILED"; at: string; code?: string; message: string }
   | { type: "REFRESH_FAILED"; at: string; code?: string; message: string }
   | { type: "LOGOUT_STARTED"; at: string }
   | { type: "LOGOUT_COMPLETED"; at: string }
@@ -65,7 +68,7 @@ export type AuthStateEngine = {
 };
 
 export const initialAuthState: AuthState = {
-  status: "UNKNOWN",
+  status: "RESTORING",
   user: null,
   workspaceId: null,
   deviceId: null,
@@ -80,6 +83,8 @@ export function reduceAuthState(state: AuthState, event: AuthEvent): AuthState {
   switch (event.type) {
     case "AUTH_STARTED":
       return { ...state, status: "AUTHENTICATING", error: null };
+    case "RESTORE_STARTED":
+      return { ...state, status: "RESTORING", error: null };
     case "REFRESH_STARTED":
       return { ...state, status: "REFRESHING", error: null };
     case "LOGOUT_STARTED":
@@ -102,6 +107,22 @@ export function reduceAuthState(state: AuthState, event: AuthEvent): AuthState {
       return {
         ...state,
         status: "ERROR",
+        error: {
+          code: event.code,
+          message: event.message,
+          occurredAt: event.at,
+        },
+      };
+    case "RESTORE_FAILED":
+      return {
+        status: "UNAUTHENTICATED",
+        user: null,
+        workspaceId: null,
+        deviceId: null,
+        sessionId: null,
+        accessTokenExpiresAt: null,
+        refreshTokenExpiresAt: null,
+        lastAuthenticatedAt: state.lastAuthenticatedAt,
         error: {
           code: event.code,
           message: event.message,

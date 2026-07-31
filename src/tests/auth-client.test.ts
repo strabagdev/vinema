@@ -494,6 +494,189 @@ describe("auth client and state", () => {
     expect(service.getState().status).toBe("UNAUTHENTICATED");
   });
 
+  it("AuthService restore skips refresh when no persisted session exists", async () => {
+    const client = createMockAuthClient();
+    const service = createAuthService({
+      authClient: client,
+      authSessionStorage: new InMemoryAuthSessionStorage(),
+      deviceIdentityProvider: createDeviceIdentityProvider(),
+    });
+
+    await expect(service.restoreSession()).resolves.toBeNull();
+
+    expect(client.refresh).not.toHaveBeenCalled();
+    expect(service.getState().status).toBe("UNAUTHENTICATED");
+  });
+
+  it("AuthService restore refreshes persisted sessions and saves the rotated token before authenticating", async () => {
+    const storage = new InMemoryAuthSessionStorage();
+    await storage.save({
+      refreshToken: "stored-refresh-token",
+      sessionId,
+      deviceId,
+      storedAt: "2026-07-30T11:59:00.000Z",
+    });
+    const client = createMockAuthClient({
+      refresh: vi.fn(async () => ({
+        ...session,
+        accessToken: "restored-access-token",
+        refreshToken: "rotated-refresh-token",
+        sessionId: "77777777-7777-4777-8777-777777777777",
+      })),
+    });
+    const service = createAuthService({
+      authClient: client,
+      authSessionStorage: storage,
+      deviceIdentityProvider: createDeviceIdentityProvider(),
+      clock: createClock(),
+    });
+
+    await expect(service.restoreSession()).resolves.toMatchObject({
+      accessToken: "restored-access-token",
+      refreshToken: "rotated-refresh-token",
+    });
+
+    expect(client.refresh).toHaveBeenCalledWith({ refreshToken: "stored-refresh-token" });
+    expect(storage.snapshot()).toMatchObject({
+      refreshToken: "rotated-refresh-token",
+      sessionId: "77777777-7777-4777-8777-777777777777",
+      deviceId,
+    });
+    expect(JSON.stringify(storage.snapshot())).not.toContain("restored-access-token");
+    expect(service.getAccessToken()).toBe("restored-access-token");
+    expect(service.getState()).toMatchObject({
+      status: "AUTHENTICATED",
+      workspaceId,
+      deviceId,
+      sessionId: "77777777-7777-4777-8777-777777777777",
+    });
+  });
+
+  it("AuthService restore clears invalid tokens and preserves sessions on network failures", async () => {
+    const invalidStorage = new InMemoryAuthSessionStorage();
+    await invalidStorage.save({
+      refreshToken: "stored-refresh-token",
+      sessionId,
+      deviceId,
+      storedAt: "2026-07-30T11:59:00.000Z",
+    });
+    const invalidClient = createMockAuthClient({
+      refresh: vi.fn(async () => {
+        throw new AuthClientError("TOKEN_INVALID", "Invalid", 401);
+      }),
+    });
+    const invalidService = createAuthService({
+      authClient: invalidClient,
+      authSessionStorage: invalidStorage,
+      deviceIdentityProvider: createDeviceIdentityProvider(),
+    });
+
+    await invalidService.restoreSession();
+    expect(invalidStorage.snapshot()).toBeNull();
+    expect(invalidService.getState().status).toBe("UNAUTHENTICATED");
+    expect(invalidService.getState().error).toBeNull();
+
+    const networkStorage = new InMemoryAuthSessionStorage();
+    await networkStorage.save({
+      refreshToken: "stored-refresh-token",
+      sessionId,
+      deviceId,
+      storedAt: "2026-07-30T11:59:00.000Z",
+    });
+    const networkService = createAuthService({
+      authClient: createMockAuthClient({
+        refresh: vi.fn(async () => {
+          throw new AuthClientError("NETWORK_ERROR", "Offline");
+        }),
+      }),
+      authSessionStorage: networkStorage,
+      deviceIdentityProvider: createDeviceIdentityProvider(),
+    });
+
+    await networkService.restoreSession();
+    expect(networkStorage.snapshot()?.refreshToken).toBe("stored-refresh-token");
+    expect(networkService.getState()).toMatchObject({
+      status: "UNAUTHENTICATED",
+      error: {
+        code: "NETWORK_ERROR",
+        message: "No fue posible restaurar la sesion. Puedes iniciar sesion nuevamente.",
+      },
+    });
+  });
+
+  it("AuthService restore rejects device mismatch and persistence failures safely", async () => {
+    const mismatchStorage = new InMemoryAuthSessionStorage();
+    await mismatchStorage.save({
+      refreshToken: "stored-refresh-token",
+      sessionId,
+      deviceId,
+      storedAt: "2026-07-30T11:59:00.000Z",
+    });
+    const mismatchService = createAuthService({
+      authClient: createMockAuthClient({
+        refresh: vi.fn(async () => ({
+          ...session,
+          deviceId: "99999999-9999-4999-8999-999999999999",
+        })),
+      }),
+      authSessionStorage: mismatchStorage,
+      deviceIdentityProvider: createDeviceIdentityProvider(),
+    });
+
+    await mismatchService.restoreSession();
+    expect(mismatchStorage.snapshot()).toBeNull();
+    expect(mismatchService.getAccessToken()).toBeUndefined();
+    expect(mismatchService.getState().status).toBe("UNAUTHENTICATED");
+
+    const failingStorage = new FailingAuthSessionStorage("save");
+    await InMemoryAuthSessionStorage.prototype.save.call(failingStorage, {
+      refreshToken: "stored-refresh-token",
+      sessionId,
+      deviceId,
+      storedAt: "2026-07-30T11:59:00.000Z",
+    });
+    const failingService = createAuthService({
+      authClient: createMockAuthClient(),
+      authSessionStorage: failingStorage,
+      deviceIdentityProvider: createDeviceIdentityProvider(),
+    });
+
+    await failingService.restoreSession();
+    expect(failingStorage.snapshot()).toBeNull();
+    expect(failingService.getAccessToken()).toBeUndefined();
+    expect(failingService.getState().status).toBe("UNAUTHENTICATED");
+  });
+
+  it("AuthService restore ignores late responses after logout", async () => {
+    const storage = new InMemoryAuthSessionStorage();
+    await storage.save({
+      refreshToken: "stored-refresh-token",
+      sessionId,
+      deviceId,
+      storedAt: "2026-07-30T11:59:00.000Z",
+    });
+    let resolveRefresh: ((value: typeof session) => void) | undefined;
+    const service = createAuthService({
+      authClient: createMockAuthClient({
+        refresh: vi.fn(
+          () => new Promise<typeof session>((resolve) => {
+            resolveRefresh = resolve;
+          }),
+        ),
+      }),
+      authSessionStorage: storage,
+      deviceIdentityProvider: createDeviceIdentityProvider(),
+    });
+
+    const restore = service.restoreSession();
+    await service.logout();
+    resolveRefresh?.(session);
+    await restore;
+
+    expect(service.getAccessToken()).toBeUndefined();
+    expect(service.getState().status).toBe("UNAUTHENTICATED");
+  });
+
   it("AuthSyncStateBridge publishes auth status and disposes", () => {
     const auth = createAuthStateEngine();
     const sync = createSyncStateEngine();
@@ -565,6 +748,26 @@ function createDeviceIdentityProvider(): DeviceIdentityProvider {
   return {
     getClientDeviceId: async () => deviceMetadata.clientDeviceId,
     getDeviceMetadata: async () => deviceMetadata,
+  };
+}
+
+function createMockAuthClient(
+  overrides: Partial<Parameters<typeof createAuthService>[0]["authClient"]> = {},
+): Parameters<typeof createAuthService>[0]["authClient"] {
+  return {
+    register: vi.fn(async () => session),
+    login: vi.fn(async () => session),
+    refresh: vi.fn(async () => session),
+    logout: vi.fn(async () => ({ ok: true as const })),
+    getSession: vi.fn(async () => ({
+      user,
+      workspaceId,
+      deviceId,
+      sessionId,
+      tokenExpiresAt: accessTokenExpiresAt,
+    })),
+    getCurrentDevice: vi.fn(async () => currentDevice),
+    ...overrides,
   };
 }
 

@@ -1,4 +1,5 @@
 import "fake-indexeddb/auto";
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { deleteDB } from "idb";
 import {
@@ -122,5 +123,15 @@ describe("auth session storage", () => {
     db.close();
 
     await expect(storage.save(session)).rejects.toBeInstanceOf(AuthSessionStorageError);
+  });
+
+  it("service worker does not cache authentication requests", () => {
+    const source = readFileSync("public/sw.js", "utf8");
+
+    expect(source).toContain("requestUrl.origin !== self.location.origin");
+    expect(source).toContain('requestUrl.pathname.startsWith("/auth")');
+    expect(source).toContain('requestUrl.pathname.startsWith("/api")');
+    expect(source).not.toContain("refreshToken");
+    expect(source).not.toContain("accessToken");
   });
 });

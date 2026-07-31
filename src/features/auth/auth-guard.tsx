@@ -27,14 +27,14 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   }, [isAuthenticated, isLoading, publicRoute, router]);
 
-  if (publicRoute) {
+  if (publicRoute && !isLoading && !isAuthenticated) {
     return <>{children}</>;
   }
 
-  if (isLoading || !isAuthenticated || state.status === "ERROR") {
+  if (isLoading || (publicRoute && isAuthenticated) || !isAuthenticated || state.status === "ERROR") {
     return (
       <div className="flex min-h-screen flex-1 items-center justify-center bg-zinc-50 px-6 text-sm text-zinc-500">
-        Preparando Vinema...
+        {state.status === "RESTORING" ? "Restaurando sesion..." : "Preparando Vinema..."}
       </div>
     );
   }

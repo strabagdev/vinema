@@ -121,6 +121,7 @@ describe("minimal authentication UI", () => {
         <Probe />
       </AuthProvider>,
     );
+    await flush();
     expect(text("[data-testid='status']")).toBe("UNAUTHENTICATED");
 
     await click("button");
@@ -173,6 +174,7 @@ describe("minimal authentication UI", () => {
         <Probe />
       </AuthProvider>,
     );
+    await flush();
     await click("button");
     expect(text("[data-testid='status']")).toBe("AUTHENTICATED");
     await click("button:nth-of-type(2)");
@@ -194,6 +196,7 @@ describe("minimal authentication UI", () => {
         <LoginClient />
       </AuthProvider>,
     );
+    await flush();
 
     expect(container.textContent).toContain("Iniciar sesion");
     expect(container.querySelector("a")?.getAttribute("href")).toBe("/register");
@@ -223,6 +226,7 @@ describe("minimal authentication UI", () => {
         <LoginClient />
       </AuthProvider>,
     );
+    await flush();
     await setInput("#login-email", user.email);
     await setInput("#login-password", "password-123");
     await submit("form");
@@ -242,6 +246,7 @@ describe("minimal authentication UI", () => {
         <RegisterClient />
       </AuthProvider>,
     );
+    await flush();
 
     expect(container.textContent).toContain("Crear cuenta");
     expect(container.querySelector("a")?.getAttribute("href")).toBe("/login");
@@ -277,6 +282,7 @@ describe("minimal authentication UI", () => {
         </AuthGuard>
       </AuthProvider>,
     );
+    await flush();
     expect(routerReplace).toHaveBeenCalledWith("/login");
 
     routerReplace.mockReset();
@@ -288,6 +294,7 @@ describe("minimal authentication UI", () => {
         </AuthGuard>
       </AuthProvider>,
     );
+    await flush();
     expect(container.textContent).toContain("Login public");
     expect(routerReplace).not.toHaveBeenCalled();
   });
@@ -343,6 +350,7 @@ describe("minimal authentication UI", () => {
         <Probe />
       </AuthProvider>,
     );
+    await flush();
     expect(text("[data-testid='status']")).toBe("UNAUTHENTICATED");
 
     await click("button");
@@ -352,18 +360,31 @@ describe("minimal authentication UI", () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it("AuthProvider does not restore persisted sessions on mount yet", async () => {
+  it("AuthProvider restores a persisted session once and stores the rotated token", async () => {
     const storage = new TrackingAuthSessionStorage();
     await storage.save({
       refreshToken: "stored-refresh-token",
-      sessionId: sessionId,
+      sessionId,
       deviceId,
       storedAt: "2026-07-30T12:00:00.000Z",
     });
+    globalThis.fetch = createFetch([
+      jsonResponse({
+        ...session,
+        accessToken: "restored-access-token",
+        refreshToken: "rotated-refresh-token",
+        sessionId: "55555555-5555-4555-8555-555555555555",
+      }),
+    ]);
 
     function Probe() {
       const auth = useAuth();
-      return <p data-testid="status">{auth.state.status}</p>;
+      return (
+        <div>
+          <p data-testid="status">{auth.state.status}</p>
+          <p data-testid="token">{auth.accessToken ?? "none"}</p>
+        </div>
+      );
     }
 
     await render(
@@ -371,14 +392,122 @@ describe("minimal authentication UI", () => {
         <Probe />
       </AuthProvider>,
     );
+    await flush();
+
+    expect(text("[data-testid='status']")).toBe("AUTHENTICATED");
+    expect(text("[data-testid='token']")).toBe("restored-access-token");
+    expect(storage.loadCalls).toBe(1);
+    expect(storage.snapshot()).toMatchObject({
+      refreshToken: "rotated-refresh-token",
+      sessionId: "55555555-5555-4555-8555-555555555555",
+      deviceId,
+    });
+    expect(JSON.stringify(storage.snapshot())).not.toContain("restored-access-token");
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(1);
+  });
+
+  it("AuthProvider keeps restoring UI until load resolves and does not redirect", async () => {
+    const storage = new DeferredAuthSessionStorage();
+    pathname = "/login";
+
+    await render(
+      <AuthProvider authSessionStorage={storage}>
+        <AuthGuard>
+          <LoginClient />
+        </AuthGuard>
+      </AuthProvider>,
+    );
+
+    expect(container.textContent).toContain("Restaurando sesion");
+    expect(routerReplace).not.toHaveBeenCalled();
+
+    await act(async () => {
+      storage.resolveLoad(null);
+    });
+    await flush();
+
+    expect(container.textContent).toContain("Iniciar sesion");
+  });
+
+  it("AuthProvider clears invalid persisted sessions without showing a technical restore error", async () => {
+    const storage = new TrackingAuthSessionStorage();
+    await storage.save({
+      refreshToken: "stored-refresh-token",
+      sessionId,
+      deviceId,
+      storedAt: "2026-07-30T12:00:00.000Z",
+    });
+    globalThis.fetch = createFetch([
+      jsonResponse({ error: { code: "TOKEN_INVALID", message: "Invalid" } }, 401),
+    ]);
+
+    function Probe() {
+      const auth = useAuth();
+      return (
+        <div>
+          <p data-testid="status">{auth.state.status}</p>
+          <p data-testid="error">{auth.error?.message ?? "none"}</p>
+        </div>
+      );
+    }
+
+    await render(
+      <AuthProvider authSessionStorage={storage}>
+        <Probe />
+      </AuthProvider>,
+    );
+    await flush();
 
     expect(text("[data-testid='status']")).toBe("UNAUTHENTICATED");
-    expect(storage.loadCalls).toBe(0);
+    expect(text("[data-testid='error']")).toBe("none");
+    expect(storage.snapshot()).toBeNull();
+  });
+
+  it("AuthProvider preserves persisted sessions on restore network failure and allows later login", async () => {
+    const storage = new TrackingAuthSessionStorage();
+    await storage.save({
+      refreshToken: "stored-refresh-token",
+      sessionId,
+      deviceId,
+      storedAt: "2026-07-30T12:00:00.000Z",
+    });
+    globalThis.fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("offline"))
+      .mockResolvedValueOnce(jsonResponse(session));
+    pathname = "/login";
+
+    await render(
+      <AuthProvider authSessionStorage={storage}>
+        <LoginClient />
+      </AuthProvider>,
+    );
+    await flush();
+
+    expect(container.textContent).toContain(
+      "No fue posible restaurar la sesion. Puedes iniciar sesion nuevamente.",
+    );
+    expect(storage.snapshot()?.refreshToken).toBe("stored-refresh-token");
+
+    await setInput("#login-email", user.email);
+    await setInput("#login-password", "password-123");
+    await submit("form");
+    await flush();
+
+    expect(routerReplace).toHaveBeenCalledWith("/");
+    expect(storage.snapshot()?.refreshToken).toBe("refresh-token");
   });
 
   async function render(element: React.ReactNode) {
     await act(async () => {
       root.render(element);
+    });
+  }
+
+  async function flush() {
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
     });
   }
 
@@ -435,5 +564,19 @@ class TrackingAuthSessionStorage extends InMemoryAuthSessionStorage {
   override async load() {
     this.loadCalls += 1;
     return super.load();
+  }
+}
+
+class DeferredAuthSessionStorage extends InMemoryAuthSessionStorage {
+  private resolver: ((value: Awaited<ReturnType<InMemoryAuthSessionStorage["load"]>>) => void) | null = null;
+
+  override async load() {
+    return new Promise<Awaited<ReturnType<InMemoryAuthSessionStorage["load"]>>>((resolve) => {
+      this.resolver = resolve;
+    });
+  }
+
+  resolveLoad(value: Awaited<ReturnType<InMemoryAuthSessionStorage["load"]>>) {
+    this.resolver?.(value);
   }
 }
