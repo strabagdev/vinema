@@ -54,6 +54,7 @@ export type AuthEvent =
   | { type: "RESTORE_STARTED"; at: string }
   | { type: "RESTORE_FAILED"; at: string; code?: string; message: string }
   | { type: "REFRESH_FAILED"; at: string; code?: string; message: string }
+  | { type: "AUTH_INTERRUPTED"; at: string; code?: string; message: string }
   | { type: "LOGOUT_STARTED"; at: string }
   | { type: "LOGOUT_COMPLETED"; at: string }
   | { type: "AUTH_FAILED"; at: string; code?: string; message: string }
@@ -114,6 +115,7 @@ export function reduceAuthState(state: AuthState, event: AuthEvent): AuthState {
         },
       };
     case "RESTORE_FAILED":
+    case "AUTH_INTERRUPTED":
       return {
         status: "UNAUTHENTICATED",
         user: null,

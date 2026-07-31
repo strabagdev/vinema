@@ -19,18 +19,26 @@ export type AuthService = AccessTokenProvider & {
   register(input: AuthRegisterInput): Promise<AuthenticatedSession>;
   login(input: AuthLoginInput): Promise<AuthenticatedSession>;
   restoreSession(): Promise<AuthenticatedSession | null>;
-  refresh(): Promise<AuthenticatedSession>;
+  refresh(options?: AuthRefreshOptions): Promise<AuthenticatedSession>;
   logout(): Promise<void>;
   getCurrentSession(): Promise<CurrentSessionResponse>;
   getCurrentDevice(): Promise<CurrentDeviceResponse>;
   isAuthenticated(): boolean;
   clearLocalSession(): void;
+  interruptSession(input: AuthSessionInterruption): void;
   subscribe(listener: (state: AuthState) => void): () => void;
   getState(): AuthState;
 };
 
 export type AuthRegisterInput = Omit<RegisterRequest, "device">;
 export type AuthLoginInput = Omit<LoginRequest, "device">;
+export type AuthRefreshOptions = {
+  silent?: boolean;
+};
+export type AuthSessionInterruption = {
+  code?: string;
+  message: string;
+};
 
 export function createAuthService({
   authClient,
@@ -59,22 +67,10 @@ export function createAuthService({
     const generation = nextOperationGeneration();
     try {
       const session = await operation();
-      await persistSessionOrFail(session);
-      if (!isCurrentOperation(generation)) {
+      if (!(await persistSessionForCurrentOperation(session, generation))) {
         return session;
       }
-      accessToken = session.accessToken;
-      refreshToken = session.refreshToken;
-      authStateEngine.dispatch({
-        type: "AUTH_SUCCEEDED",
-        at: clock(),
-        user: session.user,
-        workspaceId: session.workspaceId,
-        deviceId: session.deviceId,
-        sessionId: session.sessionId,
-        accessTokenExpiresAt: session.accessTokenExpiresAt,
-        refreshTokenExpiresAt: session.refreshTokenExpiresAt,
-      });
+      activateSession(session, "AUTH_SUCCEEDED");
       return session;
     } catch (error) {
       const authError = toAuthError(error);
@@ -163,35 +159,33 @@ export function createAuthService({
     getAccessToken() {
       return accessToken;
     },
-    async refresh() {
+    async refresh(options = {}) {
       if (!refreshToken) {
         throw new AuthClientError("TOKEN_MISSING", "No hay sesion local.");
       }
 
-      authStateEngine.dispatch({ type: "REFRESH_STARTED", at: clock() });
+      if (!options.silent) {
+        authStateEngine.dispatch({ type: "REFRESH_STARTED", at: clock() });
+      }
       const generation = nextOperationGeneration();
       try {
         const session = await authClient.refresh({ refreshToken });
-        await persistSessionOrFail(session);
         if (!isCurrentOperation(generation)) {
           return session;
         }
-        accessToken = session.accessToken;
-        refreshToken = session.refreshToken;
-        authStateEngine.dispatch({
-          type: "REFRESH_SUCCEEDED",
-          at: clock(),
-          user: session.user,
-          workspaceId: session.workspaceId,
-          deviceId: session.deviceId,
-          sessionId: session.sessionId,
-          accessTokenExpiresAt: session.accessTokenExpiresAt,
-          refreshTokenExpiresAt: session.refreshTokenExpiresAt,
-        });
+        assertRefreshSessionConsistency(session);
+        if (!(await persistSessionForCurrentOperation(session, generation))) {
+          return session;
+        }
+        activateSession(session, "REFRESH_SUCCEEDED");
         return session;
       } catch (error) {
         const authError = toAuthError(error);
         if (!isCurrentOperation(generation)) {
+          throw error;
+        }
+        if (options.silent && isTemporaryRefreshError(authError)) {
+          logger?.warn?.("silent auth refresh failed temporarily", { code: authError.code });
           throw error;
         }
         accessToken = undefined;
@@ -233,6 +227,17 @@ export function createAuthService({
       accessToken = undefined;
       refreshToken = undefined;
       authStateEngine.dispatch({ type: "AUTH_CLEARED", at: clock() });
+    },
+    interruptSession(input) {
+      nextOperationGeneration();
+      accessToken = undefined;
+      refreshToken = undefined;
+      authStateEngine.dispatch({
+        type: "AUTH_INTERRUPTED",
+        at: clock(),
+        code: input.code,
+        message: input.message,
+      });
     },
     subscribe(listener) {
       return authStateEngine.subscribe(listener);
@@ -287,22 +292,10 @@ export function createAuthService({
         );
       }
 
-      await persistSessionOrFail(session);
-      if (!isCurrentOperation(generation)) {
+      if (!(await persistSessionForCurrentOperation(session, generation))) {
         return session;
       }
-      accessToken = session.accessToken;
-      refreshToken = session.refreshToken;
-      authStateEngine.dispatch({
-        type: "AUTH_SUCCEEDED",
-        at: clock(),
-        user: session.user,
-        workspaceId: session.workspaceId,
-        deviceId: session.deviceId,
-        sessionId: session.sessionId,
-        accessTokenExpiresAt: session.accessTokenExpiresAt,
-        refreshTokenExpiresAt: session.refreshTokenExpiresAt,
-      });
+      activateSession(session, "AUTH_SUCCEEDED");
       return session;
     } catch (error) {
       const authError = toAuthError(error);
@@ -353,6 +346,59 @@ export function createAuthService({
   function isCurrentOperation(generation: number) {
     return generation === operationGeneration;
   }
+
+  async function persistSessionForCurrentOperation(
+    session: AuthenticatedSession,
+    generation: number,
+  ) {
+    if (!isCurrentOperation(generation)) {
+      return false;
+    }
+
+    await persistSessionOrFail(session);
+    if (!isCurrentOperation(generation)) {
+      await clearStoredSession(logger);
+      return false;
+    }
+
+    return true;
+  }
+
+  function activateSession(
+    session: AuthenticatedSession,
+    eventType: "AUTH_SUCCEEDED" | "REFRESH_SUCCEEDED",
+  ) {
+    accessToken = session.accessToken;
+    refreshToken = session.refreshToken;
+    authStateEngine.dispatch({
+      type: eventType,
+      at: clock(),
+      user: session.user,
+      workspaceId: session.workspaceId,
+      deviceId: session.deviceId,
+      sessionId: session.sessionId,
+      accessTokenExpiresAt: session.accessTokenExpiresAt,
+      refreshTokenExpiresAt: session.refreshTokenExpiresAt,
+    });
+  }
+
+  function assertRefreshSessionConsistency(session: AuthenticatedSession) {
+    const current = authStateEngine.getState();
+    if (current.status !== "AUTHENTICATED") {
+      return;
+    }
+
+    if (
+      (current.user && session.user.id !== current.user.id) ||
+      (current.workspaceId && session.workspaceId !== current.workspaceId) ||
+      (current.deviceId && session.deviceId !== current.deviceId)
+    ) {
+      throw new AuthClientError(
+        "UNEXPECTED_ERROR",
+        "La sesion renovada no coincide con la sesion local.",
+      );
+    }
+  }
 }
 
 function toAuthError(error: unknown) {
@@ -365,4 +411,8 @@ function toAuthError(error: unknown) {
 
 function shouldClearStoredSessionAfterRestoreFailure(error: AuthClientError) {
   return error.code !== "NETWORK_ERROR";
+}
+
+function isTemporaryRefreshError(error: AuthClientError) {
+  return error.code === "NETWORK_ERROR" || error.code === "SERVER_ERROR";
 }

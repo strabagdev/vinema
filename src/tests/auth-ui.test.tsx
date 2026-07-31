@@ -36,8 +36,8 @@ const user = {
 const workspaceId = "22222222-2222-4222-8222-222222222222";
 const deviceId = "33333333-3333-4333-8333-333333333333";
 const sessionId = "44444444-4444-4444-8444-444444444444";
-const accessTokenExpiresAt = "2026-07-30T12:15:00.000Z";
-const refreshTokenExpiresAt = "2026-08-29T12:00:00.000Z";
+const accessTokenExpiresAt = "2099-07-30T12:15:00.000Z";
+const refreshTokenExpiresAt = "2099-08-29T12:00:00.000Z";
 const device = {
   id: deviceId,
   userId: user.id,
@@ -85,6 +85,7 @@ describe("minimal authentication UI", () => {
     container.remove();
     globalThis.fetch = originalFetch;
     process.env.NEXT_PUBLIC_API_URL = originalApiUrl;
+    vi.useRealTimers();
     await resetVinemaDbConnectionForTests();
     await deleteDB(VINEMA_DB_NAME);
   });
@@ -496,6 +497,127 @@ describe("minimal authentication UI", () => {
 
     expect(routerReplace).toHaveBeenCalledWith("/");
     expect(storage.snapshot()?.refreshToken).toBe("refresh-token");
+  });
+
+  it("AuthProvider silently refreshes an active session without leaving the authenticated UI", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-30T12:00:00.000Z"));
+    const storage = new TrackingAuthSessionStorage();
+    globalThis.fetch = createFetch([
+      jsonResponse({
+        ...session,
+        accessToken: "login-access-token",
+        accessTokenExpiresAt: "2026-07-30T12:02:00.000Z",
+        refreshToken: "login-refresh-token",
+      }),
+      jsonResponse({
+        ...session,
+        accessToken: "silent-access-token",
+        accessTokenExpiresAt: "2026-07-30T12:04:00.000Z",
+        refreshToken: "silent-refresh-token",
+        sessionId: "55555555-5555-4555-8555-555555555555",
+      }),
+    ]);
+
+    function Probe() {
+      const auth = useAuth();
+      return (
+        <div>
+          <p data-testid="status">{auth.state.status}</p>
+          <p data-testid="token">{auth.accessToken ?? "none"}</p>
+          <button
+            type="button"
+            onClick={() => {
+              void auth.login({
+                email: user.email,
+                password: "password-123",
+              });
+            }}
+          >
+            Login
+          </button>
+        </div>
+      );
+    }
+
+    await render(
+      <AuthProvider authSessionStorage={storage}>
+        <Probe />
+      </AuthProvider>,
+    );
+    await flush();
+
+    await click("button");
+    expect(text("[data-testid='status']")).toBe("AUTHENTICATED");
+    expect(text("[data-testid='token']")).toBe("login-access-token");
+
+    await act(async () => {
+      vi.advanceTimersByTime(60_000);
+    });
+    await flush();
+
+    expect(text("[data-testid='status']")).toBe("AUTHENTICATED");
+    expect(text("[data-testid='token']")).toBe("silent-access-token");
+    expect(storage.snapshot()).toMatchObject({
+      refreshToken: "silent-refresh-token",
+      sessionId: "55555555-5555-4555-8555-555555555555",
+      deviceId,
+    });
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(2);
+  });
+
+  it("AuthProvider cancels silent refresh after logout", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-30T12:00:00.000Z"));
+    globalThis.fetch = createFetch([
+      jsonResponse({
+        ...session,
+        accessTokenExpiresAt: "2026-07-30T12:02:00.000Z",
+      }),
+      jsonResponse({ ok: true }),
+    ]);
+
+    function Probe() {
+      const auth = useAuth();
+      return (
+        <div>
+          <p data-testid="status">{auth.state.status}</p>
+          <button
+            type="button"
+            onClick={() => {
+              void auth.login({
+                email: user.email,
+                password: "password-123",
+              });
+            }}
+          >
+            Login
+          </button>
+          <button type="button" onClick={auth.logout}>
+            Logout
+          </button>
+        </div>
+      );
+    }
+
+    await render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    await flush();
+
+    await click("button");
+    expect(text("[data-testid='status']")).toBe("AUTHENTICATED");
+    await click("button:nth-of-type(2)");
+    expect(text("[data-testid='status']")).toBe("UNAUTHENTICATED");
+
+    await act(async () => {
+      vi.advanceTimersByTime(60_000);
+    });
+    await flush();
+
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(2);
   });
 
   async function render(element: React.ReactNode) {

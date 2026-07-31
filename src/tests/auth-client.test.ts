@@ -468,6 +468,128 @@ describe("auth client and state", () => {
     expect(JSON.stringify(storage.snapshot())).not.toContain("refresh-token");
   });
 
+  it("AuthService keeps authenticated state on temporary silent refresh failures", async () => {
+    const storage = new InMemoryAuthSessionStorage();
+    const client = createMockAuthClient({
+      refresh: vi.fn(async () => {
+        throw new AuthClientError("NETWORK_ERROR", "Offline");
+      }),
+    });
+    const service = createAuthService({
+      authClient: client,
+      authSessionStorage: storage,
+      deviceIdentityProvider: createDeviceIdentityProvider(),
+    });
+
+    await service.login({ email: user.email, password: "password-123" });
+
+    await expect(service.refresh({ silent: true })).rejects.toMatchObject({
+      code: "NETWORK_ERROR",
+    });
+
+    expect(service.getState().status).toBe("AUTHENTICATED");
+    expect(service.getAccessToken()).toBe("access-token");
+    expect(storage.snapshot()).toMatchObject({
+      refreshToken: "refresh-token",
+      sessionId,
+      deviceId,
+    });
+  });
+
+  it("AuthService clears definitive refresh failures and rejects identity mismatches", async () => {
+    const invalidStorage = new InMemoryAuthSessionStorage();
+    const invalidService = createAuthService({
+      authClient: createMockAuthClient({
+        refresh: vi.fn(async () => {
+          throw new AuthClientError("TOKEN_INVALID", "Invalid", 401);
+        }),
+      }),
+      authSessionStorage: invalidStorage,
+      deviceIdentityProvider: createDeviceIdentityProvider(),
+    });
+
+    await invalidService.login({ email: user.email, password: "password-123" });
+    await expect(invalidService.refresh({ silent: true })).rejects.toMatchObject({
+      code: "TOKEN_INVALID",
+    });
+    expect(invalidService.getAccessToken()).toBeUndefined();
+    expect(invalidStorage.snapshot()).toBeNull();
+    expect(invalidService.getState().status).toBe("UNAUTHENTICATED");
+
+    const mismatchStorage = new InMemoryAuthSessionStorage();
+    const mismatchService = createAuthService({
+      authClient: createMockAuthClient({
+        refresh: vi.fn(async () => ({
+          ...session,
+          deviceId: "99999999-9999-4999-8999-999999999999",
+          refreshToken: "mismatch-refresh-token",
+        })),
+      }),
+      authSessionStorage: mismatchStorage,
+      deviceIdentityProvider: createDeviceIdentityProvider(),
+    });
+
+    await mismatchService.login({ email: user.email, password: "password-123" });
+    await expect(mismatchService.refresh({ silent: true })).rejects.toMatchObject({
+      code: "UNEXPECTED_ERROR",
+    });
+    expect(mismatchService.getAccessToken()).toBeUndefined();
+    expect(mismatchStorage.snapshot()).toBeNull();
+  });
+
+  it("AuthService can interrupt memory auth without deleting persisted refresh credentials", async () => {
+    const storage = new InMemoryAuthSessionStorage();
+    const service = createAuthService({
+      authClient: createMockAuthClient(),
+      authSessionStorage: storage,
+      deviceIdentityProvider: createDeviceIdentityProvider(),
+    });
+
+    await service.login({ email: user.email, password: "password-123" });
+    service.interruptSession({
+      code: "NETWORK_ERROR",
+      message: "No fue posible renovar la sesion.",
+    });
+
+    expect(service.getAccessToken()).toBeUndefined();
+    expect(storage.snapshot()?.refreshToken).toBe("refresh-token");
+    expect(service.getState()).toMatchObject({
+      status: "UNAUTHENTICATED",
+      error: { code: "NETWORK_ERROR", message: "No fue posible renovar la sesion." },
+    });
+  });
+
+  it("AuthService ignores and clears late refresh results after logout", async () => {
+    const storage = new InMemoryAuthSessionStorage();
+    let resolveRefresh: ((value: typeof session) => void) | undefined;
+    const client = createMockAuthClient({
+      refresh: vi.fn(
+        () => new Promise<typeof session>((resolve) => {
+          resolveRefresh = resolve;
+        }),
+      ),
+    });
+    const service = createAuthService({
+      authClient: client,
+      authSessionStorage: storage,
+      deviceIdentityProvider: createDeviceIdentityProvider(),
+    });
+
+    await service.login({ email: user.email, password: "password-123" });
+    const pending = service.refresh({ silent: true });
+    await service.logout();
+    resolveRefresh?.({
+      ...session,
+      accessToken: "late-access-token",
+      refreshToken: "late-refresh-token",
+    });
+    await pending;
+
+    expect(service.getAccessToken()).toBeUndefined();
+    expect(storage.snapshot()).toBeNull();
+    expect(service.getState().status).toBe("UNAUTHENTICATED");
+  });
+
   it("AuthService clears persisted session on logout even when the API fails", async () => {
     const storage = new InMemoryAuthSessionStorage();
     const client = {

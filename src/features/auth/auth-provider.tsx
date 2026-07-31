@@ -16,6 +16,10 @@ import {
   type AuthClient,
 } from "@/features/auth/auth-client";
 import {
+  createAuthRefreshCoordinator,
+  type AuthRefreshCoordinator,
+} from "@/features/auth/auth-refresh-coordinator";
+import {
   createAuthService,
   type AuthLoginInput,
   type AuthRegisterInput,
@@ -53,6 +57,7 @@ export type AuthContextValue = {
 
 type AuthRuntime = {
   service: AuthService;
+  refreshCoordinator: AuthRefreshCoordinator;
   authStateEngine: AuthStateEngine;
   configError: PublicApiUrlError | null;
 };
@@ -72,7 +77,10 @@ export function AuthProvider({
     runtime.service.getAccessToken(),
   );
 
-  useEffect(() => runtime.service.subscribe(setState), [runtime]);
+  useEffect(() => runtime.service.subscribe((nextState) => {
+    setState(nextState);
+    setAccessToken(runtime.service.getAccessToken());
+  }), [runtime]);
 
   useEffect(() => {
     const syncStateEngine = createSyncStateEngine();
@@ -100,6 +108,27 @@ export function AuthProvider({
     };
   }, [runtime]);
 
+  useEffect(() => {
+    if (state.status === "AUTHENTICATED" && state.accessTokenExpiresAt) {
+      try {
+        runtime.refreshCoordinator.schedule(state.accessTokenExpiresAt);
+      } catch {
+        runtime.refreshCoordinator.cancel();
+        runtime.service.interruptSession({
+          code: "INVALID_ACCESS_TOKEN_EXPIRATION",
+          message: "No fue posible mantener la sesion local.",
+        });
+      }
+      return;
+    }
+
+    runtime.refreshCoordinator.cancel();
+  }, [runtime, state.accessTokenExpiresAt, state.status]);
+
+  useEffect(() => () => {
+    runtime.refreshCoordinator.dispose();
+  }, [runtime]);
+
   const register = useCallback(
     async (input: AuthRegisterInput) => {
       assertAuthConfigured(runtime);
@@ -120,11 +149,12 @@ export function AuthProvider({
 
   const refresh = useCallback(async () => {
     assertAuthConfigured(runtime);
-    await runtime.service.refresh();
+    await runtime.refreshCoordinator.refreshNow();
     setAccessToken(runtime.service.getAccessToken());
   }, [runtime]);
 
   const logout = useCallback(async () => {
+    runtime.refreshCoordinator.cancel();
     await runtime.service.logout();
     setAccessToken(undefined);
   }, [runtime]);
@@ -190,8 +220,24 @@ function createAuthRuntime(authSessionStorage?: AuthSessionStorage): AuthRuntime
     deviceIdentityProvider: createDeviceIdentityProvider(),
     logger: process.env.NODE_ENV === "development" ? console : undefined,
   });
+  const refreshCoordinator = createAuthRefreshCoordinator({
+    refresh: () => service.refresh({ silent: true }),
+    visibilityDocument: typeof document === "undefined" ? undefined : document,
+    onRefreshFailed(error, { tokenExpired }) {
+      if (!tokenExpired) {
+        return;
+      }
 
-  return { service, authStateEngine, configError };
+      service.interruptSession({
+        code: error instanceof Error ? error.name : undefined,
+        message:
+          "No fue posible renovar la sesion. Revisa tu conexion e inicia sesion nuevamente si el problema continua.",
+      });
+    },
+    logger: process.env.NODE_ENV === "development" ? console : undefined,
+  });
+
+  return { service, refreshCoordinator, authStateEngine, configError };
 }
 
 function createUnavailableAuthClient(error: PublicApiUrlError): AuthClient {
