@@ -2,15 +2,21 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Clock3, Home } from "lucide-react";
+import { Archive, Clock3, Home } from "lucide-react";
 import { cn } from "@/lib/cn";
 
 const navItems = [
   { href: "/", label: "Inicio", icon: Home, disabled: false },
   {
     href: "/notes",
-    label: "Historial",
+    label: "Explorar",
     icon: Clock3,
+    disabled: false,
+  },
+  {
+    href: "/notes/archive",
+    label: "Archivo",
+    icon: Archive,
     disabled: false,
   },
 ];

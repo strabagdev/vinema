@@ -1,12 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { SendHorizontal } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { Device } from "@/domain/device/device";
-import type { Node } from "@/domain/node/node";
 import type { Workspace } from "@/domain/workspace/workspace";
 import type {
   ConceptSuggestion,
@@ -15,7 +13,6 @@ import type {
 import { CaptureRecoveryResults } from "@/features/associations/capture-recovery-results";
 import { ConceptSuggestionChips } from "@/features/associations/concept-suggestion-chips";
 import { useAssociationSuggestions } from "@/features/associations/use-association-suggestions";
-import { getContentTimestamp } from "@/features/capture/capture-timestamps";
 import {
   loadCaptureDraft,
   saveCaptureDraft,
@@ -25,18 +22,10 @@ import {
   CAPTURE_DRAFT_DEBOUNCE_MS,
   commitCaptureText,
 } from "@/features/capture/capture-flow";
-import { listKnowledgeCaptures } from "@/features/capture/list-knowledge-captures";
-import {
-  getCapturePreview,
-} from "@/features/node/node-display";
-import { getNodeDetailPath } from "@/features/node/node-routes";
 import type { SearchNodesRepositories } from "@/features/recovery/search-nodes";
 import type { StorageAdapter } from "@/infrastructure/storage/storage-adapter";
-import { useSyncDataInvalidation } from "@/features/sync/use-sync-data-invalidation";
 
-const RECENT_LIMIT = 8;
 const EMPTY_SELECTED_CAPTURE_IDS: string[] = [];
-const CAPTURE_INVALIDATION_TYPES = ["capture"] as const;
 
 type DraftStatus = "idle" | "saving" | "saved" | "error";
 
@@ -60,8 +49,6 @@ export function CaptureSurface({
   const [captureError, setCaptureError] = useState<string | null>(null);
   const [captureFeedback, setCaptureFeedback] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
-  const [recent, setRecent] = useState<Node[]>([]);
-  const [recentError, setRecentError] = useState<string | null>(null);
   const [selectedContextIds, setSelectedContextIds] = useState<string[]>([]);
   const [selectedEmergingConcepts, setSelectedEmergingConcepts] = useState<
     EmergingConceptSuggestion[]
@@ -73,20 +60,6 @@ export function CaptureSurface({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const hasContent = content.trim().length > 0;
 
-  const refreshRecent = useCallback(async () => {
-    setRecentError(null);
-
-    try {
-      setRecent(
-        await listKnowledgeCaptures(repositories.nodeRepository, {
-          workspaceId: workspace.id,
-          limit: RECENT_LIMIT,
-        }),
-      );
-    } catch {
-      setRecentError("No se pudo cargar la Base de Conocimiento.");
-    }
-  }, [repositories.nodeRepository, workspace.id]);
   const associationState = useAssociationSuggestions({
     text: content,
     workspaceId: workspace.id,
@@ -95,13 +68,6 @@ export function CaptureSurface({
     contextRepository: repositories.contextRepository,
     nodeRepository: repositories.nodeRepository,
     relationRepository: repositories.nodeContextRelationRepository,
-  });
-  useSyncDataInvalidation({
-    workspaceId: workspace.id,
-    entityTypes: CAPTURE_INVALIDATION_TYPES,
-    onInvalidate: () => {
-      void refreshRecent();
-    },
   });
 
   useEffect(() => {
@@ -130,14 +96,11 @@ export function CaptureSurface({
     }
 
     void restoreDraft();
-    queueMicrotask(() => {
-      void refreshRecent();
-    });
 
     return () => {
       cancelled = true;
     };
-  }, [refreshRecent, storage]);
+  }, [storage]);
 
   useEffect(() => {
     function focusEditor() {
@@ -246,9 +209,11 @@ export function CaptureSurface({
       setCaptureFeedback(
         result.relationError
           ? "Captura guardada. Algunas asociaciones no pudieron persistirse."
-          : "Captura guardada en la Base de Conocimiento.",
+          : "Captura guardada.",
       );
-      await refreshRecent();
+      queueMicrotask(() => {
+        textareaRef.current?.focus();
+      });
     } catch (error) {
       setCaptureError(
         error instanceof Error
@@ -304,22 +269,26 @@ export function CaptureSurface({
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-5 px-4 py-4 sm:px-6 lg:px-10">
-      <section className="space-y-4">
-        <div className="space-y-2">
-          <h1 className="text-2xl font-semibold tracking-normal text-zinc-950 sm:text-3xl">
-            Empieza a escribir
-          </h1>
-        </div>
-
-        <div className="space-y-4">
+    <main className="flex w-full flex-1 px-4 py-6 sm:px-6 lg:px-10">
+      <section className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-start pt-[10vh] sm:pt-[14vh]">
+        <h1 className="sr-only">Empieza a escribir</h1>
+        <div className="space-y-5">
           <Textarea
             id="capture"
             ref={textareaRef}
             aria-label="Empieza a escribir"
-            className="min-h-64 max-h-[52vh] resize-y border-zinc-200 bg-white/70 p-5 text-lg leading-8 shadow-none focus-visible:ring-zinc-400 sm:min-h-72"
-            placeholder="Empieza a escribir..."
+            className="min-h-[42vh] resize-none border-0 bg-transparent px-0 py-0 text-[1.55rem] font-normal leading-[1.75] text-zinc-950 shadow-none outline-none ring-0 placeholder:text-zinc-300 focus-visible:ring-0 focus-visible:ring-offset-0 focus:placeholder:text-transparent sm:min-h-[46vh] sm:text-[1.8rem]"
+            placeholder="Escribe..."
             value={content}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Enter" &&
+                (event.ctrlKey === true || event.metaKey === true)
+              ) {
+                event.preventDefault();
+                void handleCapture();
+              }
+            }}
             onChange={(event) => {
               const nextContent = event.target.value;
 
@@ -367,6 +336,8 @@ export function CaptureSurface({
                 type="button"
                 onClick={() => void handleCapture()}
                 disabled={capturing}
+                variant="ghost"
+                className="self-start border border-zinc-200 bg-white/40 text-zinc-700 hover:bg-white hover:text-zinc-950 sm:self-auto"
               >
                 <SendHorizontal className="h-4 w-4" />
                 {capturing ? "Capturando" : "Capturar"}
@@ -383,39 +354,7 @@ export function CaptureSurface({
           </div>
         </div>
       </section>
-
-      {!hasContent ? (
-        <section className="space-y-3">
-          <h2 className="text-base font-medium text-zinc-950">
-            Reciente
-          </h2>
-          {recentError ? (
-            <p className="text-sm text-red-600">{recentError}</p>
-          ) : null}
-          {recent.length > 0 ? (
-            <div className="space-y-2">
-              {recent.map((node) => (
-                <KnowledgeCaptureItem key={node.id} node={node} />
-              ))}
-            </div>
-          ) : (
-            <p className="rounded-md border border-zinc-200 bg-white p-4 text-sm text-zinc-500">
-              Todavia no hay capturas.
-            </p>
-          )}
-        </section>
-      ) : null}
     </main>
-  );
-}
-
-function KnowledgeCaptureItem({ node }: { node: Node }) {
-  return (
-    <KnowledgeResult
-      href={getNodeDetailPath(node.id, { returnTo: "/" })}
-      preview={getCapturePreview(node.content, { maxLength: 140 })}
-      updatedAt={getContentTimestamp(node)}
-    />
   );
 }
 
@@ -438,38 +377,4 @@ function mergeSelectedConceptSuggestions(
   }
 
   return Array.from(merged.values());
-}
-
-function KnowledgeResult({
-  href,
-  preview,
-  updatedAt,
-}: {
-  href: string;
-  preview: string;
-  updatedAt: string;
-}) {
-  return (
-    <Link
-      href={href}
-      aria-label={`Abrir captura: ${getCapturePreview(preview, { maxLength: 80 })}`}
-      className="block rounded-lg border border-zinc-200 bg-white p-4 transition-colors hover:border-zinc-300 hover:bg-zinc-50"
-    >
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 space-y-1">
-          <p className="line-clamp-2 text-sm leading-6 text-zinc-700">{preview}</p>
-        </div>
-        <time className="shrink-0 text-xs text-zinc-500">
-          {formatCompactDate(updatedAt)}
-        </time>
-      </div>
-    </Link>
-  );
-}
-
-function formatCompactDate(value: string) {
-  return new Intl.DateTimeFormat("es", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
 }

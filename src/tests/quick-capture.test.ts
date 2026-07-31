@@ -42,6 +42,7 @@ describe("Global writing entry", () => {
   beforeEach(() => {
     mocks.pathname = "/notes";
     mocks.push.mockClear();
+    setNavigatorOnline(true);
   });
 
   afterEach(async () => {
@@ -61,6 +62,42 @@ describe("Global writing entry", () => {
     expect(mocks.push).toHaveBeenCalledWith("/#capture");
     expect(document.querySelector("[role='dialog']")).toBeNull();
     expect(document.querySelector("#quick-capture-editor")).toBeNull();
+  });
+
+  it("renders the top navigation with real destinations and no permanent sidebar", async () => {
+    mocks.pathname = "/";
+    const { container } = await renderAppShell();
+    const links = Array.from(container.querySelectorAll("a")).map((link) => ({
+      text: link.textContent?.trim(),
+      href: link.getAttribute("href"),
+    }));
+
+    expect(container.querySelector("aside")).toBeNull();
+    expect(
+      links.some((link) => link.href === "/" && link.text?.includes("Vinema")),
+    ).toBe(true);
+    expect(links).toContainEqual(expect.objectContaining({ text: "Inicio", href: "/" }));
+    expect(links).toContainEqual(expect.objectContaining({ text: "Explorar", href: "/notes" }));
+    expect(links).toContainEqual(
+      expect.objectContaining({ text: "Archivo", href: "/notes/archive" }),
+    );
+  });
+
+  it("does not show the old permanent local-only badge while online", async () => {
+    setNavigatorOnline(true);
+
+    const { container } = await renderAppShell();
+
+    expect(container.textContent).not.toContain("Solo local");
+    expect(container.textContent).not.toContain("Modo local");
+  });
+
+  it("shows a quiet local-mode signal when the browser is offline", async () => {
+    setNavigatorOnline(false);
+
+    const { container } = await renderAppShell();
+
+    expect(container.textContent).toContain("Modo local");
   });
 
   it("uses Ctrl+Shift+K to focus writing without opening a second editor", async () => {
@@ -233,4 +270,11 @@ async function flushPromises() {
   for (let index = 0; index < 12; index += 1) {
     await Promise.resolve();
   }
+}
+
+function setNavigatorOnline(online: boolean) {
+  Object.defineProperty(window.navigator, "onLine", {
+    configurable: true,
+    get: () => online,
+  });
 }

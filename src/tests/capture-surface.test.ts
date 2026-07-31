@@ -164,10 +164,10 @@ describe("CaptureSurface", () => {
     await advanceTime(1500);
 
     expect(screen.container.textContent).not.toContain("Recordando...");
-    expect(listByWorkspace).toHaveBeenCalledTimes(2);
+    expect(listByWorkspace).toHaveBeenCalledTimes(1);
   });
 
-  it("captures once, clears the editor and updates recent content", async () => {
+  it("captures once, clears the editor, keeps focus and does not render recent content", async () => {
     const storage = new MemoryStorageAdapter();
     const nodeRepository = new InMemoryNodeRepository();
     const screen = await renderCaptureSurface({ storage, nodeRepository });
@@ -187,15 +187,35 @@ describe("CaptureSurface", () => {
     expect(getTextarea(screen.container)?.value).toBe("");
     await waitFor(async () => (await storage.get(CAPTURE_DRAFT_KEY)) === null);
     await expect(storage.get(CAPTURE_DRAFT_KEY)).resolves.toBeNull();
-    expect(screen.container.textContent).toContain(
+    expect(document.activeElement).toBe(getTextarea(screen.container));
+    expect(screen.container.textContent).not.toContain(
       "Reunion con Mitcom sobre soporte",
     );
-    expect(getFirstResultLink(screen.container)?.getAttribute("href")).toContain(
-      "/notes/detail?nodeId=",
-    );
+    expect(screen.container.textContent).toContain("Captura guardada.");
   });
 
-  it("orders recent captures by date and hides them while writing", async () => {
+  it("captures with Ctrl+Enter without requiring a title field", async () => {
+    const nodeRepository = new InMemoryNodeRepository();
+    const screen = await renderCaptureSurface({ nodeRepository });
+
+    await changeTextarea(screen.container, "Decision sobre Railway\nsegunda linea");
+    await advanceTime(500);
+    await keydownTextarea(screen.container, {
+      key: "Enter",
+      ctrlKey: true,
+    });
+
+    const captures = await nodeRepository.listByWorkspace(workspace.id);
+
+    expect(captures).toHaveLength(1);
+    expect(captures[0]).toMatchObject({
+      content: "Decision sobre Railway\nsegunda linea",
+    });
+    expect(captures[0].metadata).not.toHaveProperty("title");
+    expect(getTextarea(screen.container)?.value).toBe("");
+  });
+
+  it("does not show recent captures on Inicio", async () => {
     const nodeRepository = new InMemoryNodeRepository([
       createStoredNode({
         id: "older",
@@ -210,13 +230,11 @@ describe("CaptureSurface", () => {
     ]);
     const screen = await renderCaptureSurface({ nodeRepository });
 
-    const text = screen.container.textContent ?? "";
-    expect(text.indexOf("Decision nueva para Andes Norte")).toBeLessThan(
-      text.indexOf("Aprendizaje anterior"),
+    expect(screen.container.textContent).not.toContain(
+      "Decision nueva para Andes Norte",
     );
-    expect(
-      getLinkByHref(screen.container, "nodeId=newer")?.getAttribute("href"),
-    ).toBe("/notes/detail?nodeId=newer&returnTo=%2F");
+    expect(screen.container.textContent).not.toContain("Aprendizaje anterior");
+    expect(screen.container.textContent).not.toContain("Reciente");
 
     await changeTextarea(screen.container, "Borrador privado");
     await advanceTime(500);
@@ -246,7 +264,7 @@ describe("CaptureSurface", () => {
     );
   });
 
-  it("shows active historical captures without requiring the old organized state", async () => {
+  it("keeps active historical captures out of Inicio until recovered by writing", async () => {
     const nodeRepository = new InMemoryNodeRepository([
       createStoredNode({
         id: "legacy-idea",
@@ -257,6 +275,11 @@ describe("CaptureSurface", () => {
       }),
     ]);
     const screen = await renderCaptureSurface({ nodeRepository });
+
+    expect(screen.container.textContent).not.toContain("Captura antigua disponible");
+
+    await changeTextarea(screen.container, "captura antigua");
+    await advanceTime(500);
 
     expect(screen.container.textContent).toContain("Captura antigua disponible");
   });
@@ -526,7 +549,7 @@ describe("CaptureSurface", () => {
     nodeRepository.listByWorkspace = async (...args) => {
       calls += 1;
 
-      if (calls === 2) {
+      if (calls === 1) {
         return new Promise<Node[]>((resolve) => {
           releaseSlowAssociationRead = () => resolve([]);
         });
@@ -747,7 +770,7 @@ describe("CaptureSurface", () => {
     nodeRepository.listByWorkspace = async (...args) => {
       calls += 1;
 
-      if (calls === 2) {
+      if (calls === 1) {
         throw new Error("IndexedDB temporarily failed");
       }
 
@@ -873,12 +896,6 @@ function queryButton(container: HTMLElement, name: string) {
   ) as HTMLButtonElement | undefined;
 }
 
-function getFirstResultLink(container: HTMLElement) {
-  return Array.from(container.querySelectorAll("a")).find((link) =>
-    link.getAttribute("href")?.startsWith("/notes/detail?nodeId="),
-  ) as HTMLAnchorElement | undefined;
-}
-
 function getLinkByHref(container: HTMLElement, hrefPart: string) {
   return Array.from(container.querySelectorAll("a")).find((link) =>
     link.getAttribute("href")?.includes(hrefPart),
@@ -894,6 +911,26 @@ async function changeTextarea(container: HTMLElement, value: string) {
   await act(async () => {
     setNativeValue(textarea, value);
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    await flushPromises();
+  });
+}
+
+async function keydownTextarea(
+  container: HTMLElement,
+  eventInit: KeyboardEventInit,
+) {
+  const textarea = getTextarea(container);
+  if (!textarea) {
+    throw new Error("Textarea not found");
+  }
+
+  await act(async () => {
+    textarea.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        bubbles: true,
+        ...eventInit,
+      }),
+    );
     await flushPromises();
   });
 }

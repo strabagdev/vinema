@@ -6,7 +6,6 @@ import type React from "react";
 import { useCallback, useEffect } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppHeader } from "@/components/app-shell/app-header";
-import { AppSidebar } from "@/components/app-shell/app-sidebar";
 import { Button } from "@/components/ui/button";
 import { AuthGuard, isPublicAuthRoute } from "@/features/auth/auth-guard";
 import { AuthProvider } from "@/features/auth/auth-provider";
@@ -88,15 +87,12 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
     <TooltipProvider delayDuration={200}>
       <AuthGuard>
         <div className="min-h-screen bg-zinc-50 text-zinc-950">
-          <div className="flex min-h-screen">
-            <AppSidebar />
-            <div className="flex min-w-0 flex-1 flex-col">
-              <AppHeader
-                pathname={pathname}
-                onFocusWriting={focusFullCapture}
-              />
-              <main className="flex flex-1">{children}</main>
-            </div>
+          <div className="flex min-h-screen min-w-0 flex-col">
+            <AppHeader
+              pathname={pathname}
+              onFocusWriting={focusFullCapture}
+            />
+            <main className="flex flex-1">{children}</main>
           </div>
           <Button
             type="button"

@@ -46,7 +46,7 @@ describe("search route consolidation", () => {
     const screen = await render(createElement(SidebarContent, { pathname: "/" }));
 
     expect(screen.textContent).toContain("Inicio");
-    expect(screen.textContent).toContain("Historial");
+    expect(screen.textContent).toContain("Explorar");
     expect(screen.textContent).not.toContain("Buscar");
     expect(
       Array.from(screen.querySelectorAll("a")).some(
