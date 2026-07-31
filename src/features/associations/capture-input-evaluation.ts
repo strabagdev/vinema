@@ -30,12 +30,27 @@ export const MIN_EMERGING_SCORE = 0.36;
 export const MIN_EVIDENCE_CAPTURE_SCORE = 0.05;
 
 const GENERIC_CONCEPT_TERMS = new Set([
+  "abrir",
+  "actualiz",
+  "aparec",
   "captur",
+  "confirm",
   "cos",
+  "crear",
+  "despues",
+  "escribir",
   "general",
   "idea",
   "important",
+  "necesit",
+  "necesito",
+  "nueva",
+  "nuevo",
   "nota",
+  "pendient",
+  "prepar",
+  "revis",
+  "revisar",
   "tema",
   "trabaj",
   "vario",
@@ -50,6 +65,15 @@ const DISPLAY_LABELS: Record<string, string> = {
   railway: "Railway",
   sponsor: "Sponsor Meeting",
 };
+
+const CURRENT_INPUT_DISPLAY_LABELS: Record<string, string> = {
+  mitcom: "Mitcom",
+  railway: "Railway",
+};
+
+const MIN_INPUT_EMERGING_TOKENS = 1;
+const MIN_INPUT_EMERGING_SCORE = 0.42;
+const INPUT_EMERGING_LIMIT = 3;
 
 type ExpressionCandidate = {
   key: string;
@@ -181,12 +205,16 @@ function detectEmergingConcepts({
   existingConcepts: ConceptSuggestion[];
   index: AssociationIndex;
 }): EmergingConceptSuggestion[] {
+  const inputConcepts = detectInputEmergingConcepts({
+    text,
+    existingConcepts,
+  });
   const evidence = recoveryMatches
     .filter((match) => match.score >= MIN_EVIDENCE_CAPTURE_SCORE)
     .slice(0, EMERGING_EVIDENCE_LIMIT);
 
   if (evidence.length < MIN_EMERGING_EVIDENCE_CAPTURES) {
-    return [];
+    return inputConcepts;
   }
 
   const queryTokens = uniqueTokens(tokenizeAssociationText(text));
@@ -231,7 +259,7 @@ function detectEmergingConcepts({
   });
 
   if (!label || hasEquivalentExistingConcept(label, existingConcepts)) {
-    return [];
+    return inputConcepts;
   }
 
   const cohesion =
@@ -242,12 +270,12 @@ function detectEmergingConcepts({
   const score = Math.min(1, cohesion * 0.7 + Math.min(evidence.length / 5, 1) * 0.3);
 
   if (score < MIN_EMERGING_SCORE) {
-    return [];
+    return inputConcepts;
   }
 
   const evidenceCaptureIds = evidence.map((match) => match.node.id);
 
-  return [
+  return dedupeEmergingConcepts([
     {
       kind: "emerging",
       candidateId: createCandidateId(label, evidenceCaptureIds, representativeTerms),
@@ -256,7 +284,167 @@ function detectEmergingConcepts({
       evidenceCaptureIds,
       representativeTerms,
     },
-  ];
+    ...inputConcepts,
+  ]);
+}
+
+function detectInputEmergingConcepts({
+  text,
+  existingConcepts,
+}: {
+  text: string;
+  existingConcepts: ConceptSuggestion[];
+}): EmergingConceptSuggestion[] {
+  const tokens = uniqueTokens(tokenizeAssociationText(text));
+
+  if (tokens.length < MIN_INPUT_EMERGING_TOKENS) {
+    return [];
+  }
+
+  const candidates = collectInputConceptCandidates(text);
+
+  return dedupeEmergingConcepts(
+    candidates
+      .filter((candidate) => !hasEquivalentExistingConcept(candidate.label, existingConcepts))
+      .map((candidate) => ({
+        kind: "emerging" as const,
+        candidateId: createCandidateId(candidate.label, [], candidate.terms),
+        suggestedLabel: candidate.label,
+        score: candidate.score,
+        evidenceCaptureIds: [],
+        representativeTerms: candidate.terms,
+      }))
+      .filter((candidate) => candidate.score >= MIN_INPUT_EMERGING_SCORE),
+  ).slice(0, INPUT_EMERGING_LIMIT);
+}
+
+function collectInputConceptCandidates(text: string) {
+  const words = extractWords(text);
+  const candidates = new Map<
+    string,
+    { label: string; terms: string[]; score: number }
+  >();
+
+  for (const [index, word] of words.entries()) {
+    const terms = uniqueTokens(tokenizeAssociationText(word));
+    const [term] = terms;
+
+    if (!term || GENERIC_CONCEPT_TERMS.has(term)) {
+      continue;
+    }
+
+    const displayLabel = CURRENT_INPUT_DISPLAY_LABELS[term];
+    const isNamedTerm = index > 0 && hasUppercaseLetter(word);
+
+    if (!displayLabel && !isNamedTerm) {
+      continue;
+    }
+
+    const label = displayLabel ?? formatExpressionLabel([word]);
+    candidates.set(normalizeLabelForDeduplication(label), {
+      label,
+      terms,
+      score: displayLabel ? 0.72 : 0.52,
+    });
+  }
+
+  for (const wordCount of [2, 3]) {
+    for (let index = 0; index <= words.length - wordCount; index += 1) {
+      const phraseWords = words.slice(index, index + wordCount);
+      const candidate = createCurrentExpressionCandidate(phraseWords);
+
+      if (!candidate) {
+        continue;
+      }
+
+      const key = normalizeLabelForDeduplication(candidate.label);
+      const current = candidates.get(key);
+
+      if (!current || candidate.score > current.score) {
+        candidates.set(key, candidate);
+      }
+    }
+  }
+
+  return Array.from(candidates.values()).sort((first, second) => {
+    if (second.score !== first.score) {
+      return second.score - first.score;
+    }
+
+    return first.label.localeCompare(second.label);
+  });
+}
+
+function createCurrentExpressionCandidate(phraseWords: string[]) {
+  const normalizedWords = phraseWords.map((word) => normalizeAssociationText(word));
+  const startsWithStopword = SPANISH_STOPWORDS.has(normalizedWords[0] ?? "");
+  const endsWithStopword = SPANISH_STOPWORDS.has(
+    normalizedWords[normalizedWords.length - 1] ?? "",
+  );
+  const startsWithGenericTerm = isGenericConceptWord(phraseWords[0] ?? "");
+  const endsWithGenericTerm = isGenericConceptWord(
+    phraseWords[phraseWords.length - 1] ?? "",
+  );
+
+  if (
+    startsWithStopword ||
+    endsWithStopword ||
+    startsWithGenericTerm ||
+    endsWithGenericTerm
+  ) {
+    return null;
+  }
+
+  const terms = uniqueTokens(tokenizeAssociationText(phraseWords.join(" "))).filter(
+    (term) => !GENERIC_CONCEPT_TERMS.has(term),
+  );
+
+  if (terms.length < 2) {
+    return null;
+  }
+
+  const hasProperCase = hasExpressionCapitalization(phraseWords);
+
+  if (!hasProperCase) {
+    return null;
+  }
+
+  return {
+    label: formatExpressionLabel(phraseWords),
+    terms,
+    score: 0.48,
+  };
+}
+
+function isGenericConceptWord(word: string) {
+  const terms = uniqueTokens(tokenizeAssociationText(word));
+
+  return terms.length > 0 && terms.every((term) => GENERIC_CONCEPT_TERMS.has(term));
+}
+
+function dedupeEmergingConcepts(suggestions: EmergingConceptSuggestion[]) {
+  const byLabel = new Map<string, EmergingConceptSuggestion>();
+
+  for (const suggestion of suggestions) {
+    const key = normalizeLabelForDeduplication(suggestion.suggestedLabel);
+    const current = byLabel.get(key);
+
+    if (!current || suggestion.score > current.score) {
+      byLabel.set(key, suggestion);
+    }
+  }
+
+  return Array.from(byLabel.values()).sort((first, second) => {
+    if (second.evidenceCaptureIds.length !== first.evidenceCaptureIds.length) {
+      return second.evidenceCaptureIds.length - first.evidenceCaptureIds.length;
+    }
+
+    if (second.score !== first.score) {
+      return second.score - first.score;
+    }
+
+    return first.suggestedLabel.localeCompare(second.suggestedLabel);
+  });
 }
 
 function createSuggestedLabel({

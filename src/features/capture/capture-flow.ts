@@ -142,7 +142,10 @@ async function getOrCreateEmergingConceptContext(
     workspaceId,
     type: "AREA",
     name: emergingConcept.suggestedLabel,
-    description: `Concepto emergente confirmado desde ${emergingConcept.evidenceCaptureIds.length} capturas.`,
+    description:
+      emergingConcept.evidenceCaptureIds.length > 0
+        ? `Concepto emergente confirmado desde ${emergingConcept.evidenceCaptureIds.length} capturas.`
+        : "Concepto emergente confirmado desde la captura actual.",
     version: 1,
     createdAt: now,
     updatedAt: now,

@@ -452,6 +452,108 @@ describe("CaptureSurface", () => {
     );
   });
 
+  it("shows current-input emerging concepts and persists the selected chip", async () => {
+    const storage = new MemoryStorageAdapter();
+    const nodeRepository = new InMemoryNodeRepository();
+    const contextRepository = new InMemoryContextRepository();
+    const relationRepository = new InMemoryNodeContextRelationRepository();
+    const screen = await renderCaptureSurface({
+      storage,
+      nodeRepository,
+      contextRepository,
+      relationRepository,
+    });
+
+    await changeTextarea(
+      screen.container,
+      "Revisar Railway para la sincronizacion de Vinema",
+    );
+    await advanceTime(500);
+
+    expect(screen.container.textContent).toContain("Conceptos");
+    expect(screen.container.textContent).toContain("Railway");
+    expect(screen.container.textContent).not.toContain("Esto me recordó a…");
+
+    const railwayChip = getButton(screen.container, "Railway");
+    expect(railwayChip.getAttribute("aria-pressed")).toBe("false");
+    await click(railwayChip);
+    expect(railwayChip.getAttribute("aria-pressed")).toBe("true");
+
+    await click(getButton(screen.container, "Capturar"));
+    await waitFor(async () => (await storage.get(CAPTURE_DRAFT_KEY)) === null);
+
+    const contexts = await contextRepository.list({
+      workspaceId: workspace.id,
+      includeArchived: true,
+    });
+    const captures = await nodeRepository.listByWorkspace(workspace.id);
+    const newCapture = captures.find((node) => node.content.includes("Railway"));
+    const relations = await relationRepository.listByWorkspace(workspace.id);
+
+    expect(contexts).toHaveLength(1);
+    expect(contexts[0]).toMatchObject({
+      name: "Railway",
+      description: "Concepto emergente confirmado desde la captura actual.",
+    });
+    expect(relations).toContainEqual(
+      expect.objectContaining({
+        nodeId: newCapture?.id,
+        contextId: contexts[0].id,
+      }),
+    );
+  });
+
+  it("clears current-input emerging concepts when the editor is cleared", async () => {
+    const screen = await renderCaptureSurface();
+
+    await changeTextarea(screen.container, "Revisar Railway");
+    await advanceTime(500);
+    expect(screen.container.textContent).toContain("Railway");
+
+    await changeTextarea(screen.container, "");
+    await advanceTime(500);
+
+    expect(screen.container.textContent).not.toContain("Conceptos");
+    expect(screen.container.textContent).not.toContain("Railway");
+  });
+
+  it("does not let stale concept suggestions replace newer input", async () => {
+    const nodeRepository = new InMemoryNodeRepository();
+    const originalList = nodeRepository.listByWorkspace.bind(nodeRepository);
+    let calls = 0;
+    let releaseSlowAssociationRead: (() => void) | null = null;
+
+    nodeRepository.listByWorkspace = async (...args) => {
+      calls += 1;
+
+      if (calls === 2) {
+        return new Promise<Node[]>((resolve) => {
+          releaseSlowAssociationRead = () => resolve([]);
+        });
+      }
+
+      return originalList(...args);
+    };
+
+    const screen = await renderCaptureSurface({ nodeRepository });
+
+    await changeTextarea(screen.container, "Revisar Railway");
+    await advanceTime(500);
+    await changeTextarea(screen.container, "Revisar Mitcom");
+    await advanceTime(500);
+
+    expect(screen.container.textContent).toContain("Mitcom");
+    expect(screen.container.textContent).not.toContain("Railway");
+
+    await act(async () => {
+      releaseSlowAssociationRead?.();
+      await flushPromises();
+    });
+
+    expect(screen.container.textContent).toContain("Mitcom");
+    expect(screen.container.textContent).not.toContain("Railway");
+  });
+
   it("suggests an emerging concept, persists it only when selected and reuses it later", async () => {
     const storage = new MemoryStorageAdapter();
     const nodeRepository = new InMemoryNodeRepository([

@@ -250,6 +250,65 @@ describe("association scoring", () => {
 });
 
 describe("concept suggestions", () => {
+  it("returns emerging concepts from strong terms in the current input", () => {
+    const evaluation = evaluateCaptureInput({
+      text: "Revisar Railway para la sincronizacion de Vinema",
+      nodes: [],
+      contexts: [],
+      relations: [],
+    });
+    const emerging = evaluation.conceptSuggestions.filter(
+      (suggestion) => suggestion.kind === "emerging",
+    );
+
+    expect(emerging).toContainEqual(
+      expect.objectContaining({
+        kind: "emerging",
+        suggestedLabel: "Railway",
+        evidenceCaptureIds: [],
+        representativeTerms: ["railway"],
+      }),
+    );
+    expect(evaluation.diagnostics.emergingConceptSuggestionCount).toBeGreaterThan(0);
+  });
+
+  it("does not create current-input emerging noise for empty or generic text", () => {
+    for (const text of ["", "   ", "re", "Necesito revisar esto despues"]) {
+      const evaluation = evaluateCaptureInput({
+        text,
+        nodes: [],
+        contexts: [],
+        relations: [],
+      });
+
+      expect(
+        evaluation.conceptSuggestions.filter(
+          (suggestion) => suggestion.kind === "emerging",
+        ),
+      ).toEqual([]);
+    }
+  });
+
+  it("deduplicates and orders existing concepts before equivalent emerging concepts", () => {
+    const evaluation = evaluateCaptureInput({
+      text: "Revisar Railway",
+      nodes: [],
+      contexts: [context({ id: "railway", name: "Railway" })],
+      relations: [],
+    });
+
+    expect(evaluation.conceptSuggestions[0]).toMatchObject({
+      kind: "existing",
+      conceptId: "railway",
+      label: "Railway",
+    });
+    expect(
+      evaluation.conceptSuggestions.some(
+        (suggestion) => suggestion.kind === "emerging",
+      ),
+    ).toBe(false);
+  });
+
   it("uses one semantic evaluation to produce recovery and emerging concepts", () => {
     const nodes = [
       node({ id: "p1", content: "Perfume cuero intenso tipo Ombre Leather" }),
@@ -406,7 +465,9 @@ describe("concept suggestions", () => {
     );
     expect(
       evaluation.conceptSuggestions.some(
-        (suggestion) => suggestion.kind === "emerging",
+        (suggestion) =>
+          suggestion.kind === "emerging" &&
+          suggestion.suggestedLabel === "Reuniones",
       ),
     ).toBe(false);
   });
