@@ -5,6 +5,7 @@ import type { Device } from "@/domain/device/device";
 import { DevicePlatform } from "@/domain/device/device";
 import type { Node } from "@/domain/node/node";
 import type { Workspace } from "@/domain/workspace/workspace";
+import { commitCaptureText } from "@/features/capture/capture-flow";
 import { archiveContext } from "@/features/context/archive-context";
 import { createContext } from "@/features/context/create-context";
 import {
@@ -25,9 +26,29 @@ import {
   createLocalSyncRepositories,
 } from "@/infrastructure/sync/indexed-db-local-sync-repositories";
 import {
+  NODES_STORE,
+  SYNC_MUTATIONS_STORE,
   VINEMA_DB_NAME,
+  getVinemaDb,
   resetVinemaDbConnectionForTests,
 } from "@/infrastructure/storage/vinema-db";
+import type { StorageAdapter } from "@/infrastructure/storage/storage-adapter";
+
+class MemoryStorageAdapter implements StorageAdapter {
+  readonly data = new Map<string, unknown>();
+
+  async get<T>(key: string): Promise<T | null> {
+    return (this.data.get(key) as T | undefined) ?? null;
+  }
+
+  async set<T>(key: string, value: T): Promise<void> {
+    this.data.set(key, value);
+  }
+
+  async remove(key: string): Promise<void> {
+    this.data.delete(key);
+  }
+}
 
 const workspace: Workspace = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -106,6 +127,66 @@ describe("local sync repositories", () => {
       },
     });
     await expect(outbox.listPending(workspace.id, 10)).resolves.toHaveLength(4);
+  });
+
+  it("commits a capture into nodes and sync_mutations for the authenticated workspace", async () => {
+    const authenticatedWorkspace: Workspace = {
+      ...workspace,
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    };
+    const authenticatedDevice: Device = {
+      ...device,
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    };
+    const repositories = createLocalSyncRepositories({
+      syncContext: {
+        workspaceId: authenticatedWorkspace.id,
+        deviceId: authenticatedDevice.id,
+      },
+      mutationIdFactory: () => "33333333-3333-4333-8333-333333333333",
+    });
+
+    const result = await commitCaptureText({
+      content: "Captura creada desde la superficie principal",
+      workspace: authenticatedWorkspace,
+      device: authenticatedDevice,
+      repository: repositories.nodeRepository,
+      contextRepository: repositories.contextRepository,
+      relationRepository: repositories.nodeContextRelationRepository,
+      storage: new MemoryStorageAdapter(),
+    });
+    const db = await getVinemaDb();
+    const storedNode = await db.get(NODES_STORE, result.node.id);
+    const storedMutation = await db.get(
+      SYNC_MUTATIONS_STORE,
+      "33333333-3333-4333-8333-333333333333",
+    );
+
+    expect(storedNode).toMatchObject({
+      id: result.node.id,
+      workspaceId: authenticatedWorkspace.id,
+      createdByDeviceId: authenticatedDevice.id,
+      lastModifiedByDeviceId: authenticatedDevice.id,
+    });
+    expect(storedMutation).toMatchObject({
+      workspaceId: authenticatedWorkspace.id,
+      deviceId: authenticatedDevice.id,
+      status: "PENDING",
+      mutation: {
+        entityType: "capture",
+        entityId: result.node.id,
+        baseVersion: null,
+      },
+    });
+    await expect(
+      new IndexedDbSyncOutboxRepository().listPending(
+        authenticatedWorkspace.id,
+        10,
+      ),
+    ).resolves.toHaveLength(1);
+    await expect(
+      new IndexedDbSyncOutboxRepository().listPending(workspace.id, 10),
+    ).resolves.toHaveLength(0);
   });
 
   it("does not enqueue node no-ops and does enqueue IDEA to NOTE conversion", async () => {

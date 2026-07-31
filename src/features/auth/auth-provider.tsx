@@ -57,6 +57,7 @@ export type AuthContextValue = {
   state: AuthState;
   user: AuthenticatedUser | null;
   workspaceId: string | null;
+  deviceId: string | null;
   accessToken: string | undefined;
   isAuthenticated: boolean;
   isLoading: boolean;
@@ -146,6 +147,7 @@ export function AuthProvider({
     state,
     user: state.user,
     workspaceId: state.workspaceId,
+    deviceId: state.deviceId,
     accessToken,
     isAuthenticated: Boolean(accessToken) && state.status === "AUTHENTICATED",
     isLoading:
