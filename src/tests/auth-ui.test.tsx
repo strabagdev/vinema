@@ -1,5 +1,7 @@
+import "fake-indexeddb/auto";
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { deleteDB } from "idb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LoginClient } from "@/app/login/login-client";
 import { RegisterClient } from "@/app/register/register-client";
@@ -15,6 +17,8 @@ import {
   getPublicApiUrl,
   normalizePublicApiUrl,
 } from "@/features/auth/public-api-url";
+import { InMemoryAuthSessionStorage } from "@/features/auth/storage/in-memory-auth-session-storage";
+import { VINEMA_DB_NAME, resetVinemaDbConnectionForTests } from "@/infrastructure/storage/vinema-db";
 
 const routerReplace = vi.fn();
 let pathname = "/";
@@ -81,6 +85,8 @@ describe("minimal authentication UI", () => {
     container.remove();
     globalThis.fetch = originalFetch;
     process.env.NEXT_PUBLIC_API_URL = originalApiUrl;
+    await resetVinemaDbConnectionForTests();
+    await deleteDB(VINEMA_DB_NAME);
   });
 
   it("AuthProvider starts anonymous, logs in, exposes token and logs out locally", async () => {
@@ -346,6 +352,30 @@ describe("minimal authentication UI", () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
+  it("AuthProvider does not restore persisted sessions on mount yet", async () => {
+    const storage = new TrackingAuthSessionStorage();
+    await storage.save({
+      refreshToken: "stored-refresh-token",
+      sessionId: sessionId,
+      deviceId,
+      storedAt: "2026-07-30T12:00:00.000Z",
+    });
+
+    function Probe() {
+      const auth = useAuth();
+      return <p data-testid="status">{auth.state.status}</p>;
+    }
+
+    await render(
+      <AuthProvider authSessionStorage={storage}>
+        <Probe />
+      </AuthProvider>,
+    );
+
+    expect(text("[data-testid='status']")).toBe("UNAUTHENTICATED");
+    expect(storage.loadCalls).toBe(0);
+  });
+
   async function render(element: React.ReactNode) {
     await act(async () => {
       root.render(element);
@@ -397,4 +427,13 @@ function jsonResponse(body: unknown, status = 200) {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+class TrackingAuthSessionStorage extends InMemoryAuthSessionStorage {
+  loadCalls = 0;
+
+  override async load() {
+    this.loadCalls += 1;
+    return super.load();
+  }
 }

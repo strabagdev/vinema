@@ -186,10 +186,13 @@ migraciones.
 
 ## IndexedDB
 
-Base `vinema`, version 6:
+Base `vinema`, version 7:
 
 - `key-value`: out-of-line, legado VIN-002 para preservar datos existentes.
 - `app_settings`: out-of-line con clave string.
+- `auth_session`: out-of-line con clave string. Guarda una unica sesion actual
+  bajo la clave `current`; persiste refresh token, `sessionId`, `deviceId` y
+  `storedAt`, pero nunca access token.
 - `devices`: in-line con `keyPath: "id"`.
 - `workspaces`: in-line con `keyPath: "id"`.
 - `nodes`: in-line con `keyPath: "id"`.

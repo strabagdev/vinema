@@ -8,3 +8,5 @@ export * from "@/features/auth/auth-state-engine";
 export * from "@/features/auth/auth-sync-state-bridge";
 export * from "@/features/auth/device-identity-provider";
 export * from "@/features/auth/public-api-url";
+export * from "@/features/auth/storage/auth-session-storage";
+export * from "@/features/auth/storage/in-memory-auth-session-storage";

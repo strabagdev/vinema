@@ -5,6 +5,7 @@ import {
   createAuthClient,
 } from "@/features/auth/auth-client";
 import { createAuthService } from "@/features/auth/auth-service";
+import { InMemoryAuthSessionStorage } from "@/features/auth/storage/in-memory-auth-session-storage";
 import {
   createAuthStateEngine,
   initialAuthState,
@@ -290,6 +291,7 @@ describe("auth client and state", () => {
     };
     const service = createAuthService({
       authClient: client,
+      authSessionStorage: new InMemoryAuthSessionStorage(),
       authStateEngine: engine,
       deviceIdentityProvider: createDeviceIdentityProvider(),
       clock: createClock(),
@@ -333,6 +335,7 @@ describe("auth client and state", () => {
     };
     const service = createAuthService({
       authClient: client,
+      authSessionStorage: new InMemoryAuthSessionStorage(),
       deviceIdentityProvider: createDeviceIdentityProvider(),
     });
 
@@ -341,6 +344,154 @@ describe("auth client and state", () => {
       code: "TOKEN_EXPIRED",
     });
     expect(service.getAccessToken()).toBeUndefined();
+  });
+
+  it("AuthService persists register, login and rotated refresh sessions without storing access tokens", async () => {
+    const storage = new InMemoryAuthSessionStorage();
+    await storage.save({
+      refreshToken: "old-refresh-token",
+      sessionId: "old-session",
+      deviceId: "old-device",
+      storedAt: "2026-07-30T11:59:00.000Z",
+    });
+    const client = {
+      register: vi.fn(async () => session),
+      login: vi.fn(async () => ({
+        ...session,
+        refreshToken: "login-refresh-token",
+        sessionId: "55555555-5555-4555-8555-555555555555",
+      })),
+      refresh: vi.fn(async () => ({
+        ...session,
+        accessToken: "rotated-access-token",
+        refreshToken: "rotated-refresh-token",
+        sessionId: "66666666-6666-4666-8666-666666666666",
+      })),
+      logout: vi.fn(async () => ({ ok: true as const })),
+      getSession: vi.fn(async () => ({
+        user,
+        workspaceId,
+        deviceId,
+        sessionId,
+        tokenExpiresAt: accessTokenExpiresAt,
+      })),
+      getCurrentDevice: vi.fn(async () => currentDevice),
+    };
+    const service = createAuthService({
+      authClient: client,
+      authSessionStorage: storage,
+      deviceIdentityProvider: createDeviceIdentityProvider(),
+      clock: createClock(),
+    });
+
+    await service.register({ email: user.email, password: "password-123" });
+    expect(storage.snapshot()).toEqual({
+      refreshToken: "refresh-token",
+      sessionId,
+      deviceId,
+      storedAt: "2026-07-30T12:00:01.000Z",
+    });
+    expect(JSON.stringify(storage.snapshot())).not.toContain("access-token");
+
+    await service.login({ email: user.email, password: "password-123" });
+    expect(storage.snapshot()).toMatchObject({
+      refreshToken: "login-refresh-token",
+      sessionId: "55555555-5555-4555-8555-555555555555",
+      deviceId,
+    });
+    expect(service.getAccessToken()).toBe("access-token");
+
+    await service.refresh();
+    expect(storage.snapshot()).toMatchObject({
+      refreshToken: "rotated-refresh-token",
+      sessionId: "66666666-6666-4666-8666-666666666666",
+      deviceId,
+    });
+    expect(JSON.stringify(storage.snapshot())).not.toContain("login-refresh-token");
+    expect(service.getAccessToken()).toBe("rotated-access-token");
+  });
+
+  it("AuthService clears local auth when session persistence fails", async () => {
+    const storage = new FailingAuthSessionStorage("save");
+    const client = {
+      register: vi.fn(async () => session),
+      login: vi.fn(async () => session),
+      refresh: vi.fn(async () => session),
+      logout: vi.fn(async () => ({ ok: true as const })),
+      getSession: vi.fn(),
+      getCurrentDevice: vi.fn(),
+    };
+    const service = createAuthService({
+      authClient: client,
+      authSessionStorage: storage,
+      deviceIdentityProvider: createDeviceIdentityProvider(),
+    });
+
+    await expect(
+      service.login({ email: user.email, password: "password-123" }),
+    ).rejects.toMatchObject({
+      code: "UNEXPECTED_ERROR",
+      message: "No se pudo guardar la sesion local.",
+    });
+    expect(service.getAccessToken()).toBeUndefined();
+    expect(service.getState().status).toBe("ERROR");
+    expect(storage.clearCalls).toBeGreaterThanOrEqual(1);
+  });
+
+  it("AuthService clears persisted and memory sessions on refresh persistence failure", async () => {
+    const storage = new FailingAuthSessionStorage("save-on-second-call");
+    const client = {
+      register: vi.fn(async () => session),
+      login: vi.fn(async () => session),
+      refresh: vi.fn(async () => ({
+        ...session,
+        accessToken: "rotated-access-token",
+        refreshToken: "rotated-refresh-token",
+      })),
+      logout: vi.fn(async () => ({ ok: true as const })),
+      getSession: vi.fn(),
+      getCurrentDevice: vi.fn(),
+    };
+    const service = createAuthService({
+      authClient: client,
+      authSessionStorage: storage,
+      deviceIdentityProvider: createDeviceIdentityProvider(),
+    });
+
+    await service.login({ email: user.email, password: "password-123" });
+    await expect(service.refresh()).rejects.toMatchObject({
+      code: "UNEXPECTED_ERROR",
+    });
+    expect(service.getAccessToken()).toBeUndefined();
+    expect(service.getState().status).toBe("UNAUTHENTICATED");
+    expect(storage.clearCalls).toBeGreaterThanOrEqual(1);
+    expect(JSON.stringify(storage.snapshot())).not.toContain("refresh-token");
+  });
+
+  it("AuthService clears persisted session on logout even when the API fails", async () => {
+    const storage = new InMemoryAuthSessionStorage();
+    const client = {
+      register: vi.fn(async () => session),
+      login: vi.fn(async () => session),
+      refresh: vi.fn(async () => session),
+      logout: vi.fn(async () => {
+        throw new AuthClientError("NETWORK_ERROR", "Offline");
+      }),
+      getSession: vi.fn(),
+      getCurrentDevice: vi.fn(),
+    };
+    const service = createAuthService({
+      authClient: client,
+      authSessionStorage: storage,
+      deviceIdentityProvider: createDeviceIdentityProvider(),
+    });
+
+    await service.login({ email: user.email, password: "password-123" });
+    expect(storage.snapshot()).not.toBeNull();
+    await service.logout();
+    expect(storage.snapshot()).toBeNull();
+    expect(service.getAccessToken()).toBeUndefined();
+    expect(service.getState().status).toBe("UNAUTHENTICATED");
   });
 
   it("AuthSyncStateBridge publishes auth status and disposes", () => {
@@ -415,4 +566,29 @@ function createDeviceIdentityProvider(): DeviceIdentityProvider {
     getClientDeviceId: async () => deviceMetadata.clientDeviceId,
     getDeviceMetadata: async () => deviceMetadata,
   };
+}
+
+class FailingAuthSessionStorage extends InMemoryAuthSessionStorage {
+  clearCalls = 0;
+  private saveCalls = 0;
+
+  constructor(private readonly mode: "save" | "save-on-second-call") {
+    super();
+  }
+
+  override async save(
+    session: Parameters<InMemoryAuthSessionStorage["save"]>[0],
+  ): Promise<void> {
+    this.saveCalls += 1;
+    if (this.mode === "save" || this.saveCalls > 1) {
+      throw new Error("storage failed");
+    }
+
+    await super.save(session);
+  }
+
+  override async clear(): Promise<void> {
+    this.clearCalls += 1;
+    await super.clear();
+  }
 }

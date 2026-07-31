@@ -8,6 +8,7 @@ import type {
 import type { AccessTokenProvider } from "@/features/auth/access-token-provider";
 import { AuthClientError, type AuthClient } from "@/features/auth/auth-client";
 import type { DeviceIdentityProvider } from "@/features/auth/device-identity-provider";
+import type { AuthSessionStorage } from "@/features/auth/storage/auth-session-storage";
 import {
   createAuthStateEngine,
   type AuthState,
@@ -32,12 +33,14 @@ export type AuthLoginInput = Omit<LoginRequest, "device">;
 
 export function createAuthService({
   authClient,
+  authSessionStorage,
   authStateEngine = createAuthStateEngine(),
   deviceIdentityProvider,
   clock = () => new Date().toISOString(),
   logger,
 }: {
   authClient: AuthClient;
+  authSessionStorage: AuthSessionStorage;
   authStateEngine?: AuthStateEngine;
   deviceIdentityProvider: DeviceIdentityProvider;
   clock?: () => string;
@@ -52,6 +55,7 @@ export function createAuthService({
     authStateEngine.dispatch({ type: "AUTH_STARTED", at: clock() });
     try {
       const session = await operation();
+      await persistSessionOrFail(session);
       accessToken = session.accessToken;
       refreshToken = session.refreshToken;
       authStateEngine.dispatch({
@@ -67,6 +71,8 @@ export function createAuthService({
       return session;
     } catch (error) {
       const authError = toAuthError(error);
+      accessToken = undefined;
+      refreshToken = undefined;
       authStateEngine.dispatch({
         type: "AUTH_FAILED",
         at: clock(),
@@ -148,6 +154,7 @@ export function createAuthService({
       authStateEngine.dispatch({ type: "REFRESH_STARTED", at: clock() });
       try {
         const session = await authClient.refresh({ refreshToken });
+        await persistSessionOrFail(session);
         accessToken = session.accessToken;
         refreshToken = session.refreshToken;
         authStateEngine.dispatch({
@@ -165,6 +172,7 @@ export function createAuthService({
         const authError = toAuthError(error);
         accessToken = undefined;
         refreshToken = undefined;
+        await clearStoredSession(logger);
         authStateEngine.dispatch({
           type: "REFRESH_FAILED",
           at: clock(),
@@ -188,6 +196,7 @@ export function createAuthService({
         const authError = toAuthError(error);
         logger?.warn?.("auth logout remote failed", { code: authError.code });
       } finally {
+        await clearStoredSession(logger);
         authStateEngine.dispatch({ type: "LOGOUT_COMPLETED", at: clock() });
       }
     },
@@ -206,6 +215,38 @@ export function createAuthService({
       return authStateEngine.getState();
     },
   };
+
+  async function persistSessionOrFail(session: AuthenticatedSession) {
+    try {
+      await authSessionStorage.save({
+        refreshToken: session.refreshToken,
+        sessionId: session.sessionId,
+        deviceId: session.deviceId,
+        storedAt: clock(),
+      });
+    } catch (error) {
+      logger?.warn?.("auth session persistence failed");
+      await clearStoredSession(logger);
+      throw new AuthClientError(
+        "UNEXPECTED_ERROR",
+        "No se pudo guardar la sesion local.",
+        undefined,
+        error,
+      );
+    }
+  }
+
+  async function clearStoredSession(
+    clearLogger?: { warn?(message: string, context?: Record<string, unknown>): void },
+  ) {
+    try {
+      await authSessionStorage.clear();
+    } catch (error) {
+      clearLogger?.warn?.("auth session storage clear failed", {
+        error: error instanceof Error ? error.name : "Unknown",
+      });
+    }
+  }
 }
 
 function toAuthError(error: unknown) {

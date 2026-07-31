@@ -33,6 +33,8 @@ import {
   getPublicApiUrl,
   PublicApiUrlError,
 } from "@/features/auth/public-api-url";
+import type { AuthSessionStorage } from "@/features/auth/storage/auth-session-storage";
+import { createWebAuthSessionStorage } from "@/features/auth/storage/web-auth-session-storage";
 import { createSyncStateEngine } from "@/features/sync/sync-state-engine";
 
 export type AuthContextValue = {
@@ -57,8 +59,14 @@ type AuthRuntime = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [runtime] = useState(createAuthRuntime);
+export function AuthProvider({
+  children,
+  authSessionStorage,
+}: {
+  children: React.ReactNode;
+  authSessionStorage?: AuthSessionStorage;
+}) {
+  const [runtime] = useState(() => createAuthRuntime(authSessionStorage));
   const [state, setState] = useState<AuthState>(() => runtime.service.getState());
   const [accessToken, setAccessToken] = useState<string | undefined>(() =>
     runtime.service.getAccessToken(),
@@ -131,7 +139,7 @@ export function useAuth() {
   return value;
 }
 
-function createAuthRuntime(): AuthRuntime {
+function createAuthRuntime(authSessionStorage?: AuthSessionStorage): AuthRuntime {
   const authStateEngine = createAuthStateEngine({
     ...initialAuthState,
     status: "UNAUTHENTICATED",
@@ -156,6 +164,7 @@ function createAuthRuntime(): AuthRuntime {
 
   const service = createAuthService({
     authClient,
+    authSessionStorage: authSessionStorage ?? createWebAuthSessionStorage(),
     authStateEngine,
     deviceIdentityProvider: createDeviceIdentityProvider(),
     logger: process.env.NODE_ENV === "development" ? console : undefined,

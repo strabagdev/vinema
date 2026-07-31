@@ -14,9 +14,10 @@ import type {
 } from "@/features/sync/sync-outbox-repository";
 
 export const VINEMA_DB_NAME = "vinema";
-export const VINEMA_DB_VERSION = 6;
+export const VINEMA_DB_VERSION = 7;
 
 export const APP_SETTINGS_STORE = "app_settings";
+export const AUTH_SESSION_STORE = "auth_session";
 export const CONTEXTS_STORE = "contexts";
 export const DEVICES_STORE = "devices";
 export const LEGACY_KEY_VALUE_STORE = "key-value";
@@ -28,6 +29,10 @@ export const WORKSPACES_STORE = "workspaces";
 
 export interface VinemaDbSchema extends DBSchema {
   [APP_SETTINGS_STORE]: {
+    key: string;
+    value: unknown;
+  };
+  [AUTH_SESSION_STORE]: {
     key: string;
     value: unknown;
   };
@@ -186,7 +191,10 @@ export async function resetVinemaDbNameForTests() {
 
 function ensureOutOfLineStore(
   db: IDBPDatabase<VinemaDbSchema>,
-  storeName: typeof APP_SETTINGS_STORE | typeof LEGACY_KEY_VALUE_STORE,
+  storeName:
+    | typeof APP_SETTINGS_STORE
+    | typeof AUTH_SESSION_STORE
+    | typeof LEGACY_KEY_VALUE_STORE,
 ) {
   if (!db.objectStoreNames.contains(storeName)) {
     db.createObjectStore(storeName);
@@ -198,6 +206,7 @@ async function ensureVinemaStores(
   transaction: UpgradeTransaction,
 ) {
   ensureOutOfLineStore(db, APP_SETTINGS_STORE);
+  ensureOutOfLineStore(db, AUTH_SESSION_STORE);
   ensureOutOfLineStore(db, LEGACY_KEY_VALUE_STORE);
 
   await ensureInlineIdStore(db, transaction, DEVICES_STORE);
@@ -406,6 +415,7 @@ export class VinemaDatabaseSchemaError extends Error {
 function getMissingVinemaStores(db: IDBPDatabase<VinemaDbSchema>) {
   const requiredStores = [
     APP_SETTINGS_STORE,
+    AUTH_SESSION_STORE,
     CONTEXTS_STORE,
     DEVICES_STORE,
     LEGACY_KEY_VALUE_STORE,

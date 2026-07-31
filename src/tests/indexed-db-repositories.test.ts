@@ -23,6 +23,7 @@ import { IndexedDbNodeRepository } from "@/infrastructure/node/indexed-db-node-r
 import { IndexedDbAdapter } from "@/infrastructure/storage/indexed-db-adapter";
 import {
   APP_SETTINGS_STORE,
+  AUTH_SESSION_STORE,
   CONTEXTS_STORE,
   DEVICES_STORE,
   LEGACY_KEY_VALUE_STORE,
@@ -107,8 +108,11 @@ describe("IndexedDB repositories", () => {
     await deleteDB(VINEMA_DB_NAME);
   });
 
-  it("creates a clean version 6 database with the expected keyPath schema", async () => {
+  it("creates a clean version 7 database with the expected keyPath schema", async () => {
     const db = await getVinemaDb();
+    const authSessionStore = db
+      .transaction(AUTH_SESSION_STORE)
+      .objectStore(AUTH_SESSION_STORE);
     const nodesStore = db.transaction(NODES_STORE).objectStore(NODES_STORE);
     const contextsStore = db
       .transaction(CONTEXTS_STORE)
@@ -124,6 +128,7 @@ describe("IndexedDB repositories", () => {
       .objectStore(SYNC_METADATA_STORE);
 
     expect(db.version).toBe(VINEMA_DB_VERSION);
+    expect(authSessionStore.keyPath).toBeNull();
     expect(nodesStore.keyPath).toBe("id");
     expect(contextsStore.keyPath).toBe("id");
     expect(contextsStore.indexNames.contains("by-workspace")).toBe(true);
