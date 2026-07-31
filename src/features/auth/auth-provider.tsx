@@ -41,6 +41,16 @@ import {
 } from "@/features/auth/public-api-url";
 import type { AuthSessionStorage } from "@/features/auth/storage/auth-session-storage";
 import { createWebAuthSessionStorage } from "@/features/auth/storage/web-auth-session-storage";
+import { createAutomaticSyncOrchestrator } from "@/features/sync/automatic-sync-orchestrator";
+import { createAuthenticatedSyncLifecycle } from "@/features/sync/authenticated-sync-lifecycle";
+import { createOrchestratorSyncStateBridge } from "@/features/sync/orchestrator-sync-state-bridge";
+import { createPullCoordinator } from "@/features/sync/pull-coordinator";
+import { createPushCoordinator } from "@/features/sync/push-coordinator";
+import { createSyncClient } from "@/features/sync/sync-client";
+import {
+  IndexedDbSyncMetadataRepository,
+  IndexedDbSyncOutboxRepository,
+} from "@/features/sync/sync-outbox-repository";
 import { createSyncStateEngine } from "@/features/sync/sync-state-engine";
 
 export type AuthContextValue = {
@@ -167,14 +177,17 @@ export function useAuth() {
 
 function createAuthRuntime(authSessionStorage?: AuthSessionStorage): AuthRuntime {
   const authStateEngine = createAuthStateEngine(initialAuthState);
+  const syncStateEngine = createSyncStateEngine();
 
   let configError: PublicApiUrlError | null = null;
+  let apiBaseUrl: string | null = null;
   let authClient: AuthClient;
   try {
     const baseUrl = getPublicApiUrl();
     if (!baseUrl) {
       throw new PublicApiUrlError("NEXT_PUBLIC_API_URL no esta configurada.");
     }
+    apiBaseUrl = baseUrl;
     authClient = createAuthClient({ baseUrl });
   } catch (error) {
     if (error instanceof PublicApiUrlError) {
@@ -194,8 +207,52 @@ function createAuthRuntime(authSessionStorage?: AuthSessionStorage): AuthRuntime
   });
   const syncBridge = createAuthSyncStateBridge({
     authStateEngine,
-    syncStateEngine: createSyncStateEngine(),
+    syncStateEngine,
   });
+  const authenticatedSync = apiBaseUrl
+    ? createAuthenticatedSyncLifecycle({
+      createRuntime({ workspaceId, deviceId }) {
+        const syncClient = createSyncClient({
+          baseUrl: apiBaseUrl,
+          accessTokenProvider: service,
+        });
+        const outboxRepository = new IndexedDbSyncOutboxRepository();
+        const metadataRepository = new IndexedDbSyncMetadataRepository();
+        const pushCoordinator = createPushCoordinator({
+          workspaceId,
+          deviceId,
+          syncClient,
+          outboxRepository,
+          metadataRepository,
+          logger: process.env.NODE_ENV === "development" ? console : undefined,
+        });
+        const pullCoordinator = createPullCoordinator({
+          workspaceId,
+          deviceId,
+          syncClient,
+          logger: process.env.NODE_ENV === "development" ? console : undefined,
+        });
+        const orchestrator = createAutomaticSyncOrchestrator({
+          pushCoordinator,
+          pullCoordinator,
+          config: { runOnStart: false },
+          logger: process.env.NODE_ENV === "development" ? console : undefined,
+        });
+        const orchestratorBridge = createOrchestratorSyncStateBridge({
+          orchestrator,
+          engine: syncStateEngine,
+        });
+
+        return {
+          orchestrator,
+          dispose() {
+            orchestratorBridge.dispose();
+          },
+        };
+      },
+      logger: process.env.NODE_ENV === "development" ? console : undefined,
+    })
+    : undefined;
   const refreshCoordinator = createAuthRefreshCoordinator({
     refresh: () => service.refresh({ silent: true }),
     visibilityDocument: typeof document === "undefined" ? undefined : document,
@@ -217,6 +274,7 @@ function createAuthRuntime(authSessionStorage?: AuthSessionStorage): AuthRuntime
     refreshCoordinator,
     configError,
     syncBridge,
+    authenticatedSync,
     logger: process.env.NODE_ENV === "development" ? console : undefined,
   });
 

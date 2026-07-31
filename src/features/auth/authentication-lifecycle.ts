@@ -7,6 +7,7 @@ import {
 } from "@/features/auth/auth-service";
 import type { AuthState } from "@/features/auth/auth-state-engine";
 import { PublicApiUrlError } from "@/features/auth/public-api-url";
+import type { AuthenticatedSyncLifecycle } from "@/features/sync/authenticated-sync-lifecycle";
 
 export type AuthenticationLifecycle = {
   initialize(): Promise<AuthenticatedSession | null>;
@@ -25,6 +26,7 @@ export type AuthenticationLifecycleConfig = {
   refreshCoordinator: AuthRefreshCoordinator;
   configError?: PublicApiUrlError | null;
   syncBridge?: { dispose(): void };
+  authenticatedSync?: Pick<AuthenticatedSyncLifecycle, "handleAuthState" | "stop" | "dispose">;
   logger?: { warn?(message: string, context?: Record<string, unknown>): void };
 };
 
@@ -33,11 +35,15 @@ export function createAuthenticationLifecycle({
   refreshCoordinator,
   configError = null,
   syncBridge,
+  authenticatedSync,
   logger,
 }: AuthenticationLifecycleConfig): AuthenticationLifecycle {
   let disposed = false;
   let initializePromise: Promise<AuthenticatedSession | null> | null = null;
-  const unsubscribeSchedule = service.subscribe((state) => reconcileRefreshSchedule(state));
+  const unsubscribeSchedule = service.subscribe((state) => {
+    reconcileRefreshSchedule(state);
+    authenticatedSync?.handleAuthState(state);
+  });
 
   function initialize() {
     if (disposed) {
@@ -82,6 +88,7 @@ export function createAuthenticationLifecycle({
     }
 
     refreshCoordinator.cancel();
+    authenticatedSync?.stop();
     await service.logout();
   }
 
@@ -92,6 +99,7 @@ export function createAuthenticationLifecycle({
 
     disposed = true;
     refreshCoordinator.dispose();
+    authenticatedSync?.dispose();
     unsubscribeSchedule();
     syncBridge?.dispose();
     service.dispose();

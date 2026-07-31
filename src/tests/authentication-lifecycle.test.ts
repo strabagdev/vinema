@@ -68,6 +68,7 @@ describe("AuthenticationLifecycle", () => {
       })),
     });
     const coordinator = createRefreshCoordinatorMock();
+    const authenticatedSync = createAuthenticatedSyncMock();
     const lifecycle = createAuthenticationLifecycle({
       service: createAuthService({
         authClient: client,
@@ -75,6 +76,7 @@ describe("AuthenticationLifecycle", () => {
         deviceIdentityProvider: createDeviceIdentityProvider(),
       }),
       refreshCoordinator: coordinator,
+      authenticatedSync,
     });
 
     const first = lifecycle.initialize();
@@ -86,6 +88,13 @@ describe("AuthenticationLifecycle", () => {
     });
     expect(client.refresh).toHaveBeenCalledTimes(1);
     expect(coordinator.schedule).toHaveBeenCalledWith(accessTokenExpiresAt);
+    expect(authenticatedSync.handleAuthState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "AUTHENTICATED",
+        workspaceId,
+        deviceId,
+      }),
+    );
     expect(lifecycle.getState().status).toBe("AUTHENTICATED");
   });
 
@@ -98,6 +107,7 @@ describe("AuthenticationLifecycle", () => {
         refreshToken: "manual-refresh-rotated",
       })),
     });
+    const authenticatedSync = createAuthenticatedSyncMock();
     const lifecycle = createAuthenticationLifecycle({
       service: createAuthService({
         authClient: client,
@@ -105,11 +115,15 @@ describe("AuthenticationLifecycle", () => {
         deviceIdentityProvider: createDeviceIdentityProvider(),
       }),
       refreshCoordinator: coordinator,
+      authenticatedSync,
     });
 
     await lifecycle.register({ email: user.email, password: "password-123" });
     expect(client.register).toHaveBeenCalledTimes(1);
     expect(coordinator.schedule).toHaveBeenCalledWith(accessTokenExpiresAt);
+    expect(authenticatedSync.handleAuthState).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "AUTHENTICATED" }),
+    );
 
     await lifecycle.login({ email: user.email, password: "password-123" });
     expect(client.login).toHaveBeenCalledTimes(1);
@@ -122,6 +136,7 @@ describe("AuthenticationLifecycle", () => {
     await lifecycle.logout();
     await lifecycle.logout();
     expect(coordinator.cancel).toHaveBeenCalled();
+    expect(authenticatedSync.stop).toHaveBeenCalled();
     expect(client.logout).toHaveBeenCalledTimes(1);
     expect(lifecycle.getState().status).toBe("UNAUTHENTICATED");
   });
@@ -148,10 +163,12 @@ describe("AuthenticationLifecycle", () => {
     });
     const coordinator = createRefreshCoordinatorMock();
     const syncBridge = { dispose: vi.fn() };
+    const authenticatedSync = createAuthenticatedSyncMock();
     const lifecycle = createAuthenticationLifecycle({
       service,
       refreshCoordinator: coordinator,
       syncBridge,
+      authenticatedSync,
     });
 
     const restore = lifecycle.initialize();
@@ -162,6 +179,7 @@ describe("AuthenticationLifecycle", () => {
     await restore;
 
     expect(coordinator.dispose).toHaveBeenCalledTimes(1);
+    expect(authenticatedSync.dispose).toHaveBeenCalledTimes(1);
     expect(syncBridge.dispose).toHaveBeenCalledTimes(1);
     expect(lifecycle.getAccessToken()).toBeUndefined();
     expect(lifecycle.getState().status).toBe("DISPOSING");
@@ -274,6 +292,14 @@ function createRefreshCoordinatorMock(
     cancel: vi.fn(),
     dispose: vi.fn(),
     ...overrides,
+  };
+}
+
+function createAuthenticatedSyncMock() {
+  return {
+    handleAuthState: vi.fn(),
+    stop: vi.fn(),
+    dispose: vi.fn(),
   };
 }
 
