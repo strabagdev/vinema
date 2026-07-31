@@ -9,6 +9,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -16,20 +17,21 @@ import {
   type AuthClient,
 } from "@/features/auth/auth-client";
 import {
+  createAuthenticationLifecycle,
+  type AuthenticationLifecycle,
+} from "@/features/auth/authentication-lifecycle";
+import {
   createAuthRefreshCoordinator,
-  type AuthRefreshCoordinator,
 } from "@/features/auth/auth-refresh-coordinator";
 import {
   createAuthService,
   type AuthLoginInput,
   type AuthRegisterInput,
-  type AuthService,
 } from "@/features/auth/auth-service";
 import {
   createAuthStateEngine,
   initialAuthState,
   type AuthState,
-  type AuthStateEngine,
 } from "@/features/auth/auth-state-engine";
 import { createAuthSyncStateBridge } from "@/features/auth/auth-sync-state-bridge";
 import { createDeviceIdentityProvider } from "@/features/auth/device-identity-provider";
@@ -56,10 +58,7 @@ export type AuthContextValue = {
 };
 
 type AuthRuntime = {
-  service: AuthService;
-  refreshCoordinator: AuthRefreshCoordinator;
-  authStateEngine: AuthStateEngine;
-  configError: PublicApiUrlError | null;
+  lifecycle: AuthenticationLifecycle;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -72,90 +71,64 @@ export function AuthProvider({
   authSessionStorage?: AuthSessionStorage;
 }) {
   const [runtime] = useState(() => createAuthRuntime(authSessionStorage));
-  const [state, setState] = useState<AuthState>(() => runtime.service.getState());
+  const [state, setState] = useState<AuthState>(() => runtime.lifecycle.getState());
   const [accessToken, setAccessToken] = useState<string | undefined>(() =>
-    runtime.service.getAccessToken(),
+    runtime.lifecycle.getAccessToken(),
   );
+  const disposeGenerationRef = useRef(0);
 
-  useEffect(() => runtime.service.subscribe((nextState) => {
+  useEffect(() => runtime.lifecycle.subscribe((nextState) => {
     setState(nextState);
-    setAccessToken(runtime.service.getAccessToken());
+    setAccessToken(runtime.lifecycle.getAccessToken());
   }), [runtime]);
 
   useEffect(() => {
-    const syncStateEngine = createSyncStateEngine();
-    const bridge = createAuthSyncStateBridge({
-      authStateEngine: runtime.authStateEngine,
-      syncStateEngine,
-    });
-
-    return () => bridge.dispose();
-  }, [runtime]);
-
-  useEffect(() => {
     let mounted = true;
+    disposeGenerationRef.current += 1;
 
-    runtime.service.restoreSession()
+    runtime.lifecycle.initialize()
       .catch(() => undefined)
       .finally(() => {
         if (mounted) {
-          setAccessToken(runtime.service.getAccessToken());
+          setAccessToken(runtime.lifecycle.getAccessToken());
         }
       });
 
     return () => {
       mounted = false;
+      disposeGenerationRef.current += 1;
+      const disposeGeneration = disposeGenerationRef.current;
+      queueMicrotask(() => {
+        if (disposeGenerationRef.current === disposeGeneration) {
+          runtime.lifecycle.dispose();
+        }
+      });
     };
-  }, [runtime]);
-
-  useEffect(() => {
-    if (state.status === "AUTHENTICATED" && state.accessTokenExpiresAt) {
-      try {
-        runtime.refreshCoordinator.schedule(state.accessTokenExpiresAt);
-      } catch {
-        runtime.refreshCoordinator.cancel();
-        runtime.service.interruptSession({
-          code: "INVALID_ACCESS_TOKEN_EXPIRATION",
-          message: "No fue posible mantener la sesion local.",
-        });
-      }
-      return;
-    }
-
-    runtime.refreshCoordinator.cancel();
-  }, [runtime, state.accessTokenExpiresAt, state.status]);
-
-  useEffect(() => () => {
-    runtime.refreshCoordinator.dispose();
   }, [runtime]);
 
   const register = useCallback(
     async (input: AuthRegisterInput) => {
-      assertAuthConfigured(runtime);
-      await runtime.service.register(input);
-      setAccessToken(runtime.service.getAccessToken());
+      await runtime.lifecycle.register(input);
+      setAccessToken(runtime.lifecycle.getAccessToken());
     },
     [runtime],
   );
 
   const login = useCallback(
     async (input: AuthLoginInput) => {
-      assertAuthConfigured(runtime);
-      await runtime.service.login(input);
-      setAccessToken(runtime.service.getAccessToken());
+      await runtime.lifecycle.login(input);
+      setAccessToken(runtime.lifecycle.getAccessToken());
     },
     [runtime],
   );
 
   const refresh = useCallback(async () => {
-    assertAuthConfigured(runtime);
-    await runtime.refreshCoordinator.refreshNow();
-    setAccessToken(runtime.service.getAccessToken());
+    await runtime.lifecycle.refresh();
+    setAccessToken(runtime.lifecycle.getAccessToken());
   }, [runtime]);
 
   const logout = useCallback(async () => {
-    runtime.refreshCoordinator.cancel();
-    await runtime.service.logout();
+    await runtime.lifecycle.logout();
     setAccessToken(undefined);
   }, [runtime]);
 
@@ -166,11 +139,13 @@ export function AuthProvider({
     accessToken,
     isAuthenticated: Boolean(accessToken) && state.status === "AUTHENTICATED",
     isLoading:
+      state.status === "BOOT" ||
       state.status === "RESTORING" ||
       state.status === "UNKNOWN" ||
       state.status === "AUTHENTICATING" ||
       state.status === "REFRESHING" ||
-      state.status === "LOGGING_OUT",
+      state.status === "LOGGING_OUT" ||
+      state.status === "DISPOSING",
     error: state.error,
     register,
     refresh,
@@ -191,10 +166,7 @@ export function useAuth() {
 }
 
 function createAuthRuntime(authSessionStorage?: AuthSessionStorage): AuthRuntime {
-  const authStateEngine = createAuthStateEngine({
-    ...initialAuthState,
-    status: "RESTORING",
-  });
+  const authStateEngine = createAuthStateEngine(initialAuthState);
 
   let configError: PublicApiUrlError | null = null;
   let authClient: AuthClient;
@@ -220,6 +192,10 @@ function createAuthRuntime(authSessionStorage?: AuthSessionStorage): AuthRuntime
     deviceIdentityProvider: createDeviceIdentityProvider(),
     logger: process.env.NODE_ENV === "development" ? console : undefined,
   });
+  const syncBridge = createAuthSyncStateBridge({
+    authStateEngine,
+    syncStateEngine: createSyncStateEngine(),
+  });
   const refreshCoordinator = createAuthRefreshCoordinator({
     refresh: () => service.refresh({ silent: true }),
     visibilityDocument: typeof document === "undefined" ? undefined : document,
@@ -236,8 +212,15 @@ function createAuthRuntime(authSessionStorage?: AuthSessionStorage): AuthRuntime
     },
     logger: process.env.NODE_ENV === "development" ? console : undefined,
   });
+  const lifecycle = createAuthenticationLifecycle({
+    service,
+    refreshCoordinator,
+    configError,
+    syncBridge,
+    logger: process.env.NODE_ENV === "development" ? console : undefined,
+  });
 
-  return { service, refreshCoordinator, authStateEngine, configError };
+  return { lifecycle };
 }
 
 function createUnavailableAuthClient(error: PublicApiUrlError): AuthClient {
@@ -253,18 +236,4 @@ function createUnavailableAuthClient(error: PublicApiUrlError): AuthClient {
     getSession: reject,
     getCurrentDevice: reject,
   };
-}
-
-function assertAuthConfigured(runtime: AuthRuntime) {
-  if (!runtime.configError) {
-    return;
-  }
-
-  runtime.authStateEngine.dispatch({
-    type: "AUTH_FAILED",
-    at: new Date().toISOString(),
-    code: "NETWORK_ERROR",
-    message: "La API de Vinema no esta configurada.",
-  });
-  throw runtime.configError;
 }

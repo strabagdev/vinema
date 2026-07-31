@@ -26,6 +26,7 @@ export type AuthService = AccessTokenProvider & {
   isAuthenticated(): boolean;
   clearLocalSession(): void;
   interruptSession(input: AuthSessionInterruption): void;
+  dispose(): void;
   subscribe(listener: (state: AuthState) => void): () => void;
   getState(): AuthState;
 };
@@ -59,6 +60,7 @@ export function createAuthService({
   let refreshToken: string | undefined;
   let operationGeneration = 0;
   let restorePromise: Promise<AuthenticatedSession | null> | null = null;
+  let disposed = false;
 
   async function authenticate(
     operation: () => Promise<AuthenticatedSession>,
@@ -91,6 +93,7 @@ export function createAuthService({
 
   return {
     register(input) {
+      assertNotDisposed();
       return authenticate(async () =>
         authClient.register({
           ...input,
@@ -99,6 +102,7 @@ export function createAuthService({
       );
     },
     login(input) {
+      assertNotDisposed();
       return authenticate(async () =>
         authClient.login({
           ...input,
@@ -107,6 +111,9 @@ export function createAuthService({
       );
     },
     restoreSession() {
+      if (disposed) {
+        return Promise.resolve(null);
+      }
       restorePromise ??= restorePersistedSession().finally(() => {
         restorePromise = null;
       });
@@ -114,6 +121,7 @@ export function createAuthService({
       return restorePromise;
     },
     async getCurrentSession() {
+      assertNotDisposed();
       if (!accessToken) {
         throw new AuthClientError("TOKEN_MISSING", "No hay sesion local.");
       }
@@ -150,6 +158,7 @@ export function createAuthService({
       }
     },
     async getCurrentDevice() {
+      assertNotDisposed();
       if (!accessToken) {
         throw new AuthClientError("TOKEN_MISSING", "No hay sesion local.");
       }
@@ -160,6 +169,7 @@ export function createAuthService({
       return accessToken;
     },
     async refresh(options = {}) {
+      assertNotDisposed();
       if (!refreshToken) {
         throw new AuthClientError("TOKEN_MISSING", "No hay sesion local.");
       }
@@ -202,6 +212,9 @@ export function createAuthService({
       }
     },
     async logout() {
+      if (disposed) {
+        return;
+      }
       nextOperationGeneration();
       const token = refreshToken;
       authStateEngine.dispatch({ type: "LOGOUT_STARTED", at: clock() });
@@ -223,12 +236,18 @@ export function createAuthService({
       return Boolean(accessToken) && authStateEngine.getState().status === "AUTHENTICATED";
     },
     clearLocalSession() {
+      if (disposed) {
+        return;
+      }
       nextOperationGeneration();
       accessToken = undefined;
       refreshToken = undefined;
       authStateEngine.dispatch({ type: "AUTH_CLEARED", at: clock() });
     },
     interruptSession(input) {
+      if (disposed) {
+        return;
+      }
       nextOperationGeneration();
       accessToken = undefined;
       refreshToken = undefined;
@@ -238,6 +257,18 @@ export function createAuthService({
         code: input.code,
         message: input.message,
       });
+    },
+    dispose() {
+      if (disposed) {
+        return;
+      }
+
+      disposed = true;
+      nextOperationGeneration();
+      restorePromise = null;
+      accessToken = undefined;
+      refreshToken = undefined;
+      authStateEngine.dispatch({ type: "DISPOSE_STARTED", at: clock() });
     },
     subscribe(listener) {
       return authStateEngine.subscribe(listener);
@@ -344,7 +375,13 @@ export function createAuthService({
   }
 
   function isCurrentOperation(generation: number) {
-    return generation === operationGeneration;
+    return !disposed && generation === operationGeneration;
+  }
+
+  function assertNotDisposed() {
+    if (disposed) {
+      throw new AuthClientError("UNEXPECTED_ERROR", "El ciclo de autenticacion fue cerrado.");
+    }
   }
 
   async function persistSessionForCurrentOperation(

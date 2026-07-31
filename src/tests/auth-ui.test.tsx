@@ -407,6 +407,47 @@ describe("minimal authentication UI", () => {
     expect((globalThis.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(1);
   });
 
+  it("AuthProvider keeps one lifecycle through React Strict Mode effect replay", async () => {
+    const storage = new TrackingAuthSessionStorage();
+    await storage.save({
+      refreshToken: "stored-refresh-token",
+      sessionId,
+      deviceId,
+      storedAt: "2026-07-30T12:00:00.000Z",
+    });
+    globalThis.fetch = createFetch([
+      jsonResponse({
+        ...session,
+        accessToken: "strict-restored-access-token",
+        refreshToken: "strict-rotated-refresh-token",
+      }),
+    ]);
+
+    function Probe() {
+      const auth = useAuth();
+      return (
+        <div>
+          <p data-testid="status">{auth.state.status}</p>
+          <p data-testid="token">{auth.accessToken ?? "none"}</p>
+        </div>
+      );
+    }
+
+    await render(
+      <React.StrictMode>
+        <AuthProvider authSessionStorage={storage}>
+          <Probe />
+        </AuthProvider>
+      </React.StrictMode>,
+    );
+    await flush();
+
+    expect(text("[data-testid='status']")).toBe("AUTHENTICATED");
+    expect(text("[data-testid='token']")).toBe("strict-restored-access-token");
+    expect(storage.loadCalls).toBe(1);
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(1);
+  });
+
   it("AuthProvider keeps restoring UI until load resolves and does not redirect", async () => {
     const storage = new DeferredAuthSessionStorage();
     pathname = "/login";
