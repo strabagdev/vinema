@@ -286,13 +286,48 @@ async function requestJson(
 }
 
 function normalizeBaseUrl(baseUrl: string) {
-  const url = new URL(baseUrl);
+  const value = baseUrl.trim();
+  if (!value) {
+    throw new AuthClientError("VALIDATION_ERROR", "La URL de la API no es valida.");
+  }
+
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch (error) {
+    throw new AuthClientError(
+      "VALIDATION_ERROR",
+      "La URL de la API no es valida.",
+      undefined,
+      error,
+    );
+  }
+
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new AuthClientError("VALIDATION_ERROR", "La URL de la API no es valida.");
+  }
+
+  if (url.hostname === "auth") {
+    throw new AuthClientError("VALIDATION_ERROR", "La URL de la API no es valida.");
+  }
+
   url.pathname = url.pathname.replace(/\/+$/, "");
-  return url;
+  url.search = "";
+  url.hash = "";
+
+  return url.toString().replace(/\/+$/, "");
 }
 
-function buildUrl(baseUrl: URL, path: string) {
-  return new URL(`${baseUrl.pathname}${path}`, baseUrl);
+function buildUrl(baseUrl: string, path: string) {
+  const normalizedBase = baseUrl.trim().replace(/\/+$/, "");
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const url = new URL(`${normalizedBase}${normalizedPath}`);
+
+  if (url.hostname === "auth") {
+    throw new AuthClientError("VALIDATION_ERROR", "La URL de la API no es valida.");
+  }
+
+  return url;
 }
 
 function safeUrlForLog(url: URL) {

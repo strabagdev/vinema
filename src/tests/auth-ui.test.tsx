@@ -311,6 +311,8 @@ describe("minimal authentication UI", () => {
     expect(getPublicApiUrl()).toBeNull();
     expect(normalizePublicApiUrl(undefined)).toBeNull();
     expect(() => normalizePublicApiUrl("bad-url")).toThrow("NEXT_PUBLIC_API_URL");
+    expect(() => normalizePublicApiUrl("ftp://api.example.test")).toThrow("NEXT_PUBLIC_API_URL");
+    expect(() => normalizePublicApiUrl("http://auth")).toThrow("NEXT_PUBLIC_API_URL");
     expect(validateEmail("bad")).toBe("Ingresa un email valido.");
     expect(validatePassword("short")).toContain("al menos 8");
     expect(

@@ -111,8 +111,66 @@ describe("auth client and state", () => {
     ]);
   });
 
-  it("AuthClient rejects empty base URLs before issuing requests", () => {
+  it("AuthClient builds absolute auth URLs without protocol-relative auth hosts", async () => {
+    const localFetch = createFetch([
+      jsonResponse(session, 201),
+      jsonResponse(session),
+      jsonResponse({ ...session, accessToken: "refreshed-access", refreshToken: "refresh-2" }),
+      jsonResponse({ ok: true }),
+      jsonResponse({ user, workspaceId, deviceId, sessionId, tokenExpiresAt: accessTokenExpiresAt }),
+      jsonResponse(currentDevice),
+    ]);
+    const local = createAuthClient({ baseUrl: "http://localhost:8000", fetchFn: localFetch });
+
+    await local.register({ email: user.email, password: "password-123", device: deviceMetadata });
+    await local.login({ email: user.email, password: "password-123", device: deviceMetadata });
+    await local.refresh({ refreshToken: "refresh-token" });
+    await local.logout({ refreshToken: "refresh-2" });
+    await local.getSession("access-token");
+    await local.getCurrentDevice("access-token");
+
+    expect(localFetch.mock.calls.map(([url]) => String(url))).toEqual([
+      "http://localhost:8000/auth/register",
+      "http://localhost:8000/auth/login",
+      "http://localhost:8000/auth/refresh",
+      "http://localhost:8000/auth/logout",
+      "http://localhost:8000/auth/session",
+      "http://localhost:8000/auth/device",
+    ]);
+    expect(localFetch.mock.calls.map(([url]) => String(url)).join("\n")).not.toContain(
+      "http://auth/",
+    );
+
+    const trailingSlashFetch = createFetch([jsonResponse(session, 201)]);
+    const trailingSlash = createAuthClient({
+      baseUrl: "http://localhost:8000/",
+      fetchFn: trailingSlashFetch,
+    });
+    await trailingSlash.register({
+      email: user.email,
+      password: "password-123",
+      device: deviceMetadata,
+    });
+    expect(String(trailingSlashFetch.mock.calls[0]?.[0])).toBe(
+      "http://localhost:8000/auth/register",
+    );
+
+    const railwayFetch = createFetch([jsonResponse(session)]);
+    const railway = createAuthClient({
+      baseUrl: "https://vinema-api.up.railway.app",
+      fetchFn: railwayFetch,
+    });
+    await railway.login({ email: user.email, password: "password-123", device: deviceMetadata });
+    expect(String(railwayFetch.mock.calls[0]?.[0])).toBe(
+      "https://vinema-api.up.railway.app/auth/login",
+    );
+  });
+
+  it("AuthClient rejects unsafe or invalid base URLs before issuing requests", () => {
     expect(() => createAuthClient({ baseUrl: "" })).toThrow();
+    expect(() => createAuthClient({ baseUrl: "not-a-url" })).toThrow();
+    expect(() => createAuthClient({ baseUrl: "ftp://api.example.test" })).toThrow();
+    expect(() => createAuthClient({ baseUrl: "http://auth" })).toThrow();
   });
 
   it("AuthClient maps validation, credentials, token expired, network and abort errors", async () => {

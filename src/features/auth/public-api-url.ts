@@ -27,6 +27,14 @@ export function normalizePublicApiUrl(rawValue: string | undefined): string | nu
     throw new PublicApiUrlError("NEXT_PUBLIC_API_URL no es una URL valida.");
   }
 
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new PublicApiUrlError("NEXT_PUBLIC_API_URL debe usar http o https.");
+  }
+
+  if (url.hostname === "auth") {
+    throw new PublicApiUrlError("NEXT_PUBLIC_API_URL no puede apuntar a auth.");
+  }
+
   url.pathname = url.pathname.replace(/\/+$/, "");
   url.search = "";
   url.hash = "";
