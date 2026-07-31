@@ -23,6 +23,7 @@ import { createHighlightedParts } from "@/features/recovery/highlight-text";
 import { getKnowledgeBasePath } from "@/features/recovery/recovery-routes";
 import type { RecoveryResult } from "@/features/recovery/recovery-result";
 import { searchNodes } from "@/features/recovery/search-nodes";
+import { useSyncDataInvalidation } from "@/features/sync/use-sync-data-invalidation";
 import {
   contextRepository,
   nodeContextRelationRepository,
@@ -30,6 +31,11 @@ import {
 } from "@/infrastructure/repositories";
 
 type LoadState = "loading" | "ready" | "error";
+const KNOWLEDGE_BASE_INVALIDATION_TYPES = [
+  "capture",
+  "concept",
+  "captureConcept",
+] as const;
 
 export function KnowledgeBaseClient() {
   const router = useRouter();
@@ -97,6 +103,14 @@ export function KnowledgeBaseClient() {
       setLoadState("error");
     }
   }, [activeQuery, vinemaContext, visibleCount]);
+  useSyncDataInvalidation({
+    workspaceId:
+      vinemaContext.status === "ready" ? vinemaContext.workspace.id : null,
+    entityTypes: KNOWLEDGE_BASE_INVALIDATION_TYPES,
+    onInvalidate: () => {
+      void loadBase();
+    },
+  });
 
   useEffect(() => {
     queueMicrotask(() => {

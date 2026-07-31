@@ -23,6 +23,7 @@ import { createHighlightedParts } from "@/features/recovery/highlight-text";
 import { getArchivePath, getKnowledgeBasePath } from "@/features/recovery/recovery-routes";
 import type { RecoveryResult } from "@/features/recovery/recovery-result";
 import { searchNodes } from "@/features/recovery/search-nodes";
+import { useSyncDataInvalidation } from "@/features/sync/use-sync-data-invalidation";
 import {
   contextRepository,
   createLocalSyncRepositorySet,
@@ -31,6 +32,11 @@ import {
 } from "@/infrastructure/repositories";
 
 type LoadState = "loading" | "ready" | "error";
+const ARCHIVE_INVALIDATION_TYPES = [
+  "capture",
+  "concept",
+  "captureConcept",
+] as const;
 
 export function ArchiveClient() {
   const router = useRouter();
@@ -111,6 +117,14 @@ export function ArchiveClient() {
       setLoadState("error");
     }
   }, [activeQuery, vinemaContext, visibleCount]);
+  useSyncDataInvalidation({
+    workspaceId:
+      vinemaContext.status === "ready" ? vinemaContext.workspace.id : null,
+    entityTypes: ARCHIVE_INVALIDATION_TYPES,
+    onInvalidate: () => {
+      void loadArchive();
+    },
+  });
 
   useEffect(() => {
     queueMicrotask(() => {

@@ -17,6 +17,10 @@ import {
   getVinemaDb,
 } from "@/infrastructure/storage/vinema-db";
 import type { SyncMetadataRecord } from "@/features/sync/sync-outbox-repository";
+import {
+  emitSyncDataChanged,
+  type SyncDataEntityType,
+} from "@/features/sync/sync-data-events";
 
 export const DEFAULT_PULL_BATCH_SIZE = 100;
 export const DEFAULT_MAX_PULL_BATCHES_PER_RUN = 10;
@@ -250,6 +254,13 @@ async function processPullBatches(input: {
       appliedAt: input.clock(),
       remoteChangeApplier: input.remoteChangeApplier,
     });
+    if (applied.applied > 0) {
+      emitSyncDataChanged({
+        workspaceId: input.workspaceId,
+        entityTypes: collectChangedEntityTypes(response),
+        changedAt: input.clock(),
+      });
+    }
     accumulate(input.state.result, response, applied);
     cursor = response.nextCursor;
     input.state.result.nextCursor = cursor;
@@ -258,6 +269,14 @@ async function processPullBatches(input: {
       return;
     }
   }
+}
+
+function collectChangedEntityTypes(response: PullResponse): SyncDataEntityType[] {
+  return Array.from(
+    new Set(
+      response.changes.map((change) => change.entityType as SyncDataEntityType),
+    ),
+  );
 }
 
 async function applyBatchAtomically({

@@ -53,6 +53,8 @@ import {
 } from "@/features/sync/sync-outbox-repository";
 import { createSyncStateEngine } from "@/features/sync/sync-state-engine";
 
+const AUTHENTICATED_SYNC_INTERVAL_MS = 10_000;
+
 export type AuthContextValue = {
   state: AuthState;
   user: AuthenticatedUser | null;
@@ -237,7 +239,10 @@ function createAuthRuntime(authSessionStorage?: AuthSessionStorage): AuthRuntime
         const orchestrator = createAutomaticSyncOrchestrator({
           pushCoordinator,
           pullCoordinator,
-          config: { runOnStart: false },
+          config: {
+            runOnStart: false,
+            syncIntervalMs: AUTHENTICATED_SYNC_INTERVAL_MS,
+          },
           logger: process.env.NODE_ENV === "development" ? console : undefined,
         });
         const orchestratorBridge = createOrchestratorSyncStateBridge({

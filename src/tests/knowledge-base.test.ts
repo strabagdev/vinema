@@ -9,6 +9,7 @@ import {
   listKnowledgeCapturePage,
 } from "@/features/capture/list-knowledge-captures";
 import { createHighlightedParts } from "@/features/recovery/highlight-text";
+import { emitSyncDataChanged } from "@/features/sync/sync-data-events";
 import { InMemoryNodeRepository } from "@/tests/fakes/in-memory-node-repository";
 
 const mocks = vi.hoisted(() => {
@@ -185,6 +186,54 @@ describe("Knowledge Base", () => {
 
     expect(screen.textContent).toContain("1 capturas activas.");
     expect(screen.textContent).toContain("Captura rapida desde detalle");
+  });
+
+  it("refreshes the open Knowledge Base after remote sync changes IndexedDB", async () => {
+    const screen = await renderKnowledgeBase();
+
+    expect(screen.textContent).toContain("0 capturas activas.");
+
+    setMockNodes([
+      createNode({
+        id: "remote-capture",
+        content: "Captura recibida por Pull",
+      }),
+    ]);
+
+    await act(async () => {
+      emitSyncDataChanged({
+        workspaceId: "workspace-1",
+        entityTypes: ["capture"],
+        changedAt: "2026-07-31T12:00:00.000Z",
+      });
+      await flushPromises();
+    });
+
+    expect(screen.textContent).toContain("1 capturas activas.");
+    expect(screen.textContent).toContain("Captura recibida por Pull");
+  });
+
+  it("does not refresh Knowledge Base for another workspace sync event", async () => {
+    const screen = await renderKnowledgeBase();
+
+    setMockNodes([
+      createNode({
+        id: "other-workspace-event",
+        content: "No deberia aparecer aun",
+      }),
+    ]);
+
+    await act(async () => {
+      emitSyncDataChanged({
+        workspaceId: "workspace-2",
+        entityTypes: ["capture"],
+        changedAt: "2026-07-31T12:00:00.000Z",
+      });
+      await flushPromises();
+    });
+
+    expect(screen.textContent).toContain("0 capturas activas.");
+    expect(screen.textContent).not.toContain("No deberia aparecer aun");
   });
 
   it("searches with the shared recovery logic, shows count, highlights safely and preserves returnTo", async () => {

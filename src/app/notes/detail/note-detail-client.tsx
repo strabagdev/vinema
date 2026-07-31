@@ -25,6 +25,7 @@ import { useVinemaContext } from "@/features/node/hooks/use-vinema-context";
 import { getNodeIdFromSearchParams } from "@/features/node/node-routes";
 import { getReturnToFromSearchParams } from "@/features/recovery/recovery-routes";
 import { validateEditableNode } from "@/features/node/node-validation";
+import { useSyncDataInvalidation } from "@/features/sync/use-sync-data-invalidation";
 import {
   contextRepository,
   createLocalSyncRepositorySet,
@@ -33,6 +34,11 @@ import {
 import { formatShortDate } from "@/components/app-shell/note-list-item";
 
 const AUTOSAVE_DEBOUNCE_MS = 700;
+const NOTE_DETAIL_INVALIDATION_TYPES = [
+  "capture",
+  "concept",
+  "captureConcept",
+] as const;
 
 type Draft = {
   nodeId: string;
@@ -65,7 +71,7 @@ function NoteDetailLoader({
 }) {
   const router = useRouter();
   const context = useVinemaContext();
-  const { node, loading, error, setNode } = useNode(nodeId);
+  const { node, loading, error, refresh, setNode } = useNode(nodeId);
   const localRepositories = useMemo(() => {
     if (context.status !== "ready") {
       return null;
@@ -123,6 +129,16 @@ function NoteDetailLoader({
       void loadNoteContexts(node.id, context.workspace.id);
     });
   }, [context, loadNoteContexts, node]);
+  useSyncDataInvalidation({
+    workspaceId: context.status === "ready" ? context.workspace.id : null,
+    entityTypes: NOTE_DETAIL_INVALIDATION_TYPES,
+    onInvalidate: () => {
+      void refresh();
+      if (context.status === "ready") {
+        void loadNoteContexts(nodeId, context.workspace.id);
+      }
+    },
+  });
 
   if (loading) {
     return (

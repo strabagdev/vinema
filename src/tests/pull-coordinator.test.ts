@@ -8,6 +8,7 @@ import {
   createPullCoordinatorRunRegistry,
   PullCoordinatorConfigError,
 } from "@/features/sync/pull-coordinator";
+import { subscribeToSyncDataChanged } from "@/features/sync/sync-data-events";
 import { IndexedDbSyncOutboxRepository } from "@/features/sync/sync-outbox-repository";
 import {
   CONTEXTS_STORE,
@@ -63,6 +64,10 @@ describe("pull coordinator", () => {
   });
 
   it("processes multiple pull batches and advances the cursor after each applied batch", async () => {
+    const events: unknown[] = [];
+    const unsubscribe = subscribeToSyncDataChanged((detail) => {
+      events.push(detail);
+    });
     const setup = createSetup({
       config: { pullBatchSize: 1, maxPullBatchesPerRun: 5 },
       responses: [
@@ -97,6 +102,19 @@ describe("pull coordinator", () => {
       id: conceptId,
       version: 1,
     });
+    expect(events).toEqual([
+      {
+        workspaceId,
+        entityTypes: ["capture"],
+        changedAt: now,
+      },
+      {
+        workspaceId,
+        entityTypes: ["concept"],
+        changedAt: now,
+      },
+    ]);
+    unsubscribe();
   });
 
   it("rolls back domain changes and cursor when a relation dependency is missing", async () => {
@@ -173,6 +191,29 @@ describe("pull coordinator", () => {
     await expect(
       new IndexedDbSyncOutboxRepository().listPending(workspaceId, 10),
     ).resolves.toHaveLength(0);
+  });
+
+  it("does not emit UI invalidation events for empty or idempotent pulls", async () => {
+    const events: unknown[] = [];
+    const unsubscribe = subscribeToSyncDataChanged((detail) => {
+      events.push(detail);
+    });
+
+    await createSetup({
+      responses: [pullResponse({ nextCursor: "1" })],
+    }).coordinator.run();
+    await seedCapture({ version: 1 });
+    await createSetup({
+      responses: [
+        pullResponse({
+          changes: [captureChange({ sequence: "2", version: 1 })],
+          nextCursor: "2",
+        }),
+      ],
+    }).coordinator.run();
+
+    expect(events).toEqual([]);
+    unsubscribe();
   });
 
   it("applies newer versions, keeps equal versions idempotent and ignores older versions", async () => {

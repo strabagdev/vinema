@@ -18,6 +18,7 @@ import {
 import { getContextDetailPath } from "@/features/context/context-routes";
 import { listContextsByType } from "@/features/context/list-contexts";
 import { useVinemaContext } from "@/features/node/hooks/use-vinema-context";
+import { useSyncDataInvalidation } from "@/features/sync/use-sync-data-invalidation";
 import {
   contextRepository,
   createLocalSyncRepositorySet,
@@ -25,6 +26,7 @@ import {
 } from "@/infrastructure/repositories";
 
 type ContextWithCount = Context & { relatedNodeCount: number };
+const CONTEXT_LIST_INVALIDATION_TYPES = ["concept", "captureConcept"] as const;
 
 export function ContextListClient({ type }: { type: ContextType }) {
   const vinemaContext = useVinemaContext();
@@ -86,6 +88,14 @@ export function ContextListClient({ type }: { type: ContextType }) {
       setLoading(false);
     }
   }, [pluralLabel, type, vinemaContext]);
+  useSyncDataInvalidation({
+    workspaceId:
+      vinemaContext.status === "ready" ? vinemaContext.workspace.id : null,
+    entityTypes: CONTEXT_LIST_INVALIDATION_TYPES,
+    onInvalidate: () => {
+      void loadContexts();
+    },
+  });
 
   useEffect(() => {
     queueMicrotask(() => {

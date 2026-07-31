@@ -27,6 +27,7 @@ import { useVinemaContext } from "@/features/node/hooks/use-vinema-context";
 import { getCapturePreview, getContentExcerpt } from "@/features/node/node-display";
 import { getNodeDetailPath } from "@/features/node/node-routes";
 import { getReturnToFromSearchParams } from "@/features/recovery/recovery-routes";
+import { useSyncDataInvalidation } from "@/features/sync/use-sync-data-invalidation";
 import {
   contextRepository,
   createLocalSyncRepositorySet,
@@ -39,6 +40,11 @@ type Draft = {
   name: string;
   description: string;
 };
+const CONTEXT_DETAIL_INVALIDATION_TYPES = [
+  "capture",
+  "concept",
+  "captureConcept",
+] as const;
 
 export function ContextDetailClient() {
   const searchParams = useSearchParams();
@@ -110,6 +116,14 @@ function ContextDetailLoader({
       setLoading(false);
     }
   }, [contextId, vinemaContext]);
+  useSyncDataInvalidation({
+    workspaceId:
+      vinemaContext.status === "ready" ? vinemaContext.workspace.id : null,
+    entityTypes: CONTEXT_DETAIL_INVALIDATION_TYPES,
+    onInvalidate: () => {
+      void loadContext();
+    },
+  });
 
   useEffect(() => {
     queueMicrotask(() => {

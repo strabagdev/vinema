@@ -32,9 +32,11 @@ import {
 import { getNodeDetailPath } from "@/features/node/node-routes";
 import type { SearchNodesRepositories } from "@/features/recovery/search-nodes";
 import type { StorageAdapter } from "@/infrastructure/storage/storage-adapter";
+import { useSyncDataInvalidation } from "@/features/sync/use-sync-data-invalidation";
 
 const RECENT_LIMIT = 8;
 const EMPTY_SELECTED_CAPTURE_IDS: string[] = [];
+const CAPTURE_INVALIDATION_TYPES = ["capture"] as const;
 
 type DraftStatus = "idle" | "saving" | "saved" | "error";
 
@@ -93,6 +95,13 @@ export function CaptureSurface({
     contextRepository: repositories.contextRepository,
     nodeRepository: repositories.nodeRepository,
     relationRepository: repositories.nodeContextRelationRepository,
+  });
+  useSyncDataInvalidation({
+    workspaceId: workspace.id,
+    entityTypes: CAPTURE_INVALIDATION_TYPES,
+    onInvalidate: () => {
+      void refreshRecent();
+    },
   });
 
   useEffect(() => {
