@@ -11,7 +11,6 @@ import type { Context, ContextType } from "@/domain/context/context";
 import type { NodeContextRelation } from "@/domain/context/node-context-relation";
 import type { Node } from "@/domain/node/node";
 import { getCaptureTimestamps } from "@/features/capture/capture-timestamps";
-import { getContextDetailPath } from "@/features/context/context-routes";
 import { listContextsByType } from "@/features/context/list-contexts";
 import {
   attachNodeToContext,
@@ -30,6 +29,7 @@ import {
   deriveCaptureEmergentIdentity,
 } from "@/features/identity/capture-emergent-identity";
 import { CaptureEmergentIdentityLabel } from "@/features/identity/capture-emergent-identity-view";
+import { getConceptExplorationPath } from "@/features/exploration/concept-routes";
 import {
   contextRepository,
   createLocalSyncRepositorySet,
@@ -644,7 +644,7 @@ export function NoteDetailView({
               <CaptureEmergentIdentityLabel
                 identity={emergentIdentity}
                 className="mt-2"
-                getConceptHref={getContextDetailPath}
+                getConceptHref={getConceptExplorationPath}
               />
             ) : null}
             <CaptureDates node={persistedNode} />
@@ -797,7 +797,7 @@ function ReadConceptSection({ contexts }: { contexts: Context[] }) {
         groupedContexts[type].map((context) => (
           <Link
             key={context.id}
-            href={getContextDetailPath(context.id)}
+            href={getConceptExplorationPath(context.id)}
             className="rounded-full border border-zinc-200 px-3 py-1 text-sm text-zinc-700 hover:border-zinc-400 hover:text-zinc-950"
           >
             {context.name}

@@ -102,7 +102,7 @@ describe("NoteDetailView read mode", () => {
     expect(screen.textContent).toContain("Vinema");
     expect(screen.textContent).toContain("Juan Perez · Archivado");
     expect(getLink(screen, "Trabajo")?.getAttribute("href")).toBe(
-      "/contexts/detail?contextId=area-1",
+      "/concepts/detail?contextId=area-1",
     );
   });
 

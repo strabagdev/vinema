@@ -42,11 +42,11 @@ describe("search route consolidation", () => {
     expect(mocks.replace).toHaveBeenCalledWith("/notes?q=mitcom%20(A)%20%2B");
   });
 
-  it("does not expose a separate search entry in the sidebar", async () => {
-    const screen = await render(createElement(SidebarContent, { pathname: "/" }));
+  it("does not expose separate search or global exploration entries in the sidebar", async () => {
+    const screen = await render(createElement(SidebarContent));
 
-    expect(screen.textContent).toContain("Inicio");
-    expect(screen.textContent).toContain("Explorar");
+    expect(screen.textContent).toContain("Vinema");
+    expect(screen.textContent).not.toContain("Explorar");
     expect(screen.textContent).not.toContain("Buscar");
     expect(
       Array.from(screen.querySelectorAll("a")).some(

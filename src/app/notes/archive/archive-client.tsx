@@ -19,6 +19,7 @@ import {
 import type { CaptureEmergentIdentity } from "@/features/identity/capture-emergent-identity";
 import { CaptureEmergentIdentityLabel } from "@/features/identity/capture-emergent-identity-view";
 import { loadCaptureEmergentIdentities } from "@/features/identity/load-capture-emergent-identities";
+import { getConceptExplorationPath } from "@/features/exploration/concept-routes";
 import { getNodeDetailPath } from "@/features/node/node-routes";
 import { restoreNode } from "@/features/node/restore-node";
 import { useVinemaContext } from "@/features/node/hooks/use-vinema-context";
@@ -389,20 +390,25 @@ function ArchiveResultItem({
   return (
     <article className="rounded-lg border border-zinc-200 bg-white p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <Link
-          href={href}
-          aria-label={`Abrir captura archivada: ${getCapturePreview(preview, { maxLength: 80 })}`}
-          className="min-w-0 flex-1 space-y-1 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2"
-        >
+        <div className="min-w-0 flex-1 space-y-1">
           {identity?.displayText ? (
-            <CaptureEmergentIdentityLabel identity={identity} />
-          ) : null}
-          <p className="line-clamp-3 text-base leading-7 text-zinc-800">
-            <HighlightedText
-              text={identity?.displayText ? bodyText : preview}
-              query={query}
+            <CaptureEmergentIdentityLabel
+              identity={identity}
+              getConceptHref={getConceptExplorationPath}
             />
-          </p>
+          ) : null}
+          <Link
+            href={href}
+            aria-label={`Abrir captura archivada: ${getCapturePreview(preview, { maxLength: 80 })}`}
+            className="block rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2"
+          >
+            <span className="line-clamp-3 text-base leading-7 text-zinc-800">
+              <HighlightedText
+                text={identity?.displayText ? bodyText : preview}
+                query={query}
+              />
+            </span>
+          </Link>
           {!identity?.displayText && bodyText ? (
             <p className="line-clamp-2 text-sm leading-6 text-zinc-600">
               <HighlightedText text={bodyText} query={query} />
@@ -411,7 +417,7 @@ function ArchiveResultItem({
           <time className="block text-xs text-zinc-500">
             Archivada {formatCompactDate(updatedAt)}
           </time>
-        </Link>
+        </div>
         <Button
           type="button"
           variant="outline"

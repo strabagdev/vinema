@@ -7,6 +7,7 @@ import type { AssociationSuggestion } from "@/features/associations/association-
 import type { AssociationError } from "@/features/associations/association-errors";
 import type { CaptureEmergentIdentity } from "@/features/identity/capture-emergent-identity";
 import { CaptureEmergentIdentityLabel } from "@/features/identity/capture-emergent-identity-view";
+import { getConceptExplorationPath } from "@/features/exploration/concept-routes";
 import { getCapturePreview } from "@/features/node/node-display";
 import { getNodeDetailPath } from "@/features/node/node-routes";
 
@@ -62,24 +63,29 @@ export function CaptureRecoveryResults({
             const identity = identities.get(suggestion.node.id) ?? null;
 
             return (
-              <Link
+              <article
                 key={suggestion.node.id}
-                href={getNodeDetailPath(suggestion.node.id, { returnTo: "/" })}
-                aria-label={`Abrir captura: ${preview}`}
-                title={preview}
-                className="block min-w-0 rounded-sm py-1 text-sm leading-6 text-zinc-700 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
-                onClick={() => {
-                  void onOpenCapture?.();
-                }}
+                className="min-w-0 rounded-sm py-1 text-sm leading-6 text-zinc-700"
               >
                 {identity?.displayText ? (
                   <CaptureEmergentIdentityLabel
                     identity={identity}
                     className="truncate text-sm leading-6"
+                    getConceptHref={getConceptExplorationPath}
                   />
                 ) : null}
-                <span className="block min-w-0 truncate">{preview}</span>
-              </Link>
+                <Link
+                  href={getNodeDetailPath(suggestion.node.id, { returnTo: "/" })}
+                  aria-label={`Abrir captura: ${preview}`}
+                  title={preview}
+                  className="block min-w-0 rounded-sm outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
+                  onClick={() => {
+                    void onOpenCapture?.();
+                  }}
+                >
+                  <span className="block min-w-0 truncate">{preview}</span>
+                </Link>
+              </article>
             );
           })}
         </div>

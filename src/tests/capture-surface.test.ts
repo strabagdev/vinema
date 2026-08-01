@@ -631,6 +631,48 @@ describe("CaptureSurface", () => {
     expect(memoryPanel.style.top).toBe(conceptTop);
   });
 
+  it("anchors each progressive panel to its active indicator", async () => {
+    setViewportSize({ width: 1366, height: 768 });
+    const nodeRepository = new InMemoryNodeRepository([
+      createStoredNode({
+        id: "mitcom",
+        content: "Proveedor Mitcom pendiente de seguimiento",
+        updatedAt: "2026-01-05T00:00:00.000Z",
+      }),
+    ]);
+    const screen = await renderCaptureSurface({ nodeRepository });
+
+    await changeTextarea(screen.container, "Revisar Mitcom y Railway");
+    await advanceTime(500);
+    mockContextIndicatorRect(screen.container, "concepts", {
+      left: 420,
+      right: 470,
+      top: 500,
+      bottom: 536,
+      width: 50,
+      height: 36,
+    });
+    mockContextIndicatorRect(screen.container, "memories", {
+      left: 500,
+      right: 550,
+      top: 500,
+      bottom: 536,
+      width: 50,
+      height: 36,
+    });
+
+    await openConceptPanel(screen.container);
+    const conceptPanel = getDialog(
+      screen.container,
+      "Conceptos detectados",
+    ) as HTMLElement;
+    expect(conceptPanel.style.left).toBe("482px");
+
+    await openMemoryPanel(screen.container);
+    const memoryPanel = getDialog(screen.container, "Me recuerda a…") as HTMLElement;
+    expect(memoryPanel.style.left).toBe("562px");
+  });
+
   it("closes an open contextual panel with Escape and returns focus", async () => {
     const nodeRepository = new InMemoryNodeRepository([
       createStoredNode({
@@ -1309,6 +1351,35 @@ function mockIndicatorRowRect(
   }
 
   row.getBoundingClientRect = () => ({
+    x: rect.left,
+    y: rect.top,
+    width: rect.width ?? rect.right - rect.left,
+    height: rect.height ?? rect.bottom - rect.top,
+    left: rect.left,
+    right: rect.right,
+    top: rect.top,
+    bottom: rect.bottom,
+    toJSON: () => ({}),
+  });
+  row.querySelectorAll("[data-context-indicator-panel]").forEach((indicator) => {
+    indicator.getBoundingClientRect = row.getBoundingClientRect;
+  });
+}
+
+function mockContextIndicatorRect(
+  container: HTMLElement,
+  panel: "concepts" | "memories",
+  rect: Partial<DOMRect> & Pick<DOMRect, "left" | "right" | "top" | "bottom">,
+) {
+  const indicator = container.querySelector(
+    `[data-context-indicator-panel="${panel}"]`,
+  );
+
+  if (!indicator) {
+    throw new Error(`Indicator not found: ${panel}`);
+  }
+
+  indicator.getBoundingClientRect = () => ({
     x: rect.left,
     y: rect.top,
     width: rect.width ?? rect.right - rect.left,

@@ -28,6 +28,7 @@ import {
 import type { CaptureEmergentIdentity } from "@/features/identity/capture-emergent-identity";
 import { CaptureEmergentIdentityLabel } from "@/features/identity/capture-emergent-identity-view";
 import { loadCaptureEmergentIdentities } from "@/features/identity/load-capture-emergent-identities";
+import { getConceptExplorationPath } from "@/features/exploration/concept-routes";
 import { getCapturePreview } from "@/features/node/node-display";
 import { getNodeDetailPath } from "@/features/node/node-routes";
 import type { SearchNodesRepositories } from "@/features/recovery/search-nodes";
@@ -38,7 +39,7 @@ const EMPTY_SELECTED_CAPTURE_IDS: string[] = [];
 const INITIAL_MEMORY_RESULT_LIMIT = 3;
 const DESKTOP_PANEL_BREAKPOINT = 768;
 const DESKTOP_PANEL_WIDTH = 360;
-const DESKTOP_PANEL_GAP = 16;
+const DESKTOP_PANEL_GAP = 12;
 const DESKTOP_PANEL_MARGIN = 16;
 const EPHEMERAL_PANEL_CLOSE_DELAY_MS = 350;
 
@@ -174,7 +175,9 @@ export function CaptureSurface({
     }
 
     function updatePanelPlacement() {
-      const anchor = indicatorRowRef.current;
+      const anchor = indicatorRowRef.current?.querySelector(
+        `[data-context-indicator-panel="${activePanel}"]`,
+      );
 
       if (!anchor || !canUseDesktopPopover()) {
         setPanelPlacement({ layout: "mobile-sheet" });
@@ -532,6 +535,7 @@ export function CaptureSurface({
             >
               {showConceptIndicator ? (
                 <ContextIndicator
+                  panel="concepts"
                   icon="concepts"
                   count={conceptSuggestions.length}
                   active={activePanel === "concepts"}
@@ -550,6 +554,7 @@ export function CaptureSurface({
               ) : null}
               {showMemoryIndicator ? (
                 <ContextIndicator
+                  panel="memories"
                   icon="memories"
                   count={memorySuggestions.length}
                   active={activePanel === "memories"}
@@ -673,6 +678,7 @@ function mergeSelectedConceptSuggestions(
 }
 
 function ContextIndicator({
+  panel,
   icon,
   count,
   active,
@@ -683,6 +689,7 @@ function ContextIndicator({
   onIntentEnd,
   onBlur,
 }: {
+  panel: Exclude<ActivePanel, null>;
   icon: "concepts" | "memories";
   count: number;
   active: boolean;
@@ -699,6 +706,7 @@ function ContextIndicator({
     <button
       type="button"
       data-context-indicator=""
+      data-context-indicator-panel={panel}
       aria-label={label}
       title={label}
       className="inline-flex h-9 min-w-12 items-center justify-center gap-1.5 rounded-full px-3 text-sm text-zinc-500 outline-none transition-colors hover:bg-zinc-100 hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400 motion-reduce:transition-none"
@@ -858,25 +866,42 @@ function ConceptPanelContent({
             : suggestion.candidateId;
 
         return (
-          <button
+          <div
             key={`${suggestion.kind}-${id}`}
-            type="button"
-            aria-pressed={selected}
             className={cn(
-              "flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm outline-none transition-colors hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-zinc-400 motion-reduce:transition-none",
-              selected ? "bg-zinc-950 text-white hover:bg-zinc-900" : "text-zinc-700",
+              "flex items-center gap-2 rounded-md transition-colors motion-reduce:transition-none",
+              selected ? "bg-zinc-950 text-white" : "text-zinc-700 hover:bg-zinc-50",
             )}
-            onClick={() =>
-              suggestion.kind === "existing"
-                ? onToggleExisting(suggestion.conceptId)
-                : onToggleEmerging(suggestion.candidateId)
-            }
           >
-            <span className="min-w-0 truncate">{label}</span>
-            {selected ? (
-              <Check className="h-4 w-4 shrink-0 text-zinc-200" aria-hidden="true" />
+            <button
+              type="button"
+              aria-pressed={selected}
+              className="flex min-w-0 flex-1 items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+              onClick={() =>
+                suggestion.kind === "existing"
+                  ? onToggleExisting(suggestion.conceptId)
+                  : onToggleEmerging(suggestion.candidateId)
+              }
+            >
+              <span className="min-w-0 truncate">{label}</span>
+              {selected ? (
+                <Check className="h-4 w-4 shrink-0 text-zinc-200" aria-hidden="true" />
+              ) : null}
+            </button>
+            {suggestion.kind === "existing" ? (
+              <Link
+                href={getConceptExplorationPath(suggestion.conceptId)}
+                className={cn(
+                  "mr-1 rounded-sm px-2 py-1 text-xs outline-none focus-visible:ring-2 focus-visible:ring-zinc-400",
+                  selected
+                    ? "text-zinc-200 hover:text-white"
+                    : "text-zinc-500 hover:text-zinc-950",
+                )}
+              >
+                Abrir
+              </Link>
             ) : null}
-          </button>
+          </div>
         );
       })}
     </div>
@@ -953,26 +978,29 @@ function MemoryResult({
   const preview = getCapturePreview(node.content, { maxLength: 600 });
 
   return (
-    <Link
-      href={getNodeDetailPath(node.id, { returnTo: "/" })}
-      aria-label={`Abrir captura: ${preview}`}
-      title={preview}
-      className="block min-w-0 rounded-md px-3 py-2 text-sm leading-6 text-zinc-700 outline-none hover:bg-zinc-50 hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
-      onClick={() => {
-        void onOpenCapture();
-      }}
-    >
+    <article className="min-w-0 rounded-md px-3 py-2 text-sm leading-6 text-zinc-700 hover:bg-zinc-50">
       {identity?.displayText ? (
         <CaptureEmergentIdentityLabel
           identity={identity}
           className="truncate text-sm leading-6"
+          getConceptHref={getConceptExplorationPath}
         />
       ) : null}
-      <span className="block min-w-0 truncate">{preview}</span>
+      <Link
+        href={getNodeDetailPath(node.id, { returnTo: "/" })}
+        aria-label={`Abrir captura: ${preview}`}
+        title={preview}
+        className="block min-w-0 rounded-sm outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
+        onClick={() => {
+          void onOpenCapture();
+        }}
+      >
+        <span className="block min-w-0 truncate">{preview}</span>
+      </Link>
       <time className="mt-1 block text-xs text-zinc-400">
         {formatCompactDate(getContentTimestamp(node))}
       </time>
-    </Link>
+    </article>
   );
 }
 

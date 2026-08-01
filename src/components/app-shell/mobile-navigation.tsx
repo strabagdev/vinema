@@ -1,14 +1,12 @@
 "use client";
 
 import { Menu } from "lucide-react";
-import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { SidebarContent } from "@/components/app-shell/app-sidebar";
 
 export function MobileNavigation() {
-  const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
   return (
@@ -24,7 +22,7 @@ export function MobileNavigation() {
         </Button>
       </SheetTrigger>
       <SheetContent>
-        <SidebarContent pathname={pathname} onNavigate={() => setOpen(false)} />
+        <SidebarContent onNavigate={() => setOpen(false)} />
       </SheetContent>
     </Sheet>
   );

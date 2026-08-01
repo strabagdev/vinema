@@ -28,14 +28,13 @@ describe("VIN-013 consolidation", () => {
     document.body.replaceChildren();
   });
 
-  it("keeps the main navigation focused on Inicio, Explorar and Archivo", async () => {
-    const screen = await renderElement(
-      createElement(SidebarContent, { pathname: "/" }),
-    );
+  it("keeps the legacy sidebar from exposing global exploration entries", async () => {
+    const screen = await renderElement(createElement(SidebarContent));
 
-    expect(screen.textContent).toContain("Inicio");
-    expect(screen.textContent).toContain("Explorar");
-    expect(screen.textContent).toContain("Archivo");
+    expect(screen.textContent).toContain("Vinema");
+    expect(screen.textContent).toContain("La exploracion comienza");
+    expect(screen.textContent).not.toContain("Explorar");
+    expect(screen.textContent).not.toContain("Archivo");
     expect(screen.textContent).not.toContain("Buscar");
     expect(screen.textContent).not.toContain("Inbox");
     expect(screen.textContent).not.toContain("Nueva nota");

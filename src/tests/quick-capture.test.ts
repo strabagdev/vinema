@@ -64,38 +64,19 @@ describe("Global writing entry", () => {
     expect(document.querySelector("#quick-capture-editor")).toBeNull();
   });
 
-  it("renders the top navigation with real destinations and no permanent sidebar", async () => {
+  it("renders a minimal top header with Archive in the session menu", async () => {
     mocks.pathname = "/";
     const { container } = await renderAppShell();
     const header = container.querySelector("header");
     const nav = container.querySelector("nav[aria-label='Navegacion principal']");
-    const links = Array.from(
-      container.querySelectorAll<HTMLAnchorElement>("nav[aria-label='Navegacion principal'] a"),
-    );
 
     expect(header?.className).not.toContain("border-b");
     expect(container.querySelector("aside")).toBeNull();
-    expect(nav).toBeDefined();
+    expect(nav).toBeNull();
     expect(container.querySelector("a[aria-label='Ir a Inicio']")?.textContent).toContain(
       "Vinema",
     );
-    expect(links.map((link) => link.getAttribute("href"))).toEqual([
-      "/",
-      "/notes",
-      "/notes/archive",
-    ]);
-    expect(links.map((link) => link.getAttribute("aria-label"))).toEqual([
-      "Inicio",
-      "Explorar",
-      "Archivo",
-    ]);
-    expect(
-      links.every((link) =>
-        Array.from(link.querySelectorAll("span")).every((span) =>
-          span.className.includes("sr-only"),
-        ),
-      ),
-    ).toBe(true);
+    expect(container.querySelector("a[aria-label='Explorar']")).toBeNull();
   });
 
   it("does not show the old permanent local-only badge while online", async () => {
