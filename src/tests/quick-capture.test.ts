@@ -67,20 +67,35 @@ describe("Global writing entry", () => {
   it("renders the top navigation with real destinations and no permanent sidebar", async () => {
     mocks.pathname = "/";
     const { container } = await renderAppShell();
-    const links = Array.from(container.querySelectorAll("a")).map((link) => ({
-      text: link.textContent?.trim(),
-      href: link.getAttribute("href"),
-    }));
-
-    expect(container.querySelector("aside")).toBeNull();
-    expect(
-      links.some((link) => link.href === "/" && link.text?.includes("Vinema")),
-    ).toBe(true);
-    expect(links).toContainEqual(expect.objectContaining({ text: "Inicio", href: "/" }));
-    expect(links).toContainEqual(expect.objectContaining({ text: "Explorar", href: "/notes" }));
-    expect(links).toContainEqual(
-      expect.objectContaining({ text: "Archivo", href: "/notes/archive" }),
+    const header = container.querySelector("header");
+    const nav = container.querySelector("nav[aria-label='Navegacion principal']");
+    const links = Array.from(
+      container.querySelectorAll<HTMLAnchorElement>("nav[aria-label='Navegacion principal'] a"),
     );
+
+    expect(header?.className).not.toContain("border-b");
+    expect(container.querySelector("aside")).toBeNull();
+    expect(nav).toBeDefined();
+    expect(container.querySelector("a[aria-label='Ir a Inicio']")?.textContent).toContain(
+      "Vinema",
+    );
+    expect(links.map((link) => link.getAttribute("href"))).toEqual([
+      "/",
+      "/notes",
+      "/notes/archive",
+    ]);
+    expect(links.map((link) => link.getAttribute("aria-label"))).toEqual([
+      "Inicio",
+      "Explorar",
+      "Archivo",
+    ]);
+    expect(
+      links.every((link) =>
+        Array.from(link.querySelectorAll("span")).every((span) =>
+          span.className.includes("sr-only"),
+        ),
+      ),
+    ).toBe(true);
   });
 
   it("does not show the old permanent local-only badge while online", async () => {

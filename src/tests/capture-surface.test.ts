@@ -92,6 +92,8 @@ describe("CaptureSurface", () => {
     const screen = await renderCaptureSurface({ storage, nodeRepository });
 
     expect(queryButton(screen.container, "Capturar")).toBeUndefined();
+    expect(getContextIndicator(screen.container, "conceptos detectados")).toBeUndefined();
+    expect(getContextIndicator(screen.container, "recuerdos relacionados")).toBeUndefined();
 
     await changeTextarea(screen.container, "   ");
     await advanceTime(500);
@@ -99,6 +101,26 @@ describe("CaptureSurface", () => {
     await expect(storage.get(CAPTURE_DRAFT_KEY)).resolves.toBeNull();
     await expect(nodeRepository.listByWorkspace(workspace.id)).resolves.toEqual([]);
     expect(queryButton(screen.container, "Capturar")).toBeUndefined();
+  });
+
+  it("shows only contextual indicators by default when concepts and memories exist", async () => {
+    const nodeRepository = new InMemoryNodeRepository([
+      createStoredNode({
+        id: "mitcom",
+        content: "Proveedor Mitcom pendiente de seguimiento",
+        updatedAt: "2026-01-05T00:00:00.000Z",
+      }),
+    ]);
+    const screen = await renderCaptureSurface({ nodeRepository });
+
+    await changeTextarea(screen.container, "Revisar Mitcom");
+    await advanceTime(500);
+
+    expect(getContextIndicator(screen.container, "conceptos detectados")).toBeDefined();
+    expect(getContextIndicator(screen.container, "recuerdos relacionados")).toBeDefined();
+    expect(screen.container.textContent).not.toContain("Conceptos detectados");
+    expect(screen.container.textContent).not.toContain("Me recuerda a…");
+    expect(screen.container.textContent).not.toContain("Proveedor Mitcom");
   });
 
   it("does not show association suggestions before there is enough useful text", async () => {
@@ -112,12 +134,12 @@ describe("CaptureSurface", () => {
     ]);
     const screen = await renderCaptureSurface({ nodeRepository });
 
-    expect(screen.container.textContent).not.toContain("Esto me recordó a…");
+    expect(screen.container.textContent).not.toContain("Me recuerda a…");
 
     await changeTextarea(screen.container, "reu");
     await advanceTime(500);
 
-    expect(screen.container.textContent).not.toContain("Esto me recordó a…");
+    expect(screen.container.textContent).not.toContain("Me recuerda a…");
   });
 
   it("finishes recovery for a short specific query with results", async () => {
@@ -133,7 +155,9 @@ describe("CaptureSurface", () => {
     await changeTextarea(screen.container, "mitcom");
     await advanceTime(500);
 
-    expect(screen.container.textContent).toContain("Esto me recordó a…");
+    expect(getContextIndicator(screen.container, "recuerdos relacionados")).toBeDefined();
+    await openMemoryPanel(screen.container);
+    expect(screen.container.textContent).toContain("Me recuerda a…");
     expect(screen.container.textContent).toContain("Proveedor Mitcom");
     expect(screen.container.textContent).not.toContain("Recordando...");
   });
@@ -145,7 +169,7 @@ describe("CaptureSurface", () => {
     await advanceTime(500);
 
     expect(screen.container.textContent).not.toContain("Recordando...");
-    expect(screen.container.textContent).not.toContain("Esto me recordó a…");
+    expect(screen.container.textContent).not.toContain("Me recuerda a…");
   });
 
   it("does not restart recovery from stable empty selected capture ids", async () => {
@@ -194,6 +218,23 @@ describe("CaptureSurface", () => {
     expect(screen.container.textContent).toContain("Captura guardada.");
   });
 
+  it("captures from an open panel and clears panels and indicators", async () => {
+    const nodeRepository = new InMemoryNodeRepository();
+    const screen = await renderCaptureSurface({ nodeRepository });
+
+    await changeTextarea(screen.container, "Revisar Railway");
+    await advanceTime(500);
+    await openConceptPanel(screen.container);
+
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
+    await click(getButton(screen.container, "Capturar"));
+    await waitFor(() => getTextarea(screen.container)?.value === "");
+
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeUndefined();
+    expect(getContextIndicator(screen.container, "conceptos detectados")).toBeUndefined();
+    expect(document.activeElement).toBe(getTextarea(screen.container));
+  });
+
   it("captures with Ctrl+Enter without requiring a title field", async () => {
     const nodeRepository = new InMemoryNodeRepository();
     const screen = await renderCaptureSurface({ nodeRepository });
@@ -213,6 +254,17 @@ describe("CaptureSurface", () => {
     });
     expect(captures[0].metadata).not.toHaveProperty("title");
     expect(getTextarea(screen.container)?.value).toBe("");
+  });
+
+  it("keeps Enter available for multiline writing", async () => {
+    const nodeRepository = new InMemoryNodeRepository();
+    const screen = await renderCaptureSurface({ nodeRepository });
+
+    await changeTextarea(screen.container, "Primera linea");
+    await advanceTime(500);
+    await keydownTextarea(screen.container, { key: "Enter" });
+
+    await expect(nodeRepository.listByWorkspace(workspace.id)).resolves.toEqual([]);
   });
 
   it("does not show recent captures on Inicio", async () => {
@@ -281,6 +333,7 @@ describe("CaptureSurface", () => {
     await changeTextarea(screen.container, "captura antigua");
     await advanceTime(500);
 
+    await openMemoryPanel(screen.container);
     expect(screen.container.textContent).toContain("Captura antigua disponible");
   });
 
@@ -306,7 +359,8 @@ describe("CaptureSurface", () => {
     );
     await advanceTime(500);
 
-    expect(screen.container.textContent).toContain("Esto me recordó a…");
+    await openMemoryPanel(screen.container);
+    expect(screen.container.textContent).toContain("Me recuerda a…");
     expect(screen.container.textContent).toContain("Mitcom");
     expect(screen.container.querySelector("input[type='checkbox']")).toBeNull();
 
@@ -319,6 +373,64 @@ describe("CaptureSurface", () => {
     await expect(storage.get(CAPTURE_DRAFT_KEY)).resolves.toMatchObject({
       content: "Planificar control de gestion con Mitcom",
     });
+  });
+
+  it("keeps only one contextual panel open", async () => {
+    const nodeRepository = new InMemoryNodeRepository([
+      createStoredNode({
+        id: "mitcom",
+        content: "Proveedor Mitcom pendiente de seguimiento",
+        updatedAt: "2026-01-05T00:00:00.000Z",
+      }),
+    ]);
+    const screen = await renderCaptureSurface({ nodeRepository });
+
+    await changeTextarea(screen.container, "Revisar Mitcom");
+    await advanceTime(500);
+    await openConceptPanel(screen.container);
+
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
+    expect(getDialog(screen.container, "Me recuerda a…")).toBeUndefined();
+
+    await openMemoryPanel(screen.container);
+
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeUndefined();
+    expect(getDialog(screen.container, "Me recuerda a…")).toBeDefined();
+  });
+
+  it("closes an open contextual panel with Escape and returns focus", async () => {
+    const nodeRepository = new InMemoryNodeRepository([
+      createStoredNode({
+        id: "mitcom",
+        content: "Proveedor Mitcom pendiente de seguimiento",
+        updatedAt: "2026-01-05T00:00:00.000Z",
+      }),
+    ]);
+    const screen = await renderCaptureSurface({ nodeRepository });
+
+    await changeTextarea(screen.container, "mitcom");
+    await advanceTime(500);
+    await openMemoryPanel(screen.container);
+    expect(getDialog(screen.container, "Me recuerda a…")).toBeDefined();
+
+    await keydownWindow({ key: "Escape" });
+
+    expect(getDialog(screen.container, "Me recuerda a…")).toBeUndefined();
+    expect(document.activeElement).toBe(getTextarea(screen.container));
+  });
+
+  it("closes an open contextual panel when writing resumes", async () => {
+    const screen = await renderCaptureSurface();
+
+    await changeTextarea(screen.container, "Revisar Railway");
+    await advanceTime(500);
+    await openConceptPanel(screen.container);
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
+
+    await changeTextarea(screen.container, "Revisar Railway mañana");
+    await advanceTime(500);
+
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeUndefined();
   });
 
   it("shows concept chips, preserves manual selection and saves selected concepts only", async () => {
@@ -358,6 +470,8 @@ describe("CaptureSurface", () => {
     );
     await advanceTime(500);
 
+    expect(getContextIndicator(screen.container, "conceptos detectados")).toBeDefined();
+    await openConceptPanel(screen.container);
     expect(screen.container.textContent).toContain("Conceptos");
     expect(screen.container.textContent).toContain("Perfumes");
     expect(screen.container.textContent).not.toContain("Trabajo");
@@ -372,6 +486,7 @@ describe("CaptureSurface", () => {
       "Un texto distinto sobre Leather que cambia el ranking",
     );
     await advanceTime(500);
+    await openConceptPanel(screen.container);
     expect(screen.container.textContent).toContain("Perfumes");
     expect(getButton(screen.container, "Perfumes").getAttribute("aria-pressed")).toBe(
       "true",
@@ -449,6 +564,7 @@ describe("CaptureSurface", () => {
     );
     await advanceTime(500);
 
+    await openConceptPanel(screen.container);
     expect(screen.container.textContent).toContain("Conceptos");
     expect(screen.container.textContent).toContain("Reuniones");
 
@@ -493,9 +609,10 @@ describe("CaptureSurface", () => {
     );
     await advanceTime(500);
 
+    await openConceptPanel(screen.container);
     expect(screen.container.textContent).toContain("Conceptos");
     expect(screen.container.textContent).toContain("Railway");
-    expect(screen.container.textContent).not.toContain("Esto me recordó a…");
+    expect(screen.container.textContent).not.toContain("Me recuerda a…");
 
     const railwayChip = getButton(screen.container, "Railway");
     expect(railwayChip.getAttribute("aria-pressed")).toBe("false");
@@ -531,6 +648,7 @@ describe("CaptureSurface", () => {
 
     await changeTextarea(screen.container, "Revisar Railway");
     await advanceTime(500);
+    await openConceptPanel(screen.container);
     expect(screen.container.textContent).toContain("Railway");
 
     await changeTextarea(screen.container, "");
@@ -608,6 +726,7 @@ describe("CaptureSurface", () => {
     await changeTextarea(screen.container, "Perfume cuero para comprar despues");
     await advanceTime(500);
 
+    await openConceptPanel(screen.container);
     expect(screen.container.textContent).toContain("Perfumes");
     expect(screen.container.textContent).not.toContain("nuevo");
     await expect(
@@ -646,6 +765,7 @@ describe("CaptureSurface", () => {
     await changeTextarea(screen.container, "Otro perfume cuero para revisar");
     await advanceTime(500);
 
+    await openConceptPanel(screen.container);
     expect(screen.container.textContent).toContain("Perfumes");
     expect(screen.container.textContent).not.toContain("nuevo");
   });
@@ -681,6 +801,7 @@ describe("CaptureSurface", () => {
     await changeTextarea(screen.container, "Perfume cuero sin clasificar");
     await advanceTime(500);
 
+    await openConceptPanel(screen.container);
     expect(screen.container.textContent).toContain("Perfumes");
     expect(screen.container.textContent).not.toContain("nuevo");
 
@@ -718,7 +839,8 @@ describe("CaptureSurface", () => {
     );
     await advanceTime(500);
 
-    expect(screen.container.textContent).toContain("Esto me recordó a…");
+    await openMemoryPanel(screen.container);
+    expect(screen.container.textContent).toContain("Me recuerda a…");
     expect(screen.container.textContent).toContain(
       "Las reuniones extensas reducen",
     );
@@ -749,7 +871,8 @@ describe("CaptureSurface", () => {
     );
     await advanceTime(500);
 
-    expect(screen.container.textContent).toContain("Esto me recordó a…");
+    await openMemoryPanel(screen.container);
+    expect(screen.container.textContent).toContain("Me recuerda a…");
     expect(screen.container.textContent).toContain(
       "Las reuniones extensas reducen",
     );
@@ -784,6 +907,7 @@ describe("CaptureSurface", () => {
     );
     await advanceTime(500);
 
+    await openMemoryPanel(screen.container);
     expect(getButton(screen.container, "Reintentar")).toBeDefined();
     await click(getButton(screen.container, "Reintentar"));
     await advanceTime(500);
@@ -791,7 +915,8 @@ describe("CaptureSurface", () => {
     expect(getTextarea(screen.container)?.value).toBe(
       "Después de muchas reuniones me cuesta concentrarme.",
     );
-    expect(screen.container.textContent).toContain("Esto me recordó a…");
+    await openMemoryPanel(screen.container);
+    expect(screen.container.textContent).toContain("Me recuerda a…");
   });
 });
 
@@ -896,6 +1021,39 @@ function queryButton(container: HTMLElement, name: string) {
   ) as HTMLButtonElement | undefined;
 }
 
+function getContextIndicator(container: HTMLElement, labelPart: string) {
+  return Array.from(container.querySelectorAll("button")).find((button) =>
+    button.getAttribute("aria-label")?.includes(labelPart),
+  ) as HTMLButtonElement | undefined;
+}
+
+function getDialog(container: HTMLElement, label: string) {
+  return Array.from(container.querySelectorAll("[role='dialog']")).find(
+    (dialog) => dialog.getAttribute("aria-label") === label,
+  ) as HTMLElement | undefined;
+}
+
+async function openConceptPanel(container: HTMLElement) {
+  const indicator = getContextIndicator(container, "conceptos detectados");
+  if (!indicator) {
+    throw new Error("Concept indicator not found");
+  }
+
+  await click(indicator);
+}
+
+async function openMemoryPanel(container: HTMLElement) {
+  const indicator =
+    getContextIndicator(container, "recuerdos relacionados") ??
+    getContextIndicator(container, "No se pudo buscar recuerdos");
+
+  if (!indicator) {
+    throw new Error("Memory indicator not found");
+  }
+
+  await click(indicator);
+}
+
 function getLinkByHref(container: HTMLElement, hrefPart: string) {
   return Array.from(container.querySelectorAll("a")).find((link) =>
     link.getAttribute("href")?.includes(hrefPart),
@@ -926,6 +1084,18 @@ async function keydownTextarea(
 
   await act(async () => {
     textarea.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        bubbles: true,
+        ...eventInit,
+      }),
+    );
+    await flushPromises();
+  });
+}
+
+async function keydownWindow(eventInit: KeyboardEventInit) {
+  await act(async () => {
+    window.dispatchEvent(
       new KeyboardEvent("keydown", {
         bubbles: true,
         ...eventInit,

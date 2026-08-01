@@ -11,7 +11,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MobileNavigation } from "@/components/app-shell/mobile-navigation";
 import { useAuth } from "@/features/auth/auth-provider";
 import {
   Tooltip,
@@ -44,8 +43,7 @@ export function AppHeader({ pathname, onFocusWriting }: AppHeaderProps) {
   }
 
   return (
-    <header className="sticky top-0 z-30 flex min-h-14 items-center gap-3 border-b border-zinc-100 bg-zinc-50/80 px-3 backdrop-blur sm:px-5">
-      <MobileNavigation />
+    <header className="sticky top-0 z-30 flex min-h-14 items-center gap-3 bg-zinc-50/80 px-3 backdrop-blur sm:px-5">
       <Link
         href="/"
         className="flex h-10 items-center gap-2 rounded-md px-2 text-sm font-semibold text-zinc-900 outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
@@ -57,7 +55,7 @@ export function AppHeader({ pathname, onFocusWriting }: AppHeaderProps) {
         <span className="hidden sm:inline">Vinema</span>
       </Link>
       <nav
-        className="hidden items-center gap-1 md:flex"
+        className="flex items-center gap-1"
         aria-label="Navegacion principal"
       >
         {primaryNavItems.map((item) => {
@@ -74,12 +72,12 @@ export function AppHeader({ pathname, onFocusWriting }: AppHeaderProps) {
                   aria-label={item.label}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "inline-flex h-10 items-center gap-2 rounded-md px-3 text-sm font-medium text-zinc-500 outline-none transition-colors hover:bg-zinc-100/70 hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400",
+                    "inline-flex h-10 w-10 items-center justify-center rounded-md text-zinc-500 outline-none transition-colors hover:bg-zinc-100/70 hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400",
                     active && "bg-zinc-100/70 text-zinc-950",
                   )}
                 >
                   <Icon className="h-4 w-4" aria-hidden="true" />
-                  <span>{item.label}</span>
+                  <span className="sr-only">{item.label}</span>
                 </Link>
               </TooltipTrigger>
               <TooltipContent>{item.label}</TooltipContent>
