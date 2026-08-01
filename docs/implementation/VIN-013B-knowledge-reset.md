@@ -120,7 +120,9 @@ Luego limpia el borrador de captura mediante el adaptador de storage y emite inv
 
 ## Confirmacion
 
-El menu de sesion agrega:
+Desde VIN-013C, el reset vive dentro del centro `Mi conocimiento`.
+
+El centro agrega:
 
 ```text
 Vaciar conocimiento
@@ -182,7 +184,7 @@ La operacion:
 
 VIN-013A sigue siendo el camino de recuperacion.
 
-Despues del reset, el usuario puede seleccionar `Restaurar conocimiento` desde el mismo menu. La restauracion mantiene su comportamiento de merge seguro y genera nuevas mutaciones locales sync-aware para volver a publicar el conocimiento.
+Despues del reset, el usuario puede seleccionar `Restaurar conocimiento` desde el mismo centro. La restauracion mantiene su comportamiento de merge seguro y genera nuevas mutaciones locales sync-aware para volver a publicar el conocimiento.
 
 ## Guia Manual
 

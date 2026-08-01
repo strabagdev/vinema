@@ -17,7 +17,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { KnowledgeBackupMenuActions } from "@/components/app-shell/knowledge-backup-menu-actions";
+import { KnowledgeManagementCenterMenuItem } from "@/components/app-shell/knowledge-management-center";
 
 export type AppHeaderProps = {
   pathname: string;
@@ -75,7 +75,7 @@ export function AppHeader({ pathname, onFocusWriting }: AppHeaderProps) {
                 Archivo
               </Link>
             </DropdownMenuItem>
-            <KnowledgeBackupMenuActions />
+            <KnowledgeManagementCenterMenuItem />
             <DropdownMenuItem onClick={handleLogout}>Cerrar sesion</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

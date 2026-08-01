@@ -117,12 +117,12 @@ Despues de aplicar una restauracion con cambios, Vinema solicita sincronizacion 
 
 ## UI
 
-El menu de sesion contiene:
+Desde VIN-013C, el menu de sesion contiene un acceso minimo a `Mi conocimiento`.
 
-- Archivo;
+El centro `Mi conocimiento` contiene:
+
 - Respaldar conocimiento;
 - Restaurar conocimiento;
-- Cerrar sesion.
 
 Respaldar descarga el JSON directamente.
 
