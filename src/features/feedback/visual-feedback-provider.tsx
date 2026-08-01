@@ -31,6 +31,7 @@ import {
 import { cn } from "@/lib/cn";
 
 const VisualFeedbackContext = createContext<VisualFeedbackService | null>(null);
+const DEFENSIVE_SYNCING_TIMEOUT_MS = 15_000;
 
 export function VisualFeedbackProvider({
   children,
@@ -59,15 +60,15 @@ export function useVisualFeedback() {
 export function VisualFeedbackViewport() {
   const service = useVisualFeedback();
   const { syncState } = useAuth();
-  const previousSyncPhaseRef = useRef<SyncState["phase"] | null>(null);
+  const previousSyncStateRef = useRef<SyncState | null>(null);
   const [state, setState] = useState<VisualFeedbackState>(() =>
     service.getState(),
   );
 
   useEffect(() => service.subscribe(setState), [service]);
   useEffect(() => {
-    bindSyncStateToFeedback(service, syncState, previousSyncPhaseRef.current);
-    previousSyncPhaseRef.current = syncState.phase;
+    bindSyncStateToFeedback(service, syncState, previousSyncStateRef.current);
+    previousSyncStateRef.current = syncState;
   }, [service, syncState]);
   useEffect(() => bindOnlineStatusToFeedback(service), [service]);
 
@@ -81,6 +82,20 @@ export function VisualFeedbackViewport() {
     const timer = setTimeout(() => {
       service.dismissCurrent();
     }, current.durationMs);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [service, state]);
+
+  useEffect(() => {
+    if (state.current?.kind !== "syncing") {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      service.dismissKind("syncing");
+    }, DEFENSIVE_SYNCING_TIMEOUT_MS);
 
     return () => {
       clearTimeout(timer);
@@ -209,27 +224,56 @@ function getVisualFeedbackPresentation(event: VisualFeedbackEvent | null) {
 function bindSyncStateToFeedback(
   service: VisualFeedbackService,
   syncState: SyncState,
-  previousPhase: SyncState["phase"] | null,
+  previousState: SyncState | null,
 ) {
+  const state = service.getState();
+  const showingSyncing = [state.current, ...state.queue].some(
+    (event) => event?.kind === "syncing",
+  );
+  const successfulRunFinished =
+    syncState.lastSuccessfulSyncAt !== null &&
+    syncState.lastSuccessfulSyncAt !== previousState?.lastSuccessfulSyncAt;
+
   if (syncState.connectivity === "OFFLINE") {
+    service.dismissKind("syncing");
     service.offline();
     return;
   }
 
-  if (syncState.phase === "PUSHING" || syncState.phase === "PULLING") {
-    service.syncing();
+  if (syncState.phase === "ERROR" && syncState.lastError) {
+    service.dismissKind("syncing");
+    service.error(syncState.lastError.message);
     return;
   }
 
-  if (syncState.phase === "SUCCESS" && previousPhase !== "SUCCESS") {
+  if (syncState.phase === "PUSHING" || syncState.phase === "PULLING") {
+    if (hasVisibleSyncWork(syncState)) {
+      service.syncing();
+      return;
+    }
+
+    service.dismissKind("syncing");
+    return;
+  }
+
+  if (successfulRunFinished && showingSyncing) {
     service.dismissKind("syncing");
     service.synced();
     return;
   }
 
-  if (syncState.phase === "ERROR" && syncState.lastError) {
-    service.error(syncState.lastError.message);
+  if (
+    syncState.phase === "IDLE" ||
+    syncState.phase === "WAITING" ||
+    syncState.phase === "SUCCESS" ||
+    syncState.phase === "CANCELLED"
+  ) {
+    service.dismissKind("syncing");
   }
+}
+
+function hasVisibleSyncWork(syncState: SyncState) {
+  return syncState.pendingMutations > 0 || syncState.processingMutations > 0;
 }
 
 function bindOnlineStatusToFeedback(service: VisualFeedbackService) {

@@ -82,6 +82,15 @@ export function createVisualFeedbackService(): VisualFeedbackService {
       dedupeKey?: string;
     },
   ) {
+    if (
+      options.dedupeKey &&
+      state.current?.dedupeKey === options.dedupeKey &&
+      state.current.kind === kind &&
+      state.current.message === options.message
+    ) {
+      return state.current;
+    }
+
     sequence += 1;
     const event: VisualFeedbackEvent = {
       id: `${kind}-${sequence}`,
@@ -196,11 +205,22 @@ export function createVisualFeedbackService(): VisualFeedbackService {
       notify();
     },
     dismissKind(kind) {
-      const current = state.current?.kind === kind ? null : state.current;
+      const removeCurrent = state.current?.kind === kind;
       const queue = state.queue.filter((event) => event.kind !== kind);
-      state = current
-        ? { current, queue }
-        : { current: sortQueue(queue)[0] ?? null, queue: sortQueue(queue).slice(1) };
+
+      if (!removeCurrent && queue.length === state.queue.length) {
+        return;
+      }
+
+      if (!removeCurrent) {
+        state = { ...state, queue };
+        notify();
+        return;
+      }
+
+      const sortedQueue = sortQueue(queue);
+      const [next, ...rest] = sortedQueue;
+      state = { current: next ?? null, queue: rest };
       notify();
     },
     reset() {
