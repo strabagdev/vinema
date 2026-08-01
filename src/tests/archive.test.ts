@@ -3,6 +3,8 @@ import type { ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ArchiveClient } from "@/app/notes/archive/archive-client";
+import type { Context } from "@/domain/context/context";
+import type { NodeContextRelation } from "@/domain/context/node-context-relation";
 import type { Node } from "@/domain/node/node";
 import {
   KNOWLEDGE_BASE_BATCH_SIZE,
@@ -14,7 +16,9 @@ import { InMemoryNodeContextRelationRepository } from "@/tests/fakes/in-memory-n
 import { InMemoryNodeRepository } from "@/tests/fakes/in-memory-node-repository";
 
 const mocks = vi.hoisted(() => {
+  const contexts = new Map<string, Context>();
   const nodes = new Map<string, Node>();
+  const relations = new Map<string, NodeContextRelation>();
   const device = {
     id: "device-1",
     name: "Web",
@@ -61,9 +65,11 @@ const mocks = vi.hoisted(() => {
   };
 
   return {
+    contexts,
     device,
     nodeRepository,
     nodes,
+    relations,
     replace: vi.fn(),
     searchParams: new URLSearchParams(),
     vinemaContext: {
@@ -88,21 +94,37 @@ vi.mock("@/features/node/hooks/use-vinema-context", () => ({
 
 vi.mock("@/infrastructure/repositories", () => ({
   contextRepository: {
-    getById: vi.fn(async () => null),
+    getById: vi.fn(async (id: string) => mocks.contexts.get(id) ?? null),
   },
   createLocalSyncRepositorySet: vi.fn(() => ({
     contextRepository: {
-      getById: vi.fn(async () => null),
+      getById: vi.fn(async (id: string) => mocks.contexts.get(id) ?? null),
     },
     nodeContextRelationRepository: {
-      listByNodeId: vi.fn(async () => []),
-      listByWorkspace: vi.fn(async () => []),
+      listByNodeId: vi.fn(async (nodeId: string) =>
+        Array.from(mocks.relations.values()).filter(
+          (relation) => relation.nodeId === nodeId,
+        ),
+      ),
+      listByWorkspace: vi.fn(async (workspaceId: string) =>
+        Array.from(mocks.relations.values()).filter(
+          (relation) => relation.workspaceId === workspaceId,
+        ),
+      ),
     },
     nodeRepository: mocks.nodeRepository,
   })),
   nodeContextRelationRepository: {
-    listByNodeId: vi.fn(async () => []),
-    listByWorkspace: vi.fn(async () => []),
+    listByNodeId: vi.fn(async (nodeId: string) =>
+      Array.from(mocks.relations.values()).filter(
+        (relation) => relation.nodeId === nodeId,
+      ),
+    ),
+    listByWorkspace: vi.fn(async (workspaceId: string) =>
+      Array.from(mocks.relations.values()).filter(
+        (relation) => relation.workspaceId === workspaceId,
+      ),
+    ),
   },
   nodeRepository: mocks.nodeRepository,
 }));
@@ -112,7 +134,9 @@ vi.mock("@/infrastructure/repositories", () => ({
 
 describe("Archive", () => {
   beforeEach(() => {
+    mocks.contexts.clear();
     mocks.nodes.clear();
+    mocks.relations.clear();
     mocks.searchParams = new URLSearchParams();
   });
 
@@ -182,6 +206,38 @@ describe("Archive", () => {
     expect(screen.textContent).toContain("Llegaste al final del Archivo.");
   });
 
+  it("shows emergent identity for archived captures without fabricating a title", async () => {
+    setMockNodes([
+      createNode({
+        id: "archived-identity",
+        content: "Captura archivada sobre Railway y despliegue",
+        status: "ARCHIVED",
+      }),
+    ]);
+    setMockContexts([
+      createContext({ id: "railway", name: "Railway" }),
+      createContext({ id: "deploy", name: "Despliegue" }),
+    ]);
+    setMockRelations([
+      createRelation({
+        nodeId: "archived-identity",
+        contextId: "railway",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+      createRelation({
+        nodeId: "archived-identity",
+        contextId: "deploy",
+        createdAt: "2026-01-02T00:00:00.000Z",
+      }),
+    ]);
+
+    const screen = await render(createElement(ArchiveClient));
+
+    expect(screen.textContent).toContain("Railway · Despliegue");
+    expect(screen.textContent).not.toContain("Sin título");
+    expect(countText(screen, "Captura archivada sobre Railway")).toBe(1);
+  });
+
   it("searches only archived captures and preserves returnTo", async () => {
     mocks.searchParams = new URLSearchParams("q=%20Mitcom%20%28A%29%20");
     setMockNodes([
@@ -201,7 +257,7 @@ describe("Archive", () => {
     expect(screen.textContent).toContain(
       '1 resultados archivados para "Mitcom (A)".',
     );
-    expect(screen.querySelectorAll("mark")).toHaveLength(4);
+    expect(screen.querySelectorAll("mark")).toHaveLength(2);
     expect(screen.querySelector("a[href^='/notes/detail']")?.getAttribute("href")).toBe(
       "/notes/detail?nodeId=archived-match&returnTo=%2Fnotes%2Farchive%3Fq%3DMitcom%2520(A)",
     );
@@ -280,6 +336,16 @@ function setMockNodes(nodes: Node[]) {
   nodes.forEach((node) => mocks.nodes.set(node.id, node));
 }
 
+function setMockContexts(contexts: Context[]) {
+  mocks.contexts.clear();
+  contexts.forEach((context) => mocks.contexts.set(context.id, context));
+}
+
+function setMockRelations(relations: NodeContextRelation[]) {
+  mocks.relations.clear();
+  relations.forEach((relation) => mocks.relations.set(relation.id, relation));
+}
+
 function createNode({
   id,
   content = "Contenido",
@@ -312,6 +378,39 @@ function createNode({
     createdByDeviceId: "device-1",
     lastModifiedByDeviceId: "device-1",
   };
+}
+
+function createContext(overrides: Partial<Context>): Context {
+  return {
+    id: "context-1",
+    workspaceId: "workspace-1",
+    type: "PROJECT",
+    name: "Railway",
+    description: null,
+    version: 1,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    archivedAt: null,
+    ...overrides,
+  };
+}
+
+function createRelation(
+  overrides: Partial<NodeContextRelation>,
+): NodeContextRelation {
+  return {
+    id: `relation-${overrides.nodeId ?? "node"}-${overrides.contextId ?? "context"}`,
+    workspaceId: "workspace-1",
+    nodeId: "node-1",
+    contextId: "context-1",
+    version: 1,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function countText(container: HTMLElement, text: string) {
+  return (container.textContent?.split(text).length ?? 1) - 1;
 }
 
 function getButton(container: HTMLElement, name: string) {

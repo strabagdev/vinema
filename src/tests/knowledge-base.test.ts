@@ -2,6 +2,8 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { KnowledgeBaseClient } from "@/app/notes/knowledge-base-client";
+import type { Context } from "@/domain/context/context";
+import type { NodeContextRelation } from "@/domain/context/node-context-relation";
 import type { Node } from "@/domain/node/node";
 import { CAPTURE_CREATED_EVENT } from "@/features/capture/capture-events";
 import {
@@ -13,7 +15,9 @@ import { emitSyncDataChanged } from "@/features/sync/sync-data-events";
 import { InMemoryNodeRepository } from "@/tests/fakes/in-memory-node-repository";
 
 const mocks = vi.hoisted(() => {
+  const contexts = new Map<string, Context>();
   const nodes = new Map<string, Node>();
+  const relations = new Map<string, NodeContextRelation>();
   const vinemaContext = {
     status: "ready",
     device: null,
@@ -22,7 +26,9 @@ const mocks = vi.hoisted(() => {
   };
 
   return {
+    contexts,
     nodes,
+    relations,
     vinemaContext,
     nodeRepository: {
     async create(node: Node): Promise<Node> {
@@ -81,21 +87,37 @@ vi.mock("@/features/node/hooks/use-vinema-context", () => ({
 
 vi.mock("@/infrastructure/repositories", () => ({
   contextRepository: {
-    getById: vi.fn(async () => null),
+    getById: vi.fn(async (id: string) => mocks.contexts.get(id) ?? null),
   },
   createLocalSyncRepositorySet: vi.fn(() => ({
     contextRepository: {
-      getById: vi.fn(async () => null),
+      getById: vi.fn(async (id: string) => mocks.contexts.get(id) ?? null),
     },
     nodeContextRelationRepository: {
-      listByNodeId: vi.fn(async () => []),
-      listByWorkspace: vi.fn(async () => []),
+      listByNodeId: vi.fn(async (nodeId: string) =>
+        Array.from(mocks.relations.values()).filter(
+          (relation) => relation.nodeId === nodeId,
+        ),
+      ),
+      listByWorkspace: vi.fn(async (workspaceId: string) =>
+        Array.from(mocks.relations.values()).filter(
+          (relation) => relation.workspaceId === workspaceId,
+        ),
+      ),
     },
     nodeRepository: mocks.nodeRepository,
   })),
   nodeContextRelationRepository: {
-    listByNodeId: vi.fn(async () => []),
-    listByWorkspace: vi.fn(async () => []),
+    listByNodeId: vi.fn(async (nodeId: string) =>
+      Array.from(mocks.relations.values()).filter(
+        (relation) => relation.nodeId === nodeId,
+      ),
+    ),
+    listByWorkspace: vi.fn(async (workspaceId: string) =>
+      Array.from(mocks.relations.values()).filter(
+        (relation) => relation.workspaceId === workspaceId,
+      ),
+    ),
   },
   nodeRepository: mocks.nodeRepository,
 }));
@@ -105,7 +127,9 @@ vi.mock("@/infrastructure/repositories", () => ({
 
 describe("Knowledge Base", () => {
   beforeEach(() => {
+    mocks.contexts.clear();
     mocks.nodes.clear();
+    mocks.relations.clear();
     mocks.searchParams = new URLSearchParams();
   });
 
@@ -165,6 +189,58 @@ describe("Knowledge Base", () => {
     expect(links).toHaveLength(KNOWLEDGE_BASE_BATCH_SIZE + 1);
     expect(new Set(links).size).toBe(KNOWLEDGE_BASE_BATCH_SIZE + 1);
     expect(screen.textContent).toContain("Llegaste al final del Historial.");
+  });
+
+  it("shows accepted concepts as emergent identity without duplicating the body", async () => {
+    setMockNodes([
+      createNode({
+        id: "capture-identity",
+        content:
+          "Necesitamos revisar por que Railway no esta usando el workspace autenticado.",
+      }),
+    ]);
+    setMockContexts([
+      createContext({ id: "railway", name: "Railway" }),
+      createContext({ id: "sync", name: "Sincronizacion" }),
+      createContext({ id: "workspace", name: "Workspace" }),
+    ]);
+    setMockRelations([
+      createRelation({
+        nodeId: "capture-identity",
+        contextId: "railway",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+      createRelation({
+        nodeId: "capture-identity",
+        contextId: "sync",
+        createdAt: "2026-01-02T00:00:00.000Z",
+      }),
+      createRelation({
+        nodeId: "capture-identity",
+        contextId: "workspace",
+        createdAt: "2026-01-03T00:00:00.000Z",
+      }),
+    ]);
+
+    const screen = await renderKnowledgeBase();
+
+    expect(screen.textContent).toContain("Railway · Sincronizacion · Workspace");
+    expect(countText(screen, "Necesitamos revisar por que Railway")).toBe(1);
+  });
+
+  it("does not fabricate an identity when a capture has no accepted concepts", async () => {
+    setMockNodes([
+      createNode({
+        id: "capture-without-identity",
+        content: "Contenido sin relaciones aceptadas",
+      }),
+    ]);
+
+    const screen = await renderKnowledgeBase();
+
+    expect(screen.textContent).toContain("Contenido sin relaciones aceptadas");
+    expect(screen.textContent).not.toContain("Sin título");
+    expect(countText(screen, "Contenido sin relaciones aceptadas")).toBe(1);
   });
 
   it("refreshes the open Knowledge Base after a global capture is created", async () => {
@@ -255,7 +331,7 @@ describe("Knowledge Base", () => {
     const screen = await renderKnowledgeBase();
 
     expect(screen.textContent).toContain('1 resultados para "Mitcom (A)".');
-    expect(screen.querySelectorAll("mark")).toHaveLength(4);
+    expect(screen.querySelectorAll("mark")).toHaveLength(2);
     expect(getFirstDetailLink(screen)?.getAttribute("href")).toBe(
       "/notes/detail?nodeId=match&returnTo=%2Fnotes%3Fq%3DMitcom%2520(A)",
     );
@@ -309,6 +385,16 @@ function setMockNodes(nodes: Node[]) {
   nodes.forEach((node) => mocks.nodes.set(node.id, node));
 }
 
+function setMockContexts(contexts: Context[]) {
+  mocks.contexts.clear();
+  contexts.forEach((context) => mocks.contexts.set(context.id, context));
+}
+
+function setMockRelations(relations: NodeContextRelation[]) {
+  mocks.relations.clear();
+  relations.forEach((relation) => mocks.relations.set(relation.id, relation));
+}
+
 function createNode({
   id,
   content = "Contenido",
@@ -335,6 +421,39 @@ function createNode({
     createdByDeviceId: "device-1",
     lastModifiedByDeviceId: "device-1",
   };
+}
+
+function createContext(overrides: Partial<Context>): Context {
+  return {
+    id: "context-1",
+    workspaceId: "workspace-1",
+    type: "PROJECT",
+    name: "Railway",
+    description: null,
+    version: 1,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    archivedAt: null,
+    ...overrides,
+  };
+}
+
+function createRelation(
+  overrides: Partial<NodeContextRelation>,
+): NodeContextRelation {
+  return {
+    id: `relation-${overrides.nodeId ?? "node"}-${overrides.contextId ?? "context"}`,
+    workspaceId: "workspace-1",
+    nodeId: "node-1",
+    contextId: "context-1",
+    version: 1,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function countText(container: HTMLElement, text: string) {
+  return (container.textContent?.split(text).length ?? 1) - 1;
 }
 
 function getButton(container: HTMLElement, name: string) {

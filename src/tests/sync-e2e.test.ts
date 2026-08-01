@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { archiveContext } from "@/features/context/archive-context";
 import { restoreContext } from "@/features/context/restore-context";
 import { archiveNode } from "@/features/node/archive-node";
+import { deriveCaptureEmergentIdentity } from "@/features/identity/capture-emergent-identity";
 import { restoreNode } from "@/features/node/restore-node";
 import { updateNode } from "@/features/node/update-node";
 import { SyncClientError } from "@/features/sync/sync-client";
@@ -129,6 +130,23 @@ describe("end-to-end synchronization", () => {
           version: 1,
         },
       ]);
+      const pulledRelations =
+        await deviceB.repositories.nodeContextRelationRepository.listByNodeId(
+          node.id,
+        );
+      const pulledContexts = await Promise.all(
+        pulledRelations.map((item) =>
+          deviceB.repositories.contextRepository.getById(item.contextId),
+        ),
+      );
+      expect(
+        deriveCaptureEmergentIdentity({
+          contexts: pulledContexts.filter((item) => item !== null),
+          relations: pulledRelations,
+          nodeId: node.id,
+        }).displayText,
+      ).toBe("Proyecto Andes Norte");
+      expect("title" in snapshot.nodes[0]).toBe(false);
       expect(await getOutboxRecords()).toHaveLength(0);
     });
 

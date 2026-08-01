@@ -16,6 +16,9 @@ import {
   getContentExcerpt,
   getCapturePreview,
 } from "@/features/node/node-display";
+import type { CaptureEmergentIdentity } from "@/features/identity/capture-emergent-identity";
+import { CaptureEmergentIdentityLabel } from "@/features/identity/capture-emergent-identity-view";
+import { loadCaptureEmergentIdentities } from "@/features/identity/load-capture-emergent-identities";
 import { getNodeDetailPath } from "@/features/node/node-routes";
 import { restoreNode } from "@/features/node/restore-node";
 import { useVinemaContext } from "@/features/node/hooks/use-vinema-context";
@@ -46,6 +49,9 @@ export function ArchiveClient() {
   const [draftQuery, setDraftQuery] = useState(query);
   const [visibleCount, setVisibleCount] = useState(KNOWLEDGE_BASE_BATCH_SIZE);
   const [archivedCaptures, setArchivedCaptures] = useState<Node[]>([]);
+  const [captureIdentities, setCaptureIdentities] = useState<
+    Map<string, CaptureEmergentIdentity>
+  >(new Map());
   const [archiveTotal, setArchiveTotal] = useState(0);
   const [archiveHasMore, setArchiveHasMore] = useState(false);
   const [searchResults, setSearchResults] = useState<RecoveryResult[]>([]);
@@ -97,6 +103,12 @@ export function ArchiveClient() {
           },
         );
         setSearchResults(results);
+        setCaptureIdentities(
+          await loadCaptureEmergentIdentities(
+            { contextRepository, nodeContextRelationRepository },
+            results.map((result) => result.nodeId),
+          ),
+        );
         setArchivedCaptures([]);
         setArchiveTotal(0);
         setArchiveHasMore(false);
@@ -106,6 +118,12 @@ export function ArchiveClient() {
           limit: visibleCount,
         });
         setArchivedCaptures(page.items);
+        setCaptureIdentities(
+          await loadCaptureEmergentIdentities(
+            { contextRepository, nodeContextRelationRepository },
+            page.items.map((capture) => capture.id),
+          ),
+        );
         setArchiveTotal(page.total);
         setArchiveHasMore(page.hasMore);
         setSearchResults([]);
@@ -298,6 +316,7 @@ export function ArchiveClient() {
                     })}
                     preview={result.preview}
                     excerpt={result.excerpt}
+                    identity={captureIdentities.get(result.nodeId) ?? null}
                     updatedAt={result.updatedAt}
                     query={activeQuery}
                     onRestore={() => void handleRestore(result.nodeId)}
@@ -310,6 +329,7 @@ export function ArchiveClient() {
                     href={getNodeDetailPath(node.id, { returnTo: "/notes/archive" })}
                     preview={getCapturePreview(node.content, { maxLength: 180 })}
                     excerpt={getContentExcerpt(node.content) || "Sin contenido"}
+                    identity={captureIdentities.get(node.id) ?? null}
                     updatedAt={getArchivedTimestamp(node)}
                     onRestore={() => void handleRestore(node.id)}
                     restoring={restoringId === node.id}
@@ -349,6 +369,7 @@ function ArchiveResultItem({
   href,
   preview,
   excerpt,
+  identity,
   updatedAt,
   query = "",
   onRestore,
@@ -357,11 +378,14 @@ function ArchiveResultItem({
   href: string;
   preview: string;
   excerpt: string;
+  identity: CaptureEmergentIdentity | null;
   updatedAt: string;
   query?: string;
   onRestore: () => void;
   restoring: boolean;
 }) {
+  const bodyText = getBodyTextForIdentity({ identity, preview, excerpt });
+
   return (
     <article className="rounded-lg border border-zinc-200 bg-white p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -370,12 +394,20 @@ function ArchiveResultItem({
           aria-label={`Abrir captura archivada: ${getCapturePreview(preview, { maxLength: 80 })}`}
           className="min-w-0 flex-1 space-y-1 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2"
         >
+          {identity?.displayText ? (
+            <CaptureEmergentIdentityLabel identity={identity} />
+          ) : null}
           <p className="line-clamp-3 text-base leading-7 text-zinc-800">
-            <HighlightedText text={preview} query={query} />
+            <HighlightedText
+              text={identity?.displayText ? bodyText : preview}
+              query={query}
+            />
           </p>
-          <p className="line-clamp-2 text-sm leading-6 text-zinc-600">
-            <HighlightedText text={excerpt} query={query} />
-          </p>
+          {!identity?.displayText && bodyText ? (
+            <p className="line-clamp-2 text-sm leading-6 text-zinc-600">
+              <HighlightedText text={bodyText} query={query} />
+            </p>
+          ) : null}
           <time className="block text-xs text-zinc-500">
             Archivada {formatCompactDate(updatedAt)}
           </time>
@@ -393,6 +425,28 @@ function ArchiveResultItem({
       </div>
     </article>
   );
+}
+
+function getBodyTextForIdentity({
+  identity,
+  preview,
+  excerpt,
+}: {
+  identity: CaptureEmergentIdentity | null;
+  preview: string;
+  excerpt: string;
+}) {
+  if (identity?.displayText) {
+    return excerpt || preview;
+  }
+
+  return normalizeComparableText(preview) === normalizeComparableText(excerpt)
+    ? ""
+    : excerpt;
+}
+
+function normalizeComparableText(value: string) {
+  return value.trim().replace(/\s+/g, " ");
 }
 
 function HighlightedText({ text, query }: { text: string; query: string }) {

@@ -25,6 +25,9 @@ import {
   CAPTURE_DRAFT_DEBOUNCE_MS,
   commitCaptureText,
 } from "@/features/capture/capture-flow";
+import type { CaptureEmergentIdentity } from "@/features/identity/capture-emergent-identity";
+import { CaptureEmergentIdentityLabel } from "@/features/identity/capture-emergent-identity-view";
+import { loadCaptureEmergentIdentities } from "@/features/identity/load-capture-emergent-identities";
 import { getCapturePreview } from "@/features/node/node-display";
 import { getNodeDetailPath } from "@/features/node/node-routes";
 import type { SearchNodesRepositories } from "@/features/recovery/search-nodes";
@@ -69,6 +72,9 @@ export function CaptureSurface({
   const [selectedEmergingConcepts, setSelectedEmergingConcepts] = useState<
     EmergingConceptSuggestion[]
   >([]);
+  const [memoryIdentities, setMemoryIdentities] = useState<
+    Map<string, CaptureEmergentIdentity>
+  >(new Map());
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   const [pinnedPanel, setPinnedPanel] = useState<ActivePanel>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -101,6 +107,43 @@ export function CaptureSurface({
       associationState.status === "loading" ||
       associationState.error !== null);
   const showIndicators = showConceptIndicator || showMemoryIndicator;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMemoryIdentities() {
+      const identities = await loadCaptureEmergentIdentities(
+        {
+          contextRepository: repositories.contextRepository,
+          nodeContextRelationRepository: repositories.nodeContextRelationRepository,
+        },
+        memorySuggestions.map((suggestion) => suggestion.node.id),
+      );
+
+      if (!cancelled) {
+        setMemoryIdentities(identities);
+      }
+    }
+
+    if (memorySuggestions.length === 0) {
+      queueMicrotask(() => {
+        if (!cancelled) {
+          setMemoryIdentities(new Map());
+        }
+      });
+      return;
+    }
+
+    void loadMemoryIdentities();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    memorySuggestions,
+    repositories.contextRepository,
+    repositories.nodeContextRelationRepository,
+  ]);
 
   useLayoutEffect(() => {
     if (!activePanel) {
@@ -491,6 +534,7 @@ export function CaptureSurface({
             >
               <MemoryPanelContent
                 suggestions={memorySuggestions}
+                identities={memoryIdentities}
                 loading={associationState.status === "loading"}
                 error={associationState.error !== null}
                 onRetry={associationState.retry}
@@ -740,12 +784,14 @@ function ConceptPanelContent({
 
 function MemoryPanelContent({
   suggestions,
+  identities,
   loading,
   error,
   onRetry,
   onOpenCapture,
 }: {
   suggestions: AssociationSuggestion[];
+  identities: Map<string, CaptureEmergentIdentity>;
   loading: boolean;
   error: boolean;
   onRetry: () => void;
@@ -778,6 +824,7 @@ function MemoryPanelContent({
         <MemoryResult
           key={suggestion.node.id}
           node={suggestion.node}
+          identity={identities.get(suggestion.node.id) ?? null}
           onOpenCapture={onOpenCapture}
         />
       ))}
@@ -795,9 +842,11 @@ function MemoryPanelContent({
 
 function MemoryResult({
   node,
+  identity,
   onOpenCapture,
 }: {
   node: Node;
+  identity: CaptureEmergentIdentity | null;
   onOpenCapture: () => void | Promise<void>;
 }) {
   const preview = getCapturePreview(node.content, { maxLength: 600 });
@@ -812,6 +861,12 @@ function MemoryResult({
         void onOpenCapture();
       }}
     >
+      {identity?.displayText ? (
+        <CaptureEmergentIdentityLabel
+          identity={identity}
+          className="truncate text-sm leading-6"
+        />
+      ) : null}
       <span className="block min-w-0 truncate">{preview}</span>
       <time className="mt-1 block text-xs text-zinc-400">
         {formatCompactDate(getContentTimestamp(node))}

@@ -6,6 +6,7 @@ import {
   NoteDetailView,
 } from "@/app/notes/detail/note-detail-client";
 import type { Context } from "@/domain/context/context";
+import type { NodeContextRelation } from "@/domain/context/node-context-relation";
 import type { Node } from "@/domain/node/node";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
@@ -87,8 +88,15 @@ describe("NoteDetailView read mode", () => {
   it("shows concepts in read mode with compact links", async () => {
     const screen = await renderNoteDetail({
       relatedContexts: [areaContext, projectContext, archivedPersonContext],
+      relatedRelations: [
+        createRelation({ contextId: "area-1" }),
+        createRelation({ contextId: "project-1" }),
+        createRelation({ contextId: "person-1" }),
+      ],
     });
 
+    expect(screen.textContent).toContain("Trabajo · Vinema");
+    expect(screen.textContent).not.toContain("Trabajo · Vinema · Juan Perez");
     expect(screen.textContent).toContain("Conceptos");
     expect(screen.textContent).toContain("Trabajo");
     expect(screen.textContent).toContain("Vinema");
@@ -96,6 +104,53 @@ describe("NoteDetailView read mode", () => {
     expect(getLink(screen, "Trabajo")?.getAttribute("href")).toBe(
       "/contexts/detail?contextId=area-1",
     );
+  });
+
+  it("updates emergent identity when accepted relations change", async () => {
+    const { container, root } = createContainer();
+
+    await act(async () => {
+      root.render(
+        createElement(NoteDetailView, {
+          node: baseNode,
+          relatedContexts: [areaContext],
+          relatedRelations: [createRelation({ contextId: "area-1" })],
+          contextOptions: [areaContext, projectContext],
+          onSave: vi.fn(async () => baseNode),
+          onSaveContextRelations: vi.fn(async () => undefined),
+          onArchive: vi.fn(async () => undefined),
+          onRestore: vi.fn(async () => baseNode),
+          onBack: vi.fn(),
+        }),
+      );
+    });
+
+    expect(container.textContent).toContain("Trabajo");
+    expect(container.textContent).not.toContain("Trabajo · Vinema");
+
+    await act(async () => {
+      root.render(
+        createElement(NoteDetailView, {
+          node: baseNode,
+          relatedContexts: [areaContext, projectContext],
+          relatedRelations: [
+            createRelation({ contextId: "area-1" }),
+            createRelation({
+              contextId: "project-1",
+              createdAt: "2026-01-02T00:00:00.000Z",
+            }),
+          ],
+          contextOptions: [areaContext, projectContext],
+          onSave: vi.fn(async () => baseNode),
+          onSaveContextRelations: vi.fn(async () => undefined),
+          onArchive: vi.fn(async () => undefined),
+          onRestore: vi.fn(async () => baseNode),
+          onBack: vi.fn(),
+        }),
+      );
+    });
+
+    expect(container.textContent).toContain("Trabajo · Vinema");
   });
 
   it("does not render an empty concepts hint when no relations exist", async () => {
@@ -573,6 +628,7 @@ describe("NoteDetailView read mode", () => {
 async function renderNoteDetail({
   node = baseNode,
   relatedContexts = [],
+  relatedRelations = [],
   contextOptions = [],
   contextError = null,
   onSave = vi.fn(async () => node),
@@ -583,6 +639,7 @@ async function renderNoteDetail({
 }: {
   node?: Node;
   relatedContexts?: Context[];
+  relatedRelations?: NodeContextRelation[];
   contextOptions?: Context[];
   contextError?: string | null;
   onSave?: (draft: { content: string }) => Promise<Node>;
@@ -591,13 +648,14 @@ async function renderNoteDetail({
   onRestore?: () => Promise<Node>;
   onBack?: () => void;
 } = {}) {
-  const { container } = createContainer();
+  const { container, root } = createContainer();
 
   await act(async () => {
-    createRoot(container).render(
+    root.render(
       createElement(NoteDetailView, {
         node,
         relatedContexts,
+        relatedRelations,
         contextOptions,
         contextError,
         onSave,
@@ -613,10 +671,10 @@ async function renderNoteDetail({
 }
 
 async function renderMessage() {
-  const { container } = createContainer();
+  const { container, root } = createContainer();
 
   await act(async () => {
-    createRoot(container).render(
+    root.render(
       createElement(NoteDetailMessage, {
         heading: "Captura no encontrada",
         message: "No existe en este dispositivo.",
@@ -627,10 +685,24 @@ async function renderMessage() {
   return container;
 }
 
-function createContainer(): { container: HTMLDivElement; root?: Root } {
+function createContainer(): { container: HTMLDivElement; root: Root } {
   const container = document.createElement("div");
   document.body.replaceChildren(container);
-  return { container };
+  return { container, root: createRoot(container) };
+}
+
+function createRelation(
+  overrides: Partial<NodeContextRelation> = {},
+): NodeContextRelation {
+  return {
+    id: `relation-${overrides.contextId ?? "context-1"}`,
+    workspaceId: "workspace-1",
+    nodeId: "note-1",
+    contextId: "context-1",
+    version: 1,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
 }
 
 function getButton(container: HTMLElement, name: string) {

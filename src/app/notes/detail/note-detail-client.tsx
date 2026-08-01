@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { Context, ContextType } from "@/domain/context/context";
+import type { NodeContextRelation } from "@/domain/context/node-context-relation";
 import type { Node } from "@/domain/node/node";
 import { getCaptureTimestamps } from "@/features/capture/capture-timestamps";
 import { getContextDetailPath } from "@/features/context/context-routes";
@@ -15,7 +16,6 @@ import { listContextsByType } from "@/features/context/list-contexts";
 import {
   attachNodeToContext,
   detachNodeFromContext,
-  listContextsForNode,
 } from "@/features/context/node-context-relations";
 import { archiveNode } from "@/features/node/archive-node";
 import { restoreNode } from "@/features/node/restore-node";
@@ -26,6 +26,10 @@ import { getNodeIdFromSearchParams } from "@/features/node/node-routes";
 import { getReturnToFromSearchParams } from "@/features/recovery/recovery-routes";
 import { validateEditableNode } from "@/features/node/node-validation";
 import { useSyncDataInvalidation } from "@/features/sync/use-sync-data-invalidation";
+import {
+  deriveCaptureEmergentIdentity,
+} from "@/features/identity/capture-emergent-identity";
+import { CaptureEmergentIdentityLabel } from "@/features/identity/capture-emergent-identity-view";
 import {
   contextRepository,
   createLocalSyncRepositorySet,
@@ -83,6 +87,9 @@ function NoteDetailLoader({
     });
   }, [context]);
   const [relatedContexts, setRelatedContexts] = useState<Context[]>([]);
+  const [relatedRelations, setRelatedRelations] = useState<
+    NodeContextRelation[]
+  >([]);
   const [contextOptions, setContextOptions] = useState<Context[]>([]);
   const [contextError, setContextError] = useState<string | null>(null);
 
@@ -91,12 +98,9 @@ function NoteDetailLoader({
       setContextError(null);
 
       try {
-        const [related, areaOptions, projectOptions, personOptions] =
+        const [relations, areaOptions, projectOptions, personOptions] =
           await Promise.all([
-            listContextsForNode(
-              { contextRepository, nodeContextRelationRepository },
-              { nodeId: nextNodeId, includeArchived: true },
-            ),
+            nodeContextRelationRepository.listByNodeId(nextNodeId),
             listContextsByType(contextRepository, {
               workspaceId,
               type: "AREA",
@@ -110,8 +114,18 @@ function NoteDetailLoader({
               type: "PERSON",
             }),
           ]);
+        const related = await Promise.all(
+          relations.map((relation) =>
+            contextRepository.getById(relation.contextId),
+          ),
+        );
         setRelatedContexts(
-          related.filter((item) => item.workspaceId === workspaceId),
+          related
+            .filter((item): item is Context => item !== null)
+            .filter((item) => item.workspaceId === workspaceId),
+        );
+        setRelatedRelations(
+          relations.filter((relation) => relation.workspaceId === workspaceId),
         );
         setContextOptions([...areaOptions, ...projectOptions, ...personOptions]);
       } catch {
@@ -194,6 +208,7 @@ function NoteDetailLoader({
     <NoteDetailView
       node={node}
       relatedContexts={relatedContexts}
+      relatedRelations={relatedRelations}
       contextOptions={contextOptions}
       contextError={contextError}
       onSave={async ({ content }) => {
@@ -262,6 +277,7 @@ function NoteDetailLoader({
 export function NoteDetailView({
   node,
   relatedContexts = [],
+  relatedRelations = [],
   contextOptions = [],
   contextError = null,
   onSave,
@@ -272,6 +288,7 @@ export function NoteDetailView({
 }: {
   node: Node;
   relatedContexts?: Context[];
+  relatedRelations?: NodeContextRelation[];
   contextOptions?: Context[];
   contextError?: string | null;
   onSave: (draft: Pick<Draft, "content">) => Promise<Node>;
@@ -306,6 +323,11 @@ export function NoteDetailView({
       ? draft.content
       : persistedNode.content;
   const relationOptions = mergeContextOptions(contextOptions, relatedContexts);
+  const emergentIdentity = deriveCaptureEmergentIdentity({
+    contexts: relatedContexts,
+    relations: relatedRelations,
+    nodeId: persistedNode.id,
+  });
 
   useEffect(() => {
     return () => {
@@ -618,6 +640,13 @@ export function NoteDetailView({
             <h1 className="text-3xl font-semibold tracking-normal text-zinc-950">
               {mode === "edit" ? "Editar captura" : "Captura"}
             </h1>
+            {mode === "read" ? (
+              <CaptureEmergentIdentityLabel
+                identity={emergentIdentity}
+                className="mt-2"
+                getConceptHref={getContextDetailPath}
+              />
+            ) : null}
             <CaptureDates node={persistedNode} />
           </div>
         </div>

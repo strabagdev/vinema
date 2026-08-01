@@ -5,6 +5,8 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { AssociationSuggestion } from "@/features/associations/association-types";
 import type { AssociationError } from "@/features/associations/association-errors";
+import type { CaptureEmergentIdentity } from "@/features/identity/capture-emergent-identity";
+import { CaptureEmergentIdentityLabel } from "@/features/identity/capture-emergent-identity-view";
 import { getCapturePreview } from "@/features/node/node-display";
 import { getNodeDetailPath } from "@/features/node/node-routes";
 
@@ -15,12 +17,14 @@ export function CaptureRecoveryResults({
   suggestions,
   loading,
   error,
+  identities = new Map(),
   onRetry,
   onOpenCapture,
 }: {
   suggestions: AssociationSuggestion[];
   loading: boolean;
   error: AssociationError | null;
+  identities?: Map<string, CaptureEmergentIdentity>;
   onRetry: () => void;
   onOpenCapture?: () => void | Promise<void>;
 }) {
@@ -55,6 +59,7 @@ export function CaptureRecoveryResults({
             const preview = getCapturePreview(suggestion.node.content, {
               maxLength: 600,
             });
+            const identity = identities.get(suggestion.node.id) ?? null;
 
             return (
               <Link
@@ -67,6 +72,12 @@ export function CaptureRecoveryResults({
                   void onOpenCapture?.();
                 }}
               >
+                {identity?.displayText ? (
+                  <CaptureEmergentIdentityLabel
+                    identity={identity}
+                    className="truncate text-sm leading-6"
+                  />
+                ) : null}
                 <span className="block min-w-0 truncate">{preview}</span>
               </Link>
             );

@@ -24,6 +24,8 @@ import {
   CAPTURE_DRAFT_DEBOUNCE_MS,
   commitCaptureText,
 } from "@/features/capture/capture-flow";
+import type { CaptureEmergentIdentity } from "@/features/identity/capture-emergent-identity";
+import { loadCaptureEmergentIdentities } from "@/features/identity/load-capture-emergent-identities";
 import type { SearchNodesRepositories } from "@/features/recovery/search-nodes";
 import type { StorageAdapter } from "@/infrastructure/storage/storage-adapter";
 
@@ -59,6 +61,9 @@ export function QuickCaptureSheet({
   const [captureError, setCaptureError] = useState<string | null>(null);
   const [captureFeedback, setCaptureFeedback] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
+  const [memoryIdentities, setMemoryIdentities] = useState<
+    Map<string, CaptureEmergentIdentity>
+  >(new Map());
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savePromiseRef = useRef<Promise<unknown> | null>(null);
@@ -89,6 +94,44 @@ export function QuickCaptureSheet({
     nodeRepository: repositories.nodeRepository,
     relationRepository: repositories.nodeContextRelationRepository,
   });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMemoryIdentities() {
+      const identities = await loadCaptureEmergentIdentities(
+        {
+          contextRepository: repositories.contextRepository,
+          nodeContextRelationRepository: repositories.nodeContextRelationRepository,
+        },
+        associationState.suggestions.map((suggestion) => suggestion.node.id),
+      );
+
+      if (!cancelled) {
+        setMemoryIdentities(identities);
+      }
+    }
+
+    if (!open || associationState.suggestions.length === 0) {
+      queueMicrotask(() => {
+        if (!cancelled) {
+          setMemoryIdentities(new Map());
+        }
+      });
+      return;
+    }
+
+    void loadMemoryIdentities();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    associationState.suggestions,
+    open,
+    repositories.contextRepository,
+    repositories.nodeContextRelationRepository,
+  ]);
 
   useEffect(() => {
     if (!open) {
@@ -283,6 +326,7 @@ export function QuickCaptureSheet({
               suggestions={associationState.suggestions}
               loading={associationState.status === "loading"}
               error={associationState.error}
+              identities={memoryIdentities}
               onRetry={associationState.retry}
               onOpenCapture={persistCurrentDraft}
             />

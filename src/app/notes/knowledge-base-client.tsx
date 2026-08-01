@@ -17,6 +17,9 @@ import {
   getContentExcerpt,
   getCapturePreview,
 } from "@/features/node/node-display";
+import type { CaptureEmergentIdentity } from "@/features/identity/capture-emergent-identity";
+import { CaptureEmergentIdentityLabel } from "@/features/identity/capture-emergent-identity-view";
+import { loadCaptureEmergentIdentities } from "@/features/identity/load-capture-emergent-identities";
 import { getNodeDetailPath } from "@/features/node/node-routes";
 import { useVinemaContext } from "@/features/node/hooks/use-vinema-context";
 import { createHighlightedParts } from "@/features/recovery/highlight-text";
@@ -45,6 +48,9 @@ export function KnowledgeBaseClient() {
   const [draftQuery, setDraftQuery] = useState(query);
   const [visibleCount, setVisibleCount] = useState(KNOWLEDGE_BASE_BATCH_SIZE);
   const [captures, setCaptures] = useState<Node[]>([]);
+  const [captureIdentities, setCaptureIdentities] = useState<
+    Map<string, CaptureEmergentIdentity>
+  >(new Map());
   const [captureTotal, setCaptureTotal] = useState(0);
   const [captureHasMore, setCaptureHasMore] = useState(false);
   const [searchResults, setSearchResults] = useState<RecoveryResult[]>([]);
@@ -83,6 +89,12 @@ export function KnowledgeBaseClient() {
           },
         );
         setSearchResults(results);
+        setCaptureIdentities(
+          await loadCaptureEmergentIdentities(
+            { contextRepository, nodeContextRelationRepository },
+            results.map((result) => result.nodeId),
+          ),
+        );
         setCaptures([]);
         setCaptureTotal(0);
         setCaptureHasMore(false);
@@ -92,6 +104,12 @@ export function KnowledgeBaseClient() {
           limit: visibleCount,
         });
         setCaptures(page.items);
+        setCaptureIdentities(
+          await loadCaptureEmergentIdentities(
+            { contextRepository, nodeContextRelationRepository },
+            page.items.map((capture) => capture.id),
+          ),
+        );
         setCaptureTotal(page.total);
         setCaptureHasMore(page.hasMore);
         setSearchResults([]);
@@ -278,12 +296,17 @@ export function KnowledgeBaseClient() {
                     })}
                     preview={result.preview}
                     excerpt={result.excerpt}
+                    identity={captureIdentities.get(result.nodeId) ?? null}
                     updatedAt={result.updatedAt}
                     query={activeQuery}
                   />
                 ))
               : captures.map((capture) => (
-                  <KnowledgeCaptureItem key={capture.id} node={capture} />
+                  <KnowledgeCaptureItem
+                    key={capture.id}
+                    node={capture}
+                    identity={captureIdentities.get(capture.id) ?? null}
+                  />
                 ))}
           </div>
 
@@ -315,12 +338,19 @@ export function KnowledgeBaseClient() {
   );
 }
 
-function KnowledgeCaptureItem({ node }: { node: Node }) {
+function KnowledgeCaptureItem({
+  node,
+  identity,
+}: {
+  node: Node;
+  identity: CaptureEmergentIdentity | null;
+}) {
   return (
     <KnowledgeResultItem
       href={getNodeDetailPath(node.id, { returnTo: "/notes" })}
       preview={getCapturePreview(node.content, { maxLength: 180 })}
       excerpt={getContentExcerpt(node.content) || "Sin contenido"}
+      identity={identity}
       updatedAt={getContentTimestamp(node)}
     />
   );
@@ -330,15 +360,19 @@ function KnowledgeResultItem({
   href,
   preview,
   excerpt,
+  identity,
   updatedAt,
   query = "",
 }: {
   href: string;
   preview: string;
   excerpt: string;
+  identity: CaptureEmergentIdentity | null;
   updatedAt: string;
   query?: string;
 }) {
+  const bodyText = getBodyTextForIdentity({ identity, preview, excerpt });
+
   return (
     <Link
       href={href}
@@ -347,12 +381,20 @@ function KnowledgeResultItem({
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-1">
+          {identity?.displayText ? (
+            <CaptureEmergentIdentityLabel identity={identity} />
+          ) : null}
           <p className="line-clamp-3 text-base leading-7 text-zinc-800">
-            <HighlightedText text={preview} query={query} />
+            <HighlightedText
+              text={identity?.displayText ? bodyText : preview}
+              query={query}
+            />
           </p>
-          <p className="line-clamp-2 text-sm leading-6 text-zinc-600">
-            <HighlightedText text={excerpt} query={query} />
-          </p>
+          {!identity?.displayText && bodyText ? (
+            <p className="line-clamp-2 text-sm leading-6 text-zinc-600">
+              <HighlightedText text={bodyText} query={query} />
+            </p>
+          ) : null}
         </div>
         <time className="shrink-0 text-xs text-zinc-500">
           {formatCompactDate(updatedAt)}
@@ -360,6 +402,28 @@ function KnowledgeResultItem({
       </div>
     </Link>
   );
+}
+
+function getBodyTextForIdentity({
+  identity,
+  preview,
+  excerpt,
+}: {
+  identity: CaptureEmergentIdentity | null;
+  preview: string;
+  excerpt: string;
+}) {
+  if (identity?.displayText) {
+    return excerpt || preview;
+  }
+
+  return normalizeComparableText(preview) === normalizeComparableText(excerpt)
+    ? ""
+    : excerpt;
+}
+
+function normalizeComparableText(value: string) {
+  return value.trim().replace(/\s+/g, " ");
 }
 
 function HighlightedText({ text, query }: { text: string; query: string }) {
