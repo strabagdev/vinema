@@ -163,7 +163,7 @@ describe("CaptureSurface", () => {
 
     expect(getContextIndicator(screen.container, "recuerdos relacionados")).toBeDefined();
     await openMemoryPanel(screen.container);
-    expect(screen.container.textContent).toContain("Me recuerda a…");
+    expect(getDialog(screen.container, "Me recuerda a…")).toBeDefined();
     expect(screen.container.textContent).toContain("Proveedor Mitcom");
     expect(screen.container.textContent).not.toContain("Recordando...");
   });
@@ -383,7 +383,7 @@ describe("CaptureSurface", () => {
     await advanceTime(500);
 
     await openMemoryPanel(screen.container);
-    expect(screen.container.textContent).toContain("Me recuerda a…");
+    expect(getDialog(screen.container, "Me recuerda a…")).toBeDefined();
     expect(screen.container.textContent).toContain("Mitcom");
     expect(screen.container.querySelector("input[type='checkbox']")).toBeNull();
 
@@ -421,7 +421,7 @@ describe("CaptureSurface", () => {
     expect(getDialog(screen.container, "Me recuerda a…")).toBeDefined();
   });
 
-  it("positions memory panels as desktop popovers within the viewport", async () => {
+  it("positions desktop panels above the centered indicator group", async () => {
     setViewportSize({ width: 1366, height: 768 });
     const nodeRepository = new InMemoryNodeRepository([
       createStoredNode({
@@ -434,54 +434,63 @@ describe("CaptureSurface", () => {
 
     await changeTextarea(screen.container, "mitcom");
     await advanceTime(500);
-    mockIndicatorRowRect(screen.container, {
-      left: 430,
-      right: 530,
-      top: 520,
-      bottom: 560,
-      width: 100,
-      height: 40,
-    });
     await openMemoryPanel(screen.container);
 
     const panel = getDialog(screen.container, "Me recuerda a…") as HTMLElement;
-    const top = Number(panel.style.top.replace("px", ""));
-    const left = Number(panel.style.left.replace("px", ""));
-    const width = Number(panel.style.width.replace("px", ""));
-    const maxHeight = Number(panel.style.maxHeight.replace("px", ""));
+    const root = screen.container.querySelector("[data-contextual-panel-root]");
+    const group = screen.container.querySelector("[data-context-indicator-group]");
 
     expect(panel.dataset.layout).toBe("desktop-popover");
-    expect(panel.className).not.toContain("bottom-0");
-    expect(panel.className).toContain("md:max-h-[60vh]");
+    expect(root?.className).toContain("relative");
+    expect(root?.className).toContain("mx-auto");
+    expect(group?.className).toContain("justify-center");
+    expect(panel.className).toContain("absolute");
+    expect(panel.className).toContain("bottom-[calc(100%+10px)]");
+    expect(panel.className).toContain("left-1/2");
+    expect(panel.className).toContain("-translate-x-1/2");
+    expect(panel.className).toContain("w-[min(25rem,calc(100vw-2rem))]");
+    expect(panel.className).toContain("max-h-[min(42vh,24rem)]");
+    expect(panel.style.top).toBe("");
+    expect(panel.style.left).toBe("");
     expect(getButtonByLabel(screen.container, "Cerrar panel")).toBeUndefined();
     expect(screen.container.querySelector("[class*='border-b']")).toBeNull();
-    expect(top).toBeGreaterThanOrEqual(16);
-    expect(left).toBeGreaterThanOrEqual(16);
-    expect(top + maxHeight).toBeLessThanOrEqual(768 - 16);
-    expect(left + width).toBeLessThanOrEqual(1366 - 16);
+    expect(screen.container.textContent).not.toContain("Me recuerda a…");
   });
 
-  it("falls back to the left when a desktop panel does not fit on the right", async () => {
+  it("does not use lateral desktop positioning or indicator rect measurements", async () => {
     setViewportSize({ width: 1024, height: 768 });
     const screen = await renderCaptureSurface();
 
     await changeTextarea(screen.container, "Revisar Railway");
     await advanceTime(500);
-    mockIndicatorRowRect(screen.container, {
+    const indicator = getContextIndicator(screen.container, "conceptos detectados");
+    const getRectSpy = vi.fn(() => ({
+      x: 700,
+      y: 420,
+      width: 80,
+      height: 40,
       left: 700,
       right: 780,
       top: 420,
       bottom: 460,
-      width: 80,
-      height: 40,
-    });
+      toJSON: () => ({}),
+    }));
+
+    if (!indicator) {
+      throw new Error("Concept indicator not found");
+    }
+
+    indicator.getBoundingClientRect = getRectSpy;
     await openConceptPanel(screen.container);
 
     const panel = getDialog(screen.container, "Conceptos detectados") as HTMLElement;
-    const left = Number(panel.style.left.replace("px", ""));
 
     expect(panel.dataset.layout).toBe("desktop-popover");
-    expect(left).toBeLessThan(700);
+    expect(panel.style.left).toBe("");
+    expect(panel.style.top).toBe("");
+    expect(panel.className).not.toContain("right");
+    expect(panel.className).not.toContain("md:inset-auto");
+    expect(getRectSpy).not.toHaveBeenCalled();
   });
 
   it("keeps progressive panels as mobile bottom sheets below the desktop breakpoint", async () => {
@@ -499,6 +508,7 @@ describe("CaptureSurface", () => {
     expect(panel.style.left).toBe("");
     expect(panel.className).toContain("bottom-[max(0.75rem,env(safe-area-inset-bottom))]");
     expect(panel.className).toContain("overflow-hidden");
+    expect(panel.className).not.toContain("bottom-[calc(100%+10px)]");
     expect(getButtonByLabel(screen.container, "Cerrar panel")).toBeDefined();
   });
 
@@ -629,31 +639,22 @@ describe("CaptureSurface", () => {
 
     await changeTextarea(screen.container, "Revisar Mitcom");
     await advanceTime(500);
-    mockIndicatorRowRect(screen.container, {
-      left: 760,
-      right: 860,
-      top: 520,
-      bottom: 560,
-      width: 100,
-      height: 40,
-    });
     await openConceptPanel(screen.container);
     const conceptPanel = getDialog(
       screen.container,
       "Conceptos detectados",
     ) as HTMLElement;
-    const conceptLeft = conceptPanel.style.left;
-    const conceptTop = conceptPanel.style.top;
 
     await openMemoryPanel(screen.container);
     const memoryPanel = getDialog(screen.container, "Me recuerda a…") as HTMLElement;
 
     expect(memoryPanel.dataset.layout).toBe("desktop-popover");
-    expect(memoryPanel.style.left).toBe(conceptLeft);
-    expect(memoryPanel.style.top).toBe(conceptTop);
+    expect(memoryPanel.className).toBe(conceptPanel.className);
+    expect(memoryPanel.style.left).toBe("");
+    expect(memoryPanel.style.top).toBe("");
   });
 
-  it("anchors each progressive panel to its active indicator", async () => {
+  it("keeps indicators as one centered group and marks the active icon", async () => {
     setViewportSize({ width: 1366, height: 768 });
     const nodeRepository = new InMemoryNodeRepository([
       createStoredNode({
@@ -666,22 +667,6 @@ describe("CaptureSurface", () => {
 
     await changeTextarea(screen.container, "Revisar Mitcom y Railway");
     await advanceTime(500);
-    mockContextIndicatorRect(screen.container, "concepts", {
-      left: 420,
-      right: 470,
-      top: 500,
-      bottom: 536,
-      width: 50,
-      height: 36,
-    });
-    mockContextIndicatorRect(screen.container, "memories", {
-      left: 500,
-      right: 550,
-      top: 500,
-      bottom: 536,
-      width: 50,
-      height: 36,
-    });
 
     await openConceptPanel(screen.container);
     const conceptPanel = getDialog(
@@ -691,7 +676,11 @@ describe("CaptureSurface", () => {
     const conceptIndicator = screen.container.querySelector(
       '[data-context-indicator-panel="concepts"]',
     ) as HTMLElement;
-    expect(conceptPanel.style.left).toBe("480px");
+    const group = screen.container.querySelector("[data-context-indicator-group]");
+
+    expect(group?.className).toContain("justify-center");
+    expect(conceptPanel.className).toContain("bottom-[calc(100%+10px)]");
+    expect(conceptPanel.className).toContain("left-1/2");
     expect(conceptIndicator.className).toContain("w-9");
 
     await openMemoryPanel(screen.container);
@@ -699,7 +688,8 @@ describe("CaptureSurface", () => {
     const memoryIndicator = screen.container.querySelector(
       '[data-context-indicator-panel="memories"]',
     ) as HTMLElement;
-    expect(memoryPanel.style.left).toBe("560px");
+    expect(memoryPanel.className).toContain("bottom-[calc(100%+10px)]");
+    expect(memoryPanel.className).toContain("left-1/2");
     expect(memoryIndicator.className).toContain("w-9");
   });
 
@@ -804,7 +794,7 @@ describe("CaptureSurface", () => {
 
     expect(getContextIndicator(screen.container, "conceptos detectados")).toBeDefined();
     await openConceptPanel(screen.container);
-    expect(screen.container.textContent).toContain("Conceptos");
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
     expect(screen.container.textContent).toContain("Perfumes");
     expect(screen.container.textContent).not.toContain("Trabajo");
 
@@ -897,7 +887,7 @@ describe("CaptureSurface", () => {
     await advanceTime(500);
 
     await openConceptPanel(screen.container);
-    expect(screen.container.textContent).toContain("Conceptos");
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
     expect(screen.container.textContent).toContain("Reuniones");
 
     const reunionesChip = getButton(screen.container, "Reuniones");
@@ -1055,7 +1045,7 @@ describe("CaptureSurface", () => {
     await advanceTime(500);
 
     await openConceptPanel(screen.container);
-    expect(screen.container.textContent).toContain("Conceptos");
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
     expect(screen.container.textContent).toContain("Railway");
     expect(screen.container.textContent).not.toContain("Me recuerda a…");
 
@@ -1285,7 +1275,7 @@ describe("CaptureSurface", () => {
     await advanceTime(500);
 
     await openMemoryPanel(screen.container);
-    expect(screen.container.textContent).toContain("Me recuerda a…");
+    expect(getDialog(screen.container, "Me recuerda a…")).toBeDefined();
     expect(screen.container.textContent).toContain(
       "Las reuniones extensas reducen",
     );
@@ -1317,7 +1307,7 @@ describe("CaptureSurface", () => {
     await advanceTime(500);
 
     await openMemoryPanel(screen.container);
-    expect(screen.container.textContent).toContain("Me recuerda a…");
+    expect(getDialog(screen.container, "Me recuerda a…")).toBeDefined();
     expect(screen.container.textContent).toContain(
       "Las reuniones extensas reducen",
     );
@@ -1361,7 +1351,7 @@ describe("CaptureSurface", () => {
       "Después de muchas reuniones me cuesta concentrarme.",
     );
     await openMemoryPanel(screen.container);
-    expect(screen.container.textContent).toContain("Me recuerda a…");
+    expect(getDialog(screen.container, "Me recuerda a…")).toBeDefined();
   });
 });
 
@@ -1488,57 +1478,6 @@ function getDialog(container: HTMLElement, label: string) {
   return Array.from(container.querySelectorAll("[role='dialog']")).find(
     (dialog) => dialog.getAttribute("aria-label") === label,
   ) as HTMLElement | undefined;
-}
-
-function mockIndicatorRowRect(
-  container: HTMLElement,
-  rect: Partial<DOMRect> & Pick<DOMRect, "left" | "right" | "top" | "bottom">,
-) {
-  const row = container.querySelector("[aria-label='Indicadores contextuales']");
-  if (!row) {
-    throw new Error("Indicator row not found");
-  }
-
-  row.getBoundingClientRect = () => ({
-    x: rect.left,
-    y: rect.top,
-    width: rect.width ?? rect.right - rect.left,
-    height: rect.height ?? rect.bottom - rect.top,
-    left: rect.left,
-    right: rect.right,
-    top: rect.top,
-    bottom: rect.bottom,
-    toJSON: () => ({}),
-  });
-  row.querySelectorAll("[data-context-indicator-panel]").forEach((indicator) => {
-    indicator.getBoundingClientRect = row.getBoundingClientRect;
-  });
-}
-
-function mockContextIndicatorRect(
-  container: HTMLElement,
-  panel: "concepts" | "memories",
-  rect: Partial<DOMRect> & Pick<DOMRect, "left" | "right" | "top" | "bottom">,
-) {
-  const indicator = container.querySelector(
-    `[data-context-indicator-panel="${panel}"]`,
-  );
-
-  if (!indicator) {
-    throw new Error(`Indicator not found: ${panel}`);
-  }
-
-  indicator.getBoundingClientRect = () => ({
-    x: rect.left,
-    y: rect.top,
-    width: rect.width ?? rect.right - rect.left,
-    height: rect.height ?? rect.bottom - rect.top,
-    left: rect.left,
-    right: rect.right,
-    top: rect.top,
-    bottom: rect.bottom,
-    toJSON: () => ({}),
-  });
 }
 
 function setViewportSize({

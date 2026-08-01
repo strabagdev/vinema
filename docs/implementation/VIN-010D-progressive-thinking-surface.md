@@ -12,6 +12,22 @@ La superficie principal debe dejar que el texto mande. En VIN-010D los conceptos
 
 No se modificaron motores, persistencia, sincronizacion ni autenticacion.
 
+## Arquitectura visual permanente
+
+A partir de VIN-010D.2, el centro visual de Vinema coincide siempre con el centro geometrico del viewport.
+
+La palabra `Vinema` es el ancla visual principal de la aplicacion y nunca debe desplazarse por la presencia de otros elementos del header.
+
+El header se estructura en tres zonas conceptuales:
+
+- izquierda: espacio reservado para capacidades futuras;
+- centro: wordmark;
+- derecha: perfil y sesion.
+
+La zona izquierda puede estar vacia. La existencia o ausencia de elementos en los extremos nunca modifica la posicion del wordmark.
+
+El canvas principal, el grupo de indicadores y los paneles contextuales se alinean respecto de este mismo eje central. Toda futura funcionalidad debe respetar ese eje visual: no se debe recentrar respecto del espacio disponible, sino respecto del viewport.
+
 ## Estados implementados
 
 ### Vacio
@@ -54,13 +70,25 @@ El header muestra `Modo local` solo cuando `navigator.onLine` indica desconexion
 Los indicadores son botones discretos con icono y cantidad:
 
 - `Brain`: conceptos;
-- `History`: recuerdos.
+- `Lightbulb`: ideas o recuerdos relacionados.
 
 Cada indicador incluye `aria-label` con el conteo. Cuando el panel correspondiente esta abierto, el contador visual se oculta para reducir redundancia, pero la informacion accesible permanece.
 
+## Paneles contextuales
+
+Desde VIN-010D.2, los indicadores forman un unico grupo centrado. En escritorio y tablet con `(hover: hover) and (pointer: fine)`, el panel flota directamente arriba de ese grupo:
+
+- `bottom: calc(100% + 10px)`;
+- `left: 50%`;
+- `transform: translateX(-50%)`.
+
+El panel queda centrado respecto del grupo de indicadores, no respecto de un indicador individual ni de un borde lateral. No usa `getBoundingClientRect()` para el posicionamiento normal de escritorio, no persigue el cursor y no ejecuta fallbacks laterales.
+
+En dispositivos tactiles o bajo el breakpoint movil, conserva el comportamiento de bottom sheet parcial.
+
 ## Panel de conceptos
 
-El panel `Conceptos detectados` muestra hasta cinco conceptos existentes o emergentes. La seleccion se mantiene con `aria-pressed`.
+El panel de conceptos muestra hasta cinco conceptos existentes o emergentes. La seleccion se mantiene con `aria-pressed`.
 
 Seleccionar un concepto:
 
@@ -72,7 +100,7 @@ No se muestran scores, confidence ni payloads internos.
 
 ## Panel “Me recuerda a…”
 
-El panel muestra los primeros recuerdos segun la logica existente. Cada recuerdo conserva:
+El panel de recuerdos muestra los primeros recuerdos segun la logica existente. Cada recuerdo conserva:
 
 - fragmento del cuerpo;
 - fecha compacta;
@@ -99,7 +127,7 @@ El retardo se limpia al desmontar, al escribir, al cambiar de panel y al captura
 
 ## Estructura visual
 
-Los paneles ya no separan header y body con divisor interno. El encabezado y el contenido viven en un solo bloque suave.
+Los paneles ya no muestran encabezado visible redundante ni separan header y body con divisor interno. El icono activo comunica el contexto y el nombre del panel se conserva como `aria-label`.
 
 Regla aplicada:
 
@@ -111,13 +139,9 @@ En escritorio no se renderiza boton X ni se reserva espacio para el. En mobile s
 
 El header ya no tiene divisor horizontal. La separacion se produce por espacio y composicion.
 
-La navegacion superior es iconografica:
+El wordmark `Vinema` esta centrado geometricamente mediante una estructura de tres zonas. No hay isotipo `V` ni navegacion principal visible en la superficie principal.
 
-- Inicio;
-- Explorar;
-- Archivo.
-
-Los labels no son visibles permanentemente; se conservan como `aria-label`, texto `sr-only` y tooltip.
+El perfil/sesion permanece accesible en la zona derecha sin desplazar el centro visual.
 
 ## Captura
 
@@ -130,7 +154,7 @@ Se mantiene:
 
 ## Responsive
 
-En escritorio con `(hover: hover) and (pointer: fine)`, el panel se ancla cerca del editor sin mover el layout y se comporta como popover efimero.
+En escritorio con `(hover: hover) and (pointer: fine)`, el panel se ubica sobre el grupo centrado de indicadores sin mover el layout y se comporta como popover efimero.
 
 En tablet tactil y movil, el mismo panel usa posicion fija inferior, con altura maxima y scroll interno. Esto funciona como bottom sheet parcial sin introducir una nueva dependencia ni reusar el sheet global de navegacion.
 

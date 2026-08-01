@@ -152,10 +152,14 @@ describe("AppHeader", () => {
 
   it("keeps the session menu minimal and opens Mi conocimiento from it", async () => {
     const screen = await renderHeader();
+    const header = screen.querySelector("header");
+    const wordmarkLink = screen.querySelector("a[aria-label='Ir a Inicio']");
 
-    expect(
-      screen.querySelector("a[aria-label='Ir a Inicio']")?.getAttribute("href"),
-    ).toBe("/");
+    expect(header?.className).toContain("grid-cols-[1fr_auto_1fr]");
+    expect(wordmarkLink?.getAttribute("href")).toBe("/");
+    expect(wordmarkLink?.getAttribute("data-wordmark-anchor")).toBe("");
+    expect(wordmarkLink?.textContent).toBe("Vinema");
+    expect(wordmarkLink?.textContent).not.toBe("V");
     expect(screen.querySelector("nav[aria-label='Navegacion principal']")).toBeNull();
     expect(screen.querySelector("a[aria-label='Explorar']")).toBeNull();
     expect(screen.textContent).not.toContain("Explorar");
