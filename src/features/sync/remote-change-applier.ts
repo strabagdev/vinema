@@ -27,6 +27,10 @@ import type {
 } from "@/features/sync/sync-outbox-repository";
 
 export type RemoteSyncChange = PullResponse["changes"][number];
+type RemoteEntitySyncChange = Exclude<
+  RemoteSyncChange,
+  { entityType: "workspaceKnowledgeReset" }
+>;
 
 export type RemoteChangeApplierResult = {
   applied: number;
@@ -36,7 +40,7 @@ export type RemoteChangeApplierResult = {
 };
 
 export type RemoteChangeConflict = {
-  entityType: RemoteSyncChange["entityType"];
+  entityType: Exclude<RemoteSyncChange["entityType"], "workspaceKnowledgeReset">;
   entityId: string;
   mutationId: string;
   remoteVersion: number;
@@ -99,12 +103,25 @@ export async function applyRemoteChanges({
     idempotent: 0,
     conflicts: [],
   };
+  const resetChanges = changes.filter(isWorkspaceKnowledgeResetChange);
   const entityChanges = changes.filter(
-    (change) => change.entityType !== "captureConcept",
+    (change): change is RemoteEntitySyncChange =>
+      change.entityType !== "captureConcept" &&
+      change.entityType !== "workspaceKnowledgeReset",
   );
   const relationChanges = changes.filter(
-    (change) => change.entityType === "captureConcept",
+    (change): change is RemoteEntitySyncChange =>
+      change.entityType === "captureConcept",
   );
+
+  for (const change of resetChanges) {
+    await applyWorkspaceKnowledgeReset({
+      transaction,
+      change,
+      workspaceId,
+      result,
+    });
+  }
 
   for (const change of entityChanges) {
     await applyChange({
@@ -131,7 +148,7 @@ export async function applyRemoteChanges({
 
 async function applyChange(input: {
   transaction: RemoteChangeApplierTransaction;
-  change: RemoteSyncChange;
+  change: RemoteEntitySyncChange;
   workspaceId: string;
   deviceId: string;
   result: RemoteChangeApplierResult;
@@ -184,6 +201,65 @@ async function applyChange(input: {
   });
 }
 
+function isWorkspaceKnowledgeResetChange(
+  change: RemoteSyncChange,
+): change is Extract<RemoteSyncChange, { entityType: "workspaceKnowledgeReset" }> {
+  return change.entityType === "workspaceKnowledgeReset";
+}
+
+async function applyWorkspaceKnowledgeReset(input: {
+  transaction: RemoteChangeApplierTransaction;
+  change: Extract<RemoteSyncChange, { entityType: "workspaceKnowledgeReset" }>;
+  workspaceId: string;
+  result: RemoteChangeApplierResult;
+}) {
+  if (input.change.reset.workspaceId !== input.workspaceId) {
+    throw new RemoteChangeApplyError(
+      "WORKSPACE_MISMATCH",
+      "El reset remoto pertenece a otro workspace.",
+    );
+  }
+
+  const [relations, nodes, contexts, mutations] = await Promise.all([
+    input.transaction.objectStore(NODE_CONTEXT_RELATIONS_STORE).getAll(),
+    input.transaction.objectStore(NODES_STORE).getAll(),
+    input.transaction.objectStore(CONTEXTS_STORE).getAll(),
+    input.transaction.objectStore(SYNC_MUTATIONS_STORE).getAll(),
+  ]);
+  let deleted = 0;
+
+  for (const relation of relations) {
+    if (relation.workspaceId === input.workspaceId) {
+      await input.transaction.objectStore(NODE_CONTEXT_RELATIONS_STORE).delete(relation.id);
+      deleted += 1;
+    }
+  }
+  for (const node of nodes) {
+    if (node.workspaceId === input.workspaceId) {
+      await input.transaction.objectStore(NODES_STORE).delete(node.id);
+      deleted += 1;
+    }
+  }
+  for (const context of contexts) {
+    if (context.workspaceId === input.workspaceId) {
+      await input.transaction.objectStore(CONTEXTS_STORE).delete(context.id);
+      deleted += 1;
+    }
+  }
+  for (const mutation of mutations) {
+    if (mutation.workspaceId === input.workspaceId) {
+      await input.transaction.objectStore(SYNC_MUTATIONS_STORE).delete(mutation.mutationId);
+    }
+  }
+
+  if (deleted > 0) {
+    input.result.applied += 1;
+    return;
+  }
+
+  input.result.idempotent += 1;
+}
+
 async function applyCapture({
   transaction,
   entity,
@@ -191,7 +267,7 @@ async function applyCapture({
   result,
 }: {
   transaction: RemoteChangeApplierTransaction;
-  change: RemoteSyncChange;
+  change: RemoteEntitySyncChange;
   entity: CaptureEntity;
   deviceId: string;
   result: RemoteChangeApplierResult;
@@ -220,7 +296,7 @@ async function applyConcept({
   result,
 }: {
   transaction: RemoteChangeApplierTransaction;
-  change: RemoteSyncChange;
+  change: RemoteEntitySyncChange;
   entity: ConceptEntity;
   result: RemoteChangeApplierResult;
 }) {
@@ -249,7 +325,7 @@ async function applyCaptureConcept({
   result,
 }: {
   transaction: RemoteChangeApplierTransaction;
-  change: RemoteSyncChange;
+  change: RemoteEntitySyncChange;
   entity: CaptureConceptEntity;
   result: RemoteChangeApplierResult;
 }) {
@@ -287,7 +363,7 @@ async function applyCaptureConcept({
 
 async function assertRelationDependencies(
   transaction: RemoteChangeApplierTransaction,
-  change: RemoteSyncChange,
+  change: RemoteEntitySyncChange,
 ) {
   const entity = change.entity as CaptureConceptEntity;
   const node = normalizeStoredNode(
@@ -312,7 +388,7 @@ async function assertRelationDependencies(
 
 async function findLocalConflict(
   transaction: RemoteChangeApplierTransaction,
-  entityType: RemoteSyncChange["entityType"],
+  entityType: RemoteEntitySyncChange["entityType"],
   entityId: string,
 ) {
   const records = await transaction.objectStore(SYNC_MUTATIONS_STORE).getAll();
@@ -327,7 +403,7 @@ async function findLocalConflict(
 async function markLocalMutationConflict(
   transaction: RemoteChangeApplierTransaction,
   record: SyncMutationOutboxRecord,
-  change: RemoteSyncChange,
+  change: RemoteEntitySyncChange,
 ) {
   await transaction.objectStore(SYNC_MUTATIONS_STORE).put({
     ...record,
@@ -348,7 +424,7 @@ function isLocalPendingStatus(status: SyncMutationOutboxStatus) {
   return status === "PENDING" || status === "PROCESSING" || status === "FAILED";
 }
 
-function assertWorkspace(change: RemoteSyncChange, workspaceId: string) {
+function assertWorkspace(change: RemoteEntitySyncChange, workspaceId: string) {
   if (change.entity.workspaceId !== workspaceId) {
     throw new RemoteChangeApplyError(
       "WORKSPACE_MISMATCH",

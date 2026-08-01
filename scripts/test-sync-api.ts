@@ -91,7 +91,11 @@ async function main() {
   const pullResponse = await pull(refreshedA.accessToken, userA.workspaceId, userA.deviceId, "0");
   assert(pullResponse.changes.length >= 3, "pull did not return pushed changes");
   assert(
-    pullResponse.changes.some((change) => change.entity.id === captureId),
+    pullResponse.changes.some(
+      (change) =>
+        change.entityType !== "workspaceKnowledgeReset" &&
+        change.entity.id === captureId,
+    ),
     "pull did not return the test capture",
   );
   const cursorAfterFirstPush = pullResponse.nextCursor;
@@ -130,7 +134,11 @@ async function main() {
   await expectForbiddenWorkspace(refreshedA.accessToken, userB.workspaceId);
   const bPull = await pull(userB.accessToken, userB.workspaceId, userB.deviceId, "0");
   assert(
-    bPull.changes.every((change) => change.entity.workspaceId === userB.workspaceId),
+    bPull.changes.every((change) =>
+      change.entityType === "workspaceKnowledgeReset"
+        ? change.reset.workspaceId === userB.workspaceId
+        : change.entity.workspaceId === userB.workspaceId,
+    ),
     "user B saw user A workspace data",
   );
   await logout(refreshedA.refreshToken);

@@ -39,7 +39,11 @@ export class InMemorySyncStore implements SyncStore {
 
   async getLatestCursor(workspaceId: string): Promise<string> {
     return this.changes
-      .filter((change) => this.entityWorkspace(change.entityType, change.entityId) === workspaceId)
+      .filter((change) =>
+        change.entityType === "workspaceKnowledgeReset"
+          ? change.entityId === workspaceId
+          : this.entityWorkspace(change.entityType, change.entityId) === workspaceId,
+      )
       .at(-1)?.sequence ?? "0";
   }
 
@@ -153,9 +157,74 @@ export class InMemorySyncStore implements SyncStore {
       .filter((change) => BigInt(change.sequence) > BigInt(input.cursor))
       .filter(
         (change) =>
-          this.entityWorkspace(change.entityType, change.entityId) === input.workspaceId,
+          change.entityType === "workspaceKnowledgeReset"
+            ? change.entityId === input.workspaceId
+            : this.entityWorkspace(change.entityType, change.entityId) === input.workspaceId,
       )
       .slice(0, input.limit);
+  }
+
+  async resetKnowledge(input: {
+    workspaceId: string;
+    occurredAt?: Date;
+  }): Promise<{
+    workspaceId: string;
+    resetVersion: string;
+    occurredAt: string;
+    deleted: { captures: number; concepts: number; relations: number };
+  }> {
+    const captureIds = new Set(
+      Array.from(this.captures.values())
+        .filter((capture) => capture.workspaceId === input.workspaceId)
+        .map((capture) => capture.id),
+    );
+    const conceptIds = new Set(
+      Array.from(this.concepts.values())
+        .filter((concept) => concept.workspaceId === input.workspaceId)
+        .map((concept) => concept.id),
+    );
+    let relations = 0;
+
+    for (const [id, relation] of this.captureConcepts) {
+      if (
+        relation.workspaceId === input.workspaceId ||
+        captureIds.has(relation.captureId) ||
+        conceptIds.has(relation.conceptId)
+      ) {
+        this.captureConcepts.delete(id);
+        relations += 1;
+      }
+    }
+
+    for (const id of captureIds) {
+      this.captures.delete(id);
+    }
+
+    for (const id of conceptIds) {
+      this.concepts.delete(id);
+    }
+
+    this.sequence += 1;
+    const occurredAt = (input.occurredAt ?? new Date()).toISOString();
+    const resetVersion = this.sequence.toString();
+    this.changes.push({
+      sequence: resetVersion,
+      entityType: "workspaceKnowledgeReset",
+      entityId: input.workspaceId,
+      operation: "reset",
+      occurredAt,
+    });
+
+    return {
+      workspaceId: input.workspaceId,
+      resetVersion,
+      occurredAt,
+      deleted: {
+        captures: captureIds.size,
+        concepts: conceptIds.size,
+        relations,
+      },
+    };
   }
 
   private getMap(entityType: SyncEntityType) {

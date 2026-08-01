@@ -61,6 +61,7 @@ describe("AppHeader", () => {
     expect(document.body.querySelector("a[href='/notes/archive']")).toBeTruthy();
     expect(document.body.textContent).toContain("Respaldar conocimiento");
     expect(document.body.textContent).toContain("Restaurar conocimiento");
+    expect(document.body.textContent).toContain("Vaciar conocimiento");
     expect(document.body.textContent).toContain("Cerrar sesion");
     expect(document.body.textContent).not.toContain("Sincronizacion futura");
   });

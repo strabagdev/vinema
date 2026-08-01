@@ -27,6 +27,7 @@ import {
 import type { CaptureEmergentIdentity } from "@/features/identity/capture-emergent-identity";
 import { loadCaptureEmergentIdentities } from "@/features/identity/load-capture-emergent-identities";
 import { useVisualFeedback } from "@/features/feedback/visual-feedback-provider";
+import { isKnowledgeResetRunning } from "@/features/knowledge-reset/knowledge-reset";
 import type { SearchNodesRepositories } from "@/features/recovery/search-nodes";
 import type { StorageAdapter } from "@/infrastructure/storage/storage-adapter";
 
@@ -213,6 +214,11 @@ export function QuickCaptureSheet({
 
   async function handleCapture() {
     if (captureInFlightRef.current) {
+      return;
+    }
+
+    if (isKnowledgeResetRunning()) {
+      feedback.error("Espera a que termine el vaciado de conocimiento.");
       return;
     }
 

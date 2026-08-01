@@ -33,6 +33,7 @@ import { CaptureEmergentIdentityLabel } from "@/features/identity/capture-emerge
 import { loadCaptureEmergentIdentities } from "@/features/identity/load-capture-emergent-identities";
 import { getConceptExplorationPath } from "@/features/exploration/concept-routes";
 import { useVisualFeedback } from "@/features/feedback/visual-feedback-provider";
+import { isKnowledgeResetRunning } from "@/features/knowledge-reset/knowledge-reset";
 import { getCapturePreview } from "@/features/node/node-display";
 import { getNodeDetailPath } from "@/features/node/node-routes";
 import type { SearchNodesRepositories } from "@/features/recovery/search-nodes";
@@ -368,6 +369,11 @@ export function CaptureSurface({
 
   async function handleCapture() {
     if (captureInFlightRef.current) {
+      return;
+    }
+
+    if (isKnowledgeResetRunning()) {
+      feedback.error("Espera a que termine el vaciado de conocimiento.");
       return;
     }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, Upload } from "lucide-react";
+import { Download, Trash2, Upload } from "lucide-react";
 import type { ChangeEvent } from "react";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,17 @@ import {
   contextRepository,
   nodeContextRelationRepository,
   nodeRepository,
+  storageAdapter,
 } from "@/infrastructure/repositories";
+import { getPublicApiUrl } from "@/features/auth/public-api-url";
+import { createKnowledgeResetClient } from "@/features/knowledge-reset/knowledge-reset-client";
+import {
+  KNOWLEDGE_RESET_CONFIRMATION,
+  KnowledgeResetError,
+  resetKnowledge,
+  summarizeLocalKnowledge,
+  type KnowledgeResetCounts,
+} from "@/features/knowledge-reset/knowledge-reset";
 
 type RestorePreview = {
   fileName: string;
@@ -37,7 +47,10 @@ export function KnowledgeBackupMenuActions() {
   const feedback = useVisualFeedback();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [restorePreview, setRestorePreview] = useState<RestorePreview | null>(null);
+  const [resetSummary, setResetSummary] = useState<KnowledgeResetCounts | null>(null);
+  const [resetConfirmation, setResetConfirmation] = useState("");
   const [restoring, setRestoring] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const ready =
     vinemaContext.status === "ready" &&
     auth.isAuthenticated &&
@@ -64,6 +77,20 @@ export function KnowledgeBackupMenuActions() {
       feedback.success("Respaldo listo.");
     } catch {
       feedback.error("No se pudo respaldar el conocimiento.");
+    }
+  }
+
+  async function handleResetSelect() {
+    if (vinemaContext.status !== "ready") {
+      feedback.error("No se pudo cargar el workspace local.");
+      return;
+    }
+
+    try {
+      setResetSummary(await summarizeLocalKnowledge(vinemaContext.workspace.id));
+      setResetConfirmation("");
+    } catch {
+      feedback.error("No se pudo preparar el vaciado.");
     }
   }
 
@@ -128,10 +155,45 @@ export function KnowledgeBackupMenuActions() {
     }
   }
 
+  async function confirmReset() {
+    if (vinemaContext.status !== "ready" || !auth.accessToken) {
+      feedback.error("No se pudo cargar el contexto de vaciado.");
+      return;
+    }
+
+    setResetting(true);
+    feedback.saving();
+    try {
+      const baseUrl = getPublicApiUrl();
+      if (!baseUrl) {
+        throw new Error("API no configurada.");
+      }
+
+      await resetKnowledge({
+        workspaceId: vinemaContext.workspace.id,
+        confirmation: resetConfirmation,
+        storage: storageAdapter,
+        remoteClient: createKnowledgeResetClient({
+          baseUrl,
+          accessTokenProvider: {
+            getAccessToken: () => auth.accessToken,
+          },
+        }),
+      });
+      setResetSummary(null);
+      setResetConfirmation("");
+      feedback.success("Conocimiento vaciado.");
+    } catch (error) {
+      feedback.error(toUserResetError(error));
+    } finally {
+      setResetting(false);
+    }
+  }
+
   return (
     <>
       <DropdownMenuItem
-        disabled={!ready}
+        disabled={!ready || resetting}
         onSelect={(event) => {
           event.preventDefault();
           void handleBackup();
@@ -141,7 +203,7 @@ export function KnowledgeBackupMenuActions() {
         Respaldar conocimiento
       </DropdownMenuItem>
       <DropdownMenuItem
-        disabled={!ready}
+        disabled={!ready || resetting}
         onSelect={(event) => {
           event.preventDefault();
           handleRestoreSelect();
@@ -149,6 +211,17 @@ export function KnowledgeBackupMenuActions() {
       >
         <Upload className="mr-2 h-4 w-4" aria-hidden="true" />
         Restaurar conocimiento
+      </DropdownMenuItem>
+      <DropdownMenuItem
+        disabled={!ready || restoring || resetting}
+        className="text-red-700 focus:bg-red-50 focus:text-red-800"
+        onSelect={(event) => {
+          event.preventDefault();
+          void handleResetSelect();
+        }}
+      >
+        <Trash2 className="mr-2 h-4 w-4" aria-hidden="true" />
+        Vaciar conocimiento
       </DropdownMenuItem>
       <input
         ref={fileInputRef}
@@ -166,7 +239,88 @@ export function KnowledgeBackupMenuActions() {
           onConfirm={confirmRestore}
         />
       ) : null}
+      {resetSummary ? (
+        <ResetConfirmationDialog
+          summary={resetSummary}
+          confirmation={resetConfirmation}
+          resetting={resetting}
+          onConfirmationChange={setResetConfirmation}
+          onCancel={() => setResetSummary(null)}
+          onConfirm={confirmReset}
+        />
+      ) : null}
     </>
+  );
+}
+
+function ResetConfirmationDialog({
+  summary,
+  confirmation,
+  resetting,
+  onConfirmationChange,
+  onCancel,
+  onConfirm,
+}: {
+  summary: KnowledgeResetCounts;
+  confirmation: string;
+  resetting: boolean;
+  onConfirmationChange(value: string): void;
+  onCancel(): void;
+  onConfirm(): void;
+}) {
+  const canReset = confirmation === KNOWLEDGE_RESET_CONFIRMATION && !resetting;
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-zinc-950/20 px-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="reset-knowledge-title"
+    >
+      <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
+        <h2 id="reset-knowledge-title" className="text-base font-semibold text-zinc-950">
+          Vaciar conocimiento
+        </h2>
+        <div className="mt-4 space-y-3 text-sm text-zinc-600">
+          <p>
+            {summary.nodes} capturas · {summary.contexts} conceptos ·{" "}
+            {summary.relations} relaciones
+          </p>
+          <p>
+            Esta accion elimina el conocimiento del workspace en todos los
+            dispositivos. Antes de continuar, usa Respaldar conocimiento.
+          </p>
+          <label className="block text-xs font-medium text-zinc-700">
+            Escribe VACIAR para confirmar
+            <input
+              className="mt-2 h-10 w-full rounded-md border border-zinc-200 px-3 text-sm outline-none focus:ring-2 focus:ring-zinc-400"
+              value={confirmation}
+              onChange={(event) => onConfirmationChange(event.target.value)}
+              disabled={resetting}
+              autoComplete="off"
+            />
+          </label>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={onCancel}
+            disabled={resetting}
+          >
+            Cancelar
+          </Button>
+          <Button
+            type="button"
+            className="bg-red-700 hover:bg-red-800"
+            onClick={onConfirm}
+            disabled={!canReset}
+          >
+            Vaciar conocimiento
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -234,4 +388,12 @@ function toUserRestoreError(error: unknown) {
   }
 
   return "No se pudo restaurar el respaldo.";
+}
+
+function toUserResetError(error: unknown) {
+  if (error instanceof KnowledgeResetError) {
+    return error.message;
+  }
+
+  return "No se pudo vaciar el conocimiento.";
 }

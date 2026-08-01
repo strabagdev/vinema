@@ -11,6 +11,8 @@ import {
   loginResponseSchema,
   logoutRequestSchema,
   logoutResponseSchema,
+  knowledgeResetRequestSchema,
+  knowledgeResetResponseSchema,
   pullRequestSchema,
   pushRequestSchema,
   refreshSessionRequestSchema,
@@ -253,6 +255,47 @@ export function createVinemaApiServer({
 
     const response = await processPull(store, parsed.data);
     return reply.send(response);
+  });
+
+  app.post("/api/knowledge/reset", async (request, reply) => {
+    const parsed = knowledgeResetRequestSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return reply.status(400).send(
+        syncError(
+          "INVALID_REQUEST",
+          "La solicitud no es valida.",
+          parsed.error.issues,
+        ),
+      );
+    }
+
+    const authContext = authorizeSyncRequest({
+      request,
+      workspaceId: parsed.data.workspaceId,
+      tokenConfig,
+      apiKey,
+    });
+    if (authContext instanceof AuthError) {
+      return sendAuthError(reply, authContext);
+    }
+
+    if (parsed.data.workspaceId !== authContext.workspaceId) {
+      return reply
+        .status(403)
+        .send(authErrorResponse("WORKSPACE_FORBIDDEN", "Workspace no permitido."));
+    }
+
+    if (!(await store.workspaceExists(parsed.data.workspaceId))) {
+      return reply
+        .status(404)
+        .send(syncError("WORKSPACE_NOT_FOUND", "El workspace no existe."));
+    }
+
+    const response = await store.resetKnowledge({
+      workspaceId: parsed.data.workspaceId,
+    });
+    return reply.send(knowledgeResetResponseSchema.parse(response));
   });
 
   app.setErrorHandler((_error, _request, reply) => {

@@ -363,8 +363,102 @@ describe("Vinema sync API", () => {
     expect(
       [firstPage.json(), secondPage.json()]
         .flatMap((response) => response.changes)
-        .every((change) => change.entity.workspaceId === workspaceId),
+        .every((change) =>
+          change.entityType === "workspaceKnowledgeReset"
+            ? change.reset.workspaceId === workspaceId
+            : change.entity.workspaceId === workspaceId,
+        ),
     ).toBe(true);
+  });
+
+  it("resets workspace knowledge behind auth, keeps workspace, and emits pull reset event", async () => {
+    const store = new InMemorySyncStore([workspaceId, otherWorkspaceId]);
+    const app = createVinemaApiServer({ store, apiKey });
+    const captureId = "55555555-5555-4555-8555-555555555555";
+    const conceptId = "66666666-6666-4666-8666-666666666666";
+    const relationId = "77777777-7777-4777-8777-777777777777";
+
+    await processPush(store, {
+      workspaceId,
+      deviceId,
+      mutations: [
+        captureMutation({
+          mutationId: "11111111-eeee-4eee-8eee-111111111111",
+          entityId: captureId,
+          baseVersion: null,
+        }),
+        conceptMutation({
+          mutationId: "22222222-eeee-4eee-8eee-222222222222",
+          entityId: conceptId,
+          baseVersion: null,
+        }),
+        relationMutation({
+          mutationId: "33333333-eeee-4eee-8eee-333333333333",
+          entityId: relationId,
+          captureId,
+          conceptId,
+          baseVersion: null,
+        }),
+      ],
+    });
+
+    const unauthorized = await app.inject({
+      method: "POST",
+      url: "/api/knowledge/reset",
+      payload: { workspaceId, confirmation: "VACIAR" },
+    });
+    const wrongConfirmation = await app.inject({
+      method: "POST",
+      url: "/api/knowledge/reset",
+      headers: authHeaders(),
+      payload: { workspaceId, confirmation: "BORRAR" },
+    });
+    const reset = await app.inject({
+      method: "POST",
+      url: "/api/knowledge/reset",
+      headers: authHeaders(),
+      payload: { workspaceId, confirmation: "VACIAR" },
+    });
+    const secondReset = await app.inject({
+      method: "POST",
+      url: "/api/knowledge/reset",
+      headers: authHeaders(),
+      payload: { workspaceId, confirmation: "VACIAR" },
+    });
+    const pullReset = await app.inject({
+      method: "GET",
+      url: `/api/sync/pull?workspaceId=${workspaceId}&cursor=3&limit=10`,
+      headers: authHeaders(),
+    });
+
+    expect(unauthorized.statusCode).toBe(401);
+    expect(wrongConfirmation.statusCode).toBe(400);
+    expect(reset.statusCode).toBe(200);
+    expect(reset.json()).toMatchObject({
+      workspaceId,
+      deleted: {
+        captures: 1,
+        concepts: 1,
+        relations: 1,
+      },
+    });
+    expect(secondReset.statusCode).toBe(200);
+    expect(secondReset.json().deleted).toEqual({
+      captures: 0,
+      concepts: 0,
+      relations: 0,
+    });
+    expect(store.workspaces.has(workspaceId)).toBe(true);
+    expect(store.captures.size).toBe(0);
+    expect(store.concepts.size).toBe(0);
+    expect(store.captureConcepts.size).toBe(0);
+    expect(pullReset.json().changes).toContainEqual(
+      expect.objectContaining({
+        entityType: "workspaceKnowledgeReset",
+        operation: "reset",
+        reset: expect.objectContaining({ workspaceId }),
+      }),
+    );
   });
 
   it("validates invalid uuid, invalid dates, content length, batch size and unknown entities", async () => {

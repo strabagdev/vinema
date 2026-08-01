@@ -24,6 +24,10 @@ const OPERATION = {
   archive: "ARCHIVE",
 } as const;
 
+const RESET_MARKER_ENTITY_TYPE = "CAPTURE";
+const RESET_MARKER_OPERATION = "ARCHIVE";
+const RESET_MARKER_ENTITY_VERSION = 0;
+
 export class PrismaSyncStore implements SyncStore {
   constructor(private readonly prisma: PrismaClient) {}
 
@@ -177,12 +181,79 @@ export class PrismaSyncStore implements SyncStore {
       take: input.limit,
     });
 
-    return changes.map((change) => ({
-      sequence: change.sequence.toString(),
-      entityType: fromPrismaEntityType(change.entityType),
-      entityId: change.entityId,
-      operation: change.operation === "ARCHIVE" ? "archive" : "upsert",
-    }));
+    return changes.map((change) => {
+      if (
+        change.entityType === RESET_MARKER_ENTITY_TYPE &&
+        change.operation === RESET_MARKER_OPERATION &&
+        change.entityId === input.workspaceId &&
+        change.entityVersion === RESET_MARKER_ENTITY_VERSION
+      ) {
+        return {
+          sequence: change.sequence.toString(),
+          entityType: "workspaceKnowledgeReset",
+          entityId: input.workspaceId,
+          operation: "reset",
+          occurredAt: change.changedAt.toISOString(),
+        };
+      }
+
+      return {
+        sequence: change.sequence.toString(),
+        entityType: fromPrismaEntityType(change.entityType),
+        entityId: change.entityId,
+        operation: change.operation === "ARCHIVE" ? "archive" : "upsert",
+      };
+    });
+  }
+
+  async resetKnowledge(input: {
+    workspaceId: string;
+    occurredAt?: Date;
+  }): Promise<{
+    workspaceId: string;
+    resetVersion: string;
+    occurredAt: string;
+    deleted: { captures: number; concepts: number; relations: number };
+  }> {
+    const occurredAt = input.occurredAt ?? new Date();
+
+    return this.prisma.$transaction(async (tx) => {
+      const relationResult = await tx.captureConcept.deleteMany({
+        where: {
+          OR: [
+            { capture: { workspaceId: input.workspaceId } },
+            { concept: { workspaceId: input.workspaceId } },
+          ],
+        },
+      });
+      const captureResult = await tx.capture.deleteMany({
+        where: { workspaceId: input.workspaceId },
+      });
+      const conceptResult = await tx.concept.deleteMany({
+        where: { workspaceId: input.workspaceId },
+      });
+      const change = await tx.syncChange.create({
+        data: {
+          workspaceId: input.workspaceId,
+          entityType: RESET_MARKER_ENTITY_TYPE,
+          entityId: input.workspaceId,
+          operation: RESET_MARKER_OPERATION,
+          entityVersion: RESET_MARKER_ENTITY_VERSION,
+          changedAt: occurredAt,
+        },
+      });
+
+      return {
+        workspaceId: input.workspaceId,
+        resetVersion: change.sequence.toString(),
+        occurredAt: occurredAt.toISOString(),
+        deleted: {
+          captures: captureResult.count,
+          concepts: conceptResult.count,
+          relations: relationResult.count,
+        },
+      };
+    });
   }
 }
 

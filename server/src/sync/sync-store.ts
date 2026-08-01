@@ -8,12 +8,19 @@ import type {
 
 export type SyncEntityType = "capture" | "concept" | "captureConcept";
 export type SyncOperation = "upsert" | "archive";
+export type ResetSyncOperation = "reset";
 
 export type StoredSyncChange = {
   sequence: string;
   entityType: SyncEntityType;
   entityId: string;
   operation: SyncOperation;
+} | {
+  sequence: string;
+  entityType: "workspaceKnowledgeReset";
+  entityId: string;
+  operation: ResetSyncOperation;
+  occurredAt: string;
 };
 
 export type StoredEntity =
@@ -41,6 +48,19 @@ export interface SyncStore {
     version: number;
     operation: SyncOperation;
     serverCursor: string;
+  }>;
+  resetKnowledge(input: {
+    workspaceId: string;
+    occurredAt?: Date;
+  }): Promise<{
+    workspaceId: string;
+    resetVersion: string;
+    occurredAt: string;
+    deleted: {
+      captures: number;
+      concepts: number;
+      relations: number;
+    };
   }>;
   listChanges(input: {
     workspaceId: string;

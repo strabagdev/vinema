@@ -216,6 +216,62 @@ describe("pull coordinator", () => {
     unsubscribe();
   });
 
+  it("applies a workspace knowledge reset change and clears pending local mutations", async () => {
+    const events: unknown[] = [];
+    const unsubscribe = subscribeToSyncDataChanged((detail) => {
+      events.push(detail);
+    });
+    await seedCapture({ version: 1 });
+    await seedConcept({ version: 1 });
+    await seedRelation({ version: 1 });
+    await new IndexedDbSyncOutboxRepository(() => now).enqueue({
+      workspaceId,
+      deviceId,
+      mutation: captureMutation({
+        mutationId: "66666666-6666-4666-8666-666666666666",
+        entityId: captureId,
+        baseVersion: 1,
+      }),
+    });
+    const setup = createSetup({
+      responses: [
+        pullResponse({
+          changes: [knowledgeResetChange({ sequence: "8" })],
+          nextCursor: "8",
+        }),
+      ],
+    });
+
+    const result = await setup.coordinator.run();
+    const db = await getVinemaDb();
+
+    expect(result).toMatchObject({
+      status: "SUCCESS",
+      pulled: 1,
+      applied: 1,
+      nextCursor: "8",
+    });
+    await expect(db.get(NODES_STORE, captureId)).resolves.toBeUndefined();
+    await expect(db.get(CONTEXTS_STORE, conceptId)).resolves.toBeUndefined();
+    await expect(
+      db.get(NODE_CONTEXT_RELATIONS_STORE, relationId),
+    ).resolves.toBeUndefined();
+    await expect(
+      db.get(SYNC_METADATA_STORE, [workspaceId, deviceId]),
+    ).resolves.toMatchObject({ pullCursor: "8" });
+    await expect(
+      new IndexedDbSyncOutboxRepository().listPending(workspaceId, 10),
+    ).resolves.toHaveLength(0);
+    expect(events).toEqual([
+      {
+        workspaceId,
+        entityTypes: ["capture", "concept", "captureConcept"],
+        changedAt: now,
+      },
+    ]);
+    unsubscribe();
+  });
+
   it("applies newer versions, keeps equal versions idempotent and ignores older versions", async () => {
     await seedCapture({ version: 2, content: "Local v2" });
     const newer = createSetup({
@@ -504,6 +560,19 @@ function relationChange(input: {
       updatedAt: now,
       archivedAt: input.archivedAt ?? null,
       version: input.version ?? 1,
+    },
+  };
+}
+
+function knowledgeResetChange(input: { sequence: string }) {
+  return {
+    sequence: input.sequence,
+    entityType: "workspaceKnowledgeReset" as const,
+    operation: "reset" as const,
+    reset: {
+      workspaceId,
+      occurredAt: now,
+      resetVersion: input.sequence,
     },
   };
 }

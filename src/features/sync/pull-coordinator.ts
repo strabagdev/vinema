@@ -272,6 +272,14 @@ async function processPullBatches(input: {
 }
 
 function collectChangedEntityTypes(response: PullResponse): SyncDataEntityType[] {
+  if (
+    response.changes.some(
+      (change) => change.entityType === "workspaceKnowledgeReset",
+    )
+  ) {
+    return ["capture", "concept", "captureConcept"];
+  }
+
   return Array.from(
     new Set(
       response.changes.map((change) => change.entityType as SyncDataEntityType),

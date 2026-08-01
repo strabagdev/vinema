@@ -125,6 +125,19 @@ export async function processPull(
   const changes = await store.listChanges(input);
   const hydrated = await Promise.all(
     changes.map(async (change) => {
+      if (change.entityType === "workspaceKnowledgeReset") {
+        return {
+          sequence: change.sequence,
+          entityType: change.entityType,
+          operation: change.operation,
+          reset: {
+            workspaceId: input.workspaceId,
+            occurredAt: change.occurredAt,
+            resetVersion: change.sequence,
+          },
+        };
+      }
+
       const stored = await store.getEntity(
         input.workspaceId,
         change.entityType,

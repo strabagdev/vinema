@@ -151,10 +151,42 @@ export const syncChangeSchema = z.object({
   entity: remoteEntitySchema,
 });
 
+export const workspaceKnowledgeResetChangeSchema = z.object({
+  sequence: z.string(),
+  entityType: z.literal("workspaceKnowledgeReset"),
+  operation: z.literal("reset"),
+  reset: z.object({
+    workspaceId: uuidSchema,
+    occurredAt: isoDateSchema,
+    resetVersion: z.string(),
+  }),
+});
+
+export const pullChangeSchema = z.union([
+  syncChangeSchema,
+  workspaceKnowledgeResetChangeSchema,
+]);
+
 export const pullResponseSchema = z.object({
-  changes: z.array(syncChangeSchema),
+  changes: z.array(pullChangeSchema),
   nextCursor: z.string(),
   hasMore: z.boolean(),
+});
+
+export const knowledgeResetRequestSchema = z.object({
+  workspaceId: uuidSchema,
+  confirmation: z.literal("VACIAR"),
+});
+
+export const knowledgeResetResponseSchema = z.object({
+  workspaceId: uuidSchema,
+  resetVersion: z.string(),
+  occurredAt: isoDateSchema,
+  deleted: z.object({
+    captures: z.number().int().nonnegative(),
+    concepts: z.number().int().nonnegative(),
+    relations: z.number().int().nonnegative(),
+  }),
 });
 
 export const syncErrorSchema = z.object({
@@ -342,6 +374,8 @@ export type PushRequest = z.infer<typeof pushRequestSchema>;
 export type PushResponse = z.infer<typeof pushResponseSchema>;
 export type PullRequest = z.infer<typeof pullRequestSchema>;
 export type PullResponse = z.infer<typeof pullResponseSchema>;
+export type KnowledgeResetRequest = z.infer<typeof knowledgeResetRequestSchema>;
+export type KnowledgeResetResponse = z.infer<typeof knowledgeResetResponseSchema>;
 export type SyncConflict = z.infer<typeof syncConflictSchema>;
 export type SyncError = z.infer<typeof syncErrorSchema>;
 export type AuthenticatedUser = z.infer<typeof authenticatedUserSchema>;
