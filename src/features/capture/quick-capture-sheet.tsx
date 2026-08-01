@@ -26,6 +26,7 @@ import {
 } from "@/features/capture/capture-flow";
 import type { CaptureEmergentIdentity } from "@/features/identity/capture-emergent-identity";
 import { loadCaptureEmergentIdentities } from "@/features/identity/load-capture-emergent-identities";
+import { useVisualFeedback } from "@/features/feedback/visual-feedback-provider";
 import type { SearchNodesRepositories } from "@/features/recovery/search-nodes";
 import type { StorageAdapter } from "@/infrastructure/storage/storage-adapter";
 
@@ -54,12 +55,11 @@ export function QuickCaptureSheet({
   storage,
   repositories,
 }: QuickCaptureSheetProps) {
+  const feedback = useVisualFeedback();
   const [content, setContent] = useState("");
   const [draftLoaded, setDraftLoaded] = useState(false);
   const [draftStatus, setDraftStatus] = useState<DraftStatus>("idle");
   const [draftError, setDraftError] = useState<string | null>(null);
-  const [captureError, setCaptureError] = useState<string | null>(null);
-  const [captureFeedback, setCaptureFeedback] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
   const [memoryIdentities, setMemoryIdentities] = useState<
     Map<string, CaptureEmergentIdentity>
@@ -140,8 +140,6 @@ export function QuickCaptureSheet({
 
     queueMicrotask(() => {
       setDraftLoaded(false);
-      setCaptureError(null);
-      setCaptureFeedback(null);
       void restoreDraft();
     });
   }, [open, restoreDraft]);
@@ -187,6 +185,20 @@ export function QuickCaptureSheet({
     };
   }, [content, draftLoaded, open, storage]);
 
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    if (draftStatus === "saving") {
+      feedback.saving();
+    }
+
+    if (draftStatus === "error") {
+      feedback.error(draftError ?? "Error al guardar el borrador.");
+    }
+  }, [draftError, draftStatus, feedback, open]);
+
   function handleOpenChange(nextOpen: boolean) {
     onOpenChange(nextOpen);
 
@@ -205,15 +217,12 @@ export function QuickCaptureSheet({
     }
 
     if (!content.trim()) {
-      setCaptureError("Escribe algo antes de capturar.");
-      setCaptureFeedback(null);
+      feedback.error("Escribe algo antes de capturar.");
       return;
     }
 
     captureInFlightRef.current = true;
     setCapturing(true);
-    setCaptureError(null);
-    setCaptureFeedback(null);
 
     try {
       if (saveTimerRef.current) {
@@ -232,14 +241,13 @@ export function QuickCaptureSheet({
 
       setContent("");
       setDraftStatus("idle");
-      setCaptureFeedback(
-        result.relationError
-          ? "Captura guardada. Algunas asociaciones no pudieron persistirse."
-          : "Captura guardada en la Base de Conocimiento.",
-      );
+      feedback.capture();
+      if (result.relationError) {
+        feedback.error("Algunas asociaciones no pudieron persistirse.");
+      }
       handleOpenChange(false);
     } catch (error) {
-      setCaptureError(
+      feedback.error(
         error instanceof Error
           ? error.message
           : "No se pudo guardar la captura.",
@@ -318,8 +326,6 @@ export function QuickCaptureSheet({
                 setContent(nextContent);
                 setDraftStatus(nextContent.trim() ? "saving" : "idle");
                 setDraftError(null);
-                setCaptureError(null);
-                setCaptureFeedback(null);
               }}
             />
             <CaptureRecoveryResults
@@ -331,22 +337,7 @@ export function QuickCaptureSheet({
               onOpenCapture={persistCurrentDraft}
             />
 
-            <div className="min-h-5 text-sm text-zinc-500" aria-live="polite">
-              {draftStatus === "loading" ? "Cargando borrador" : null}
-              {draftStatus === "saving" ? "Guardando borrador" : null}
-              {draftStatus === "saved" ? "Borrador guardado" : null}
-              {draftStatus === "error" ? "Error al guardar" : null}
-              {draftError ? `: ${draftError}` : null}
-            </div>
-
-            <div className="min-h-5 text-sm" aria-live="polite">
-              {captureError ? (
-                <p className="text-red-600">{captureError}</p>
-              ) : null}
-              {captureFeedback ? (
-                <p className="text-zinc-600">{captureFeedback}</p>
-              ) : null}
-            </div>
+            <div className="min-h-5" aria-hidden="true" />
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">

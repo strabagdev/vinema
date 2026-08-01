@@ -51,7 +51,10 @@ import {
   IndexedDbSyncMetadataRepository,
   IndexedDbSyncOutboxRepository,
 } from "@/features/sync/sync-outbox-repository";
-import { createSyncStateEngine } from "@/features/sync/sync-state-engine";
+import {
+  createSyncStateEngine,
+  type SyncState,
+} from "@/features/sync/sync-state-engine";
 
 const AUTHENTICATED_SYNC_INTERVAL_MS = 10_000;
 
@@ -61,6 +64,7 @@ export type AuthContextValue = {
   workspaceId: string | null;
   deviceId: string | null;
   accessToken: string | undefined;
+  syncState: SyncState;
   isAuthenticated: boolean;
   isLoading: boolean;
   error: AuthState["error"];
@@ -72,6 +76,7 @@ export type AuthContextValue = {
 
 type AuthRuntime = {
   lifecycle: AuthenticationLifecycle;
+  syncStateEngine: ReturnType<typeof createSyncStateEngine>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -85,6 +90,9 @@ export function AuthProvider({
 }) {
   const [runtime] = useState(() => createAuthRuntime(authSessionStorage));
   const [state, setState] = useState<AuthState>(() => runtime.lifecycle.getState());
+  const [syncState, setSyncState] = useState<SyncState>(() =>
+    runtime.syncStateEngine.getState(),
+  );
   const [accessToken, setAccessToken] = useState<string | undefined>(() =>
     runtime.lifecycle.getAccessToken(),
   );
@@ -94,6 +102,7 @@ export function AuthProvider({
     setState(nextState);
     setAccessToken(runtime.lifecycle.getAccessToken());
   }), [runtime]);
+  useEffect(() => runtime.syncStateEngine.subscribe(setSyncState), [runtime]);
 
   useEffect(() => {
     let mounted = true;
@@ -151,6 +160,7 @@ export function AuthProvider({
     workspaceId: state.workspaceId,
     deviceId: state.deviceId,
     accessToken,
+    syncState,
     isAuthenticated: Boolean(accessToken) && state.status === "AUTHENTICATED",
     isLoading:
       state.status === "BOOT" ||
@@ -165,7 +175,7 @@ export function AuthProvider({
     refresh,
     login,
     logout,
-  }), [accessToken, login, logout, refresh, register, state]);
+  }), [accessToken, login, logout, refresh, register, state, syncState]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
@@ -285,7 +295,7 @@ function createAuthRuntime(authSessionStorage?: AuthSessionStorage): AuthRuntime
     logger: process.env.NODE_ENV === "development" ? console : undefined,
   });
 
-  return { lifecycle };
+  return { lifecycle, syncStateEngine };
 }
 
 function createUnavailableAuthClient(error: PublicApiUrlError): AuthClient {

@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Archive, MoreHorizontal, SquarePen } from "lucide-react";
-import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -28,7 +27,6 @@ export function AppHeader({ pathname, onFocusWriting }: AppHeaderProps) {
   const { user, logout } = useAuth();
   const onHome = pathname === "/";
   const identity = user?.displayName || user?.email || "Sesion local";
-  const online = useOnlineStatus();
 
   function handleLogout() {
     logout();
@@ -48,14 +46,6 @@ export function AppHeader({ pathname, onFocusWriting }: AppHeaderProps) {
         <span className="hidden sm:inline">Vinema</span>
       </Link>
       <div className="ml-auto flex items-center gap-2">
-        {!online ? (
-          <span
-            className="hidden rounded-full border border-zinc-200 px-2.5 py-1 text-xs text-zinc-600 sm:inline-flex"
-            aria-live="polite"
-          >
-            Modo local
-          </span>
-        ) : null}
         {!onHome ? (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -94,30 +84,4 @@ export function AppHeader({ pathname, onFocusWriting }: AppHeaderProps) {
       </div>
     </header>
   );
-}
-
-function useOnlineStatus() {
-  const [online, setOnline] = useState(() => {
-    if (typeof navigator === "undefined") {
-      return true;
-    }
-
-    return navigator.onLine;
-  });
-
-  useEffect(() => {
-    function updateOnlineStatus() {
-      setOnline(navigator.onLine);
-    }
-
-    window.addEventListener("online", updateOnlineStatus);
-    window.addEventListener("offline", updateOnlineStatus);
-
-    return () => {
-      window.removeEventListener("online", updateOnlineStatus);
-      window.removeEventListener("offline", updateOnlineStatus);
-    };
-  }, []);
-
-  return online;
 }

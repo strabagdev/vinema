@@ -269,7 +269,7 @@ describe("NoteDetailView read mode", () => {
     await click(getButton(screen, "Editar"));
     await changeTextarea(screen.querySelector("textarea"), "Contenido autosave");
 
-    expect(screen.textContent).toContain("Cambios sin guardar");
+    expect(screen.textContent).not.toContain("Cambios sin guardar");
 
     await advanceTime(699);
     expect(onSave).not.toHaveBeenCalled();
@@ -279,7 +279,7 @@ describe("NoteDetailView read mode", () => {
     expect(onSave).toHaveBeenCalledWith({
       content: "Contenido autosave",
     });
-    expect(screen.textContent).toContain("Guardado");
+    expect(screen.textContent).not.toContain("Guardado");
     expect(screen.querySelector("textarea")).toBeTruthy();
   });
 
@@ -390,8 +390,8 @@ describe("NoteDetailView read mode", () => {
 
     expect(screen.querySelector("textarea")).toBeTruthy();
     expect(screen.querySelector("textarea")?.value).toBe("Borrador con fallo");
-    expect(screen.textContent).toContain("Error al guardar");
-    expect(screen.textContent).toContain("No se pudo escribir");
+    expect(screen.textContent).not.toContain("Error al guardar");
+    expect(screen.textContent).not.toContain("No se pudo escribir");
   });
 
   it("disables Listo while it is waiting for a save", async () => {
@@ -414,7 +414,7 @@ describe("NoteDetailView read mode", () => {
     await click(getButton(screen, "Listo"));
 
     expect(getButton(screen, "Listo")?.disabled).toBe(true);
-    expect(screen.textContent).toContain("Guardando...");
+    expect(screen.textContent).not.toContain("Guardando...");
 
     await act(async () => {
       resolveSave?.(baseNode);
@@ -472,15 +472,15 @@ describe("NoteDetailView read mode", () => {
     await changeTextarea(screen.querySelector("textarea"), "Borrador con error");
     await advanceAutosave();
 
-    expect(screen.textContent).toContain("Error al guardar");
-    expect(screen.textContent).toContain("IndexedDB fallo");
+    expect(screen.textContent).not.toContain("Error al guardar");
+    expect(screen.textContent).not.toContain("IndexedDB fallo");
     expect(screen.querySelector("textarea")?.value).toBe("Borrador con error");
 
     await changeTextarea(screen.querySelector("textarea"), "Borrador corregido");
     await advanceAutosave();
 
     expect(onSave).toHaveBeenCalledTimes(2);
-    expect(screen.textContent).toContain("Guardado");
+    expect(screen.textContent).not.toContain("Guardado");
   });
 
   it("does not mark newer changes as saved when an older save resolves", async () => {
@@ -509,7 +509,7 @@ describe("NoteDetailView read mode", () => {
     await changeTextarea(screen.querySelector("textarea"), "Cambio A");
     await advanceAutosave();
 
-    expect(screen.textContent).toContain("Guardando");
+    expect(screen.textContent).not.toContain("Guardando");
 
     await changeTextarea(screen.querySelector("textarea"), "Cambio B");
 
@@ -518,7 +518,7 @@ describe("NoteDetailView read mode", () => {
       await flushPromises();
     });
 
-    expect(screen.textContent).toContain("Cambios sin guardar");
+    expect(screen.textContent).not.toContain("Cambios sin guardar");
     expect(screen.textContent).not.toContain("Guardado");
 
     await advanceAutosave();
@@ -538,8 +538,8 @@ describe("NoteDetailView read mode", () => {
     await advanceAutosave();
 
     expect(onSave).not.toHaveBeenCalled();
-    expect(screen.textContent).toContain("Escribe contenido");
-    expect(screen.textContent).toContain("Cambios sin guardar");
+    expect(screen.textContent).not.toContain("Escribe contenido");
+    expect(screen.textContent).not.toContain("Cambios sin guardar");
   });
 
   it("flushes pending changes before returning to notes", async () => {
@@ -569,7 +569,7 @@ describe("NoteDetailView read mode", () => {
     await click(getButton(screen, "← Volver"));
 
     expect(onBack).not.toHaveBeenCalled();
-    expect(screen.textContent).toContain("No se pudo escribir");
+    expect(screen.textContent).not.toContain("No se pudo escribir");
     expect(screen.querySelector("textarea")).toBeTruthy();
   });
 
@@ -613,8 +613,8 @@ describe("NoteDetailView read mode", () => {
     await click(getButton(screen, "Restaurar"));
 
     expect(onRestore).toHaveBeenCalledOnce();
-    expect(screen.textContent).toContain("Captura restaurada.");
-    expect(screen.textContent).toContain("Ver en Base de Conocimiento");
+    expect(screen.textContent).not.toContain("Captura restaurada.");
+    expect(screen.textContent).not.toContain("Ver en Base de Conocimiento");
   });
 
   it("keeps a return action available for a missing note state", async () => {

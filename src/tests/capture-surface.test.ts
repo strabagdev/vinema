@@ -216,7 +216,7 @@ describe("CaptureSurface", () => {
     expect(screen.container.textContent).not.toContain(
       "Reunion con Mitcom sobre soporte",
     );
-    expect(screen.container.textContent).toContain("Captura guardada.");
+    expect(screen.container.textContent).not.toContain("Captura guardada.");
   });
 
   it("captures from an open panel and clears panels and indicators", async () => {

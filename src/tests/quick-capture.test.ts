@@ -26,6 +26,21 @@ vi.mock("@/features/auth/auth-provider", () => ({
     user: { email: "user@example.test", displayName: "User" },
     workspaceId: "workspace-1",
     accessToken: "access-token",
+    syncState: {
+      lifecycle: "STARTED",
+      phase: "IDLE",
+      connectivity: "ONLINE",
+      authentication: "AUTHENTICATED",
+      pendingMutations: 0,
+      processingMutations: 0,
+      failedMutations: 0,
+      conflictCount: 0,
+      lastRunStartedAt: null,
+      lastRunFinishedAt: null,
+      lastSuccessfulSyncAt: null,
+      nextRunAt: null,
+      lastError: null,
+    },
     isAuthenticated: true,
     isLoading: false,
     error: null,
@@ -93,7 +108,7 @@ describe("Global writing entry", () => {
 
     const { container } = await renderAppShell();
 
-    expect(container.textContent).toContain("Modo local");
+    expect(container.querySelector("[data-feedback-kind='offline']")).toBeTruthy();
   });
 
   it("uses Ctrl+Shift+K to focus writing without opening a second editor", async () => {

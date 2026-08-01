@@ -32,6 +32,7 @@ import type { CaptureEmergentIdentity } from "@/features/identity/capture-emerge
 import { CaptureEmergentIdentityLabel } from "@/features/identity/capture-emergent-identity-view";
 import { loadCaptureEmergentIdentities } from "@/features/identity/load-capture-emergent-identities";
 import { getConceptExplorationPath } from "@/features/exploration/concept-routes";
+import { useVisualFeedback } from "@/features/feedback/visual-feedback-provider";
 import { getCapturePreview } from "@/features/node/node-display";
 import { getNodeDetailPath } from "@/features/node/node-routes";
 import type { SearchNodesRepositories } from "@/features/recovery/search-nodes";
@@ -64,12 +65,11 @@ export function CaptureSurface({
   storage,
   repositories,
 }: CaptureSurfaceProps) {
+  const feedback = useVisualFeedback();
   const [content, setContent] = useState("");
   const [draftLoaded, setDraftLoaded] = useState(false);
   const [draftStatus, setDraftStatus] = useState<DraftStatus>("idle");
   const [draftError, setDraftError] = useState<string | null>(null);
-  const [captureError, setCaptureError] = useState<string | null>(null);
-  const [captureFeedback, setCaptureFeedback] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
   const [selectedContextIds, setSelectedContextIds] = useState<string[]>([]);
   const [selectedEmergingConcepts, setSelectedEmergingConcepts] = useState<
@@ -318,9 +318,9 @@ export function CaptureSurface({
     if (!content.trim()) {
       saveTimerRef.current = setTimeout(() => {
         const savePromise = saveCaptureDraft(storage, content)
-          .then(() => {
-            setDraftStatus("idle");
-            setDraftError(null);
+        .then(() => {
+          setDraftStatus("idle");
+          setDraftError(null);
           })
           .catch(() => {
             setDraftStatus("error");
@@ -356,21 +356,28 @@ export function CaptureSurface({
     };
   }, [content, draftLoaded, selectedContextIds, selectedEmergingConcepts, storage]);
 
+  useEffect(() => {
+    if (draftStatus === "saving") {
+      feedback.saving();
+    }
+
+    if (draftStatus === "error") {
+      feedback.error(draftError ?? "Error al guardar el borrador.");
+    }
+  }, [draftError, draftStatus, feedback]);
+
   async function handleCapture() {
     if (captureInFlightRef.current) {
       return;
     }
 
     if (!content.trim()) {
-      setCaptureError("Escribe algo antes de capturar.");
-      setCaptureFeedback(null);
+      feedback.error("Escribe algo antes de capturar.");
       return;
     }
 
     captureInFlightRef.current = true;
     setCapturing(true);
-    setCaptureError(null);
-    setCaptureFeedback(null);
     closePanelsForWriting();
 
     try {
@@ -396,20 +403,18 @@ export function CaptureSurface({
       setActivePanel(null);
       setInteractionSource(null);
       setDraftStatus("idle");
-      setCaptureFeedback(
-        result.relationError
-          ? "Captura guardada. Algunas asociaciones no pudieron persistirse."
-          : "Captura guardada.",
-      );
+      feedback.capture();
+      if (result.relationError) {
+        feedback.error("Algunas asociaciones no pudieron persistirse.");
+      }
       queueMicrotask(() => {
         textareaRef.current?.focus();
       });
     } catch (error) {
-      setCaptureError(
-        error instanceof Error
-          ? error.message
-          : "No se pudo guardar la captura.",
-      );
+      const message = error instanceof Error
+        ? error.message
+        : "No se pudo guardar la captura.";
+      feedback.error(message);
     } finally {
       captureInFlightRef.current = false;
       setCapturing(false);
@@ -531,8 +536,6 @@ export function CaptureSurface({
               setContent(nextContent);
               setDraftStatus(nextContent.trim() ? "saving" : "idle");
               setDraftError(null);
-              setCaptureError(null);
-              setCaptureFeedback(null);
             }}
           />
           {showIndicators ? (
@@ -645,12 +648,7 @@ export function CaptureSurface({
             </ProgressivePanel>
           ) : null}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-h-5 text-sm text-zinc-500" aria-live="polite">
-              {draftStatus === "saving" ? "Guardando borrador" : null}
-              {draftStatus === "saved" ? "Borrador guardado" : null}
-              {draftStatus === "error" ? "Error al guardar" : null}
-              {draftError ? `: ${draftError}` : null}
-            </div>
+            <div className="min-h-5" aria-hidden="true" />
             {hasContent ? (
               <Button
                 type="button"
@@ -668,14 +666,7 @@ export function CaptureSurface({
               </Button>
             ) : null}
           </div>
-          <div className="min-h-5 text-sm" aria-live="polite">
-            {captureError ? (
-              <p className="text-red-600">{captureError}</p>
-            ) : null}
-            {captureFeedback ? (
-              <p className="text-zinc-600">{captureFeedback}</p>
-            ) : null}
-          </div>
+          <div className="min-h-5" aria-hidden="true" />
         </div>
       </section>
     </main>

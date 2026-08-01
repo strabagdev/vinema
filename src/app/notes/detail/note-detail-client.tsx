@@ -30,6 +30,7 @@ import {
 } from "@/features/identity/capture-emergent-identity";
 import { CaptureEmergentIdentityLabel } from "@/features/identity/capture-emergent-identity-view";
 import { getConceptExplorationPath } from "@/features/exploration/concept-routes";
+import { useVisualFeedback } from "@/features/feedback/visual-feedback-provider";
 import {
   contextRepository,
   createLocalSyncRepositorySet,
@@ -297,6 +298,7 @@ export function NoteDetailView({
   onRestore?: () => Promise<Node>;
   onBack?: () => void;
 }) {
+  const feedback = useVisualFeedback();
   const [persistedNode, setPersistedNode] = useState(node);
   const [mode, setMode] = useState<"read" | "edit">("read");
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -306,7 +308,6 @@ export function NoteDetailView({
   const [formError, setFormError] = useState<string | null>(null);
   const [archiveConfirmationVisible, setArchiveConfirmationVisible] =
     useState(false);
-  const [restoreFeedback, setRestoreFeedback] = useState<string | null>(null);
   const [selectedContextIds, setSelectedContextIds] = useState<string[]>(
     relatedContexts.map((context) => context.id),
   );
@@ -342,6 +343,20 @@ export function NoteDetailView({
 
     setSelectedContexts(relatedContexts.map((context) => context.id));
   }, [relatedContexts]);
+
+  useEffect(() => {
+    if (saveStatus === "saving") {
+      feedback.saving();
+    }
+
+    if (saveStatus === "saved") {
+      feedback.capture();
+    }
+
+    if (saveStatus === "error") {
+      feedback.error(formError ?? "Error al guardar.");
+    }
+  }, [feedback, formError, saveStatus]);
 
   function setPersisted(nextNode: Node) {
     persistedNodeRef.current = nextNode;
@@ -578,11 +593,11 @@ export function NoteDetailView({
     try {
       await onArchive();
     } catch (caughtError) {
-      setFormError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : "No se pudo archivar la captura.",
-      );
+      const message = caughtError instanceof Error
+        ? caughtError.message
+        : "No se pudo archivar la captura.";
+      setFormError(message);
+      feedback.error(message);
       savingRef.current = false;
     }
   }
@@ -594,18 +609,17 @@ export function NoteDetailView({
 
     savingRef.current = true;
     setFormError(null);
-    setRestoreFeedback(null);
 
     try {
       const restored = await onRestore();
       setPersisted(restored);
-      setRestoreFeedback("Captura restaurada.");
+      feedback.capture();
     } catch (caughtError) {
-      setFormError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : "No se pudo restaurar la captura.",
-      );
+      const message = caughtError instanceof Error
+        ? caughtError.message
+        : "No se pudo restaurar la captura.";
+      setFormError(message);
+      feedback.error(message);
     } finally {
       savingRef.current = false;
     }
@@ -678,7 +692,6 @@ export function NoteDetailView({
           </div>
         ) : (
           <div className="flex flex-col gap-2 sm:items-end">
-            <SaveStatusIndicator status={saveStatus} />
             <div className="flex gap-2">
               <Button variant="ghost" onClick={handleBack} disabled={saveStatus === "saving"}>
                 ← Volver
@@ -698,19 +711,6 @@ export function NoteDetailView({
         )}
       </div>
 
-      {formError ? (
-        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {formError}
-        </p>
-      ) : null}
-      {restoreFeedback ? (
-        <p className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-600" aria-live="polite">
-          {restoreFeedback}{" "}
-          <Link href="/notes" className="font-medium underline">
-            Ver en Base de Conocimiento
-          </Link>
-        </p>
-      ) : null}
       {archiveConfirmationVisible && persistedNode.status !== "ARCHIVED" ? (
         <div
           className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"
@@ -926,29 +926,6 @@ function CaptureDates({ node }: { node: Node }) {
       Creada {createdAt}
       {showContentUpdated ? ` · Editada ${contentUpdatedAt}` : ""}
       {archivedAt ? ` · Archivada ${archivedAt}` : ""}
-    </p>
-  );
-}
-
-function SaveStatusIndicator({
-  status,
-}: {
-  status: "idle" | "dirty" | "saving" | "saved" | "error";
-}) {
-  if (status === "idle") {
-    return null;
-  }
-
-  const labelByStatus = {
-    dirty: "Cambios sin guardar",
-    saving: "Guardando...",
-    saved: "Guardado",
-    error: "Error al guardar",
-  } satisfies Record<Exclude<typeof status, "idle">, string>;
-
-  return (
-    <p className="text-sm font-medium text-zinc-600" role="status">
-      {labelByStatus[status]}
     </p>
   );
 }

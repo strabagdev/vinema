@@ -10,11 +10,17 @@ import { Button } from "@/components/ui/button";
 import { AuthGuard, isPublicAuthRoute } from "@/features/auth/auth-guard";
 import { AuthProvider } from "@/features/auth/auth-provider";
 import { requestFullCaptureFocus } from "@/features/capture/capture-events";
+import {
+  VisualFeedbackProvider,
+  VisualFeedbackViewport,
+} from "@/features/feedback/visual-feedback-provider";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <AuthProvider>
-      <AppShellContent>{children}</AppShellContent>
+      <VisualFeedbackProvider>
+        <AppShellContent>{children}</AppShellContent>
+      </VisualFeedbackProvider>
     </AuthProvider>
   );
 }
@@ -92,6 +98,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
               pathname={pathname}
               onFocusWriting={focusFullCapture}
             />
+            <VisualFeedbackViewport />
             <main className="flex flex-1">{children}</main>
           </div>
           <Button
