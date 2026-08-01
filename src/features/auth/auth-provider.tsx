@@ -71,6 +71,7 @@ export type AuthContextValue = {
   register(input: AuthRegisterInput): Promise<void>;
   login(input: AuthLoginInput): Promise<void>;
   refresh(): Promise<void>;
+  syncNow(): Promise<void>;
   logout(): Promise<void>;
 };
 
@@ -154,6 +155,10 @@ export function AuthProvider({
     setAccessToken(undefined);
   }, [runtime]);
 
+  const syncNow = useCallback(async () => {
+    await runtime.lifecycle.syncNow();
+  }, [runtime]);
+
   const value = useMemo<AuthContextValue>(() => ({
     state,
     user: state.user,
@@ -173,9 +178,10 @@ export function AuthProvider({
     error: state.error,
     register,
     refresh,
+    syncNow,
     login,
     logout,
-  }), [accessToken, login, logout, refresh, register, state, syncState]);
+  }), [accessToken, login, logout, refresh, register, state, syncNow, syncState]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

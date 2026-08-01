@@ -15,6 +15,7 @@ export type AuthenticationLifecycle = {
   login(input: AuthLoginInput): Promise<AuthenticatedSession>;
   refresh(): Promise<AuthenticatedSession>;
   logout(): Promise<void>;
+  syncNow(): Promise<void>;
   dispose(): void;
   getAccessToken(): string | undefined;
   getState(): AuthState;
@@ -26,7 +27,10 @@ export type AuthenticationLifecycleConfig = {
   refreshCoordinator: AuthRefreshCoordinator;
   configError?: PublicApiUrlError | null;
   syncBridge?: { dispose(): void };
-  authenticatedSync?: Pick<AuthenticatedSyncLifecycle, "handleAuthState" | "stop" | "dispose">;
+  authenticatedSync?: Pick<
+    AuthenticatedSyncLifecycle,
+    "handleAuthState" | "syncNow" | "stop" | "dispose"
+  >;
   logger?: { warn?(message: string, context?: Record<string, unknown>): void };
 };
 
@@ -92,6 +96,11 @@ export function createAuthenticationLifecycle({
     await service.logout();
   }
 
+  async function syncNow() {
+    assertActive();
+    await authenticatedSync?.syncNow();
+  }
+
   function dispose() {
     if (disposed) {
       return;
@@ -150,6 +159,7 @@ export function createAuthenticationLifecycle({
     login,
     refresh,
     logout,
+    syncNow,
     dispose,
     getAccessToken: () => service.getAccessToken(),
     getState: () => service.getState(),

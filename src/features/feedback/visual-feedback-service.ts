@@ -6,6 +6,7 @@ export type VisualFeedbackKind =
   | "offline"
   | "relation"
   | "saving"
+  | "success"
   | "synced"
   | "syncing";
 
@@ -40,6 +41,7 @@ export type VisualFeedbackService = {
   offline(): VisualFeedbackEvent;
   relation(): VisualFeedbackEvent;
   saving(): VisualFeedbackEvent;
+  success(message: string): VisualFeedbackEvent;
   synced(): VisualFeedbackEvent;
   syncing(): VisualFeedbackEvent;
   dismissCurrent(): void;
@@ -58,6 +60,7 @@ const PRIORITY = {
   syncing: 2,
   offline: 2,
   capture: 3,
+  success: 3,
   synced: 3,
   concept: 4,
   idea: 4,
@@ -113,7 +116,11 @@ export function createVisualFeedbackService(): VisualFeedbackService {
       dedupeKey: options.dedupeKey,
     };
 
-    if (event.kind === "capture" || event.kind === "error") {
+    if (
+      event.kind === "capture" ||
+      event.kind === "success" ||
+      event.kind === "error"
+    ) {
       state = removeKind(state, "saving");
     }
 
@@ -206,6 +213,12 @@ export function createVisualFeedbackService(): VisualFeedbackService {
         accessibleText: "Guardando.",
         durationMs: BRIEF_PULSE_MS,
         dedupeKey: "saving",
+      }),
+    success: (message) =>
+      publish("success", {
+        accessibleText: message,
+        durationMs: MIN_CAPTURE_CONFIRMATION_MS,
+        minVisibleMs: MIN_CAPTURE_CONFIRMATION_MS,
       }),
     synced: () =>
       publish("synced", {

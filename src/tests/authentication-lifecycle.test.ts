@@ -298,6 +298,7 @@ function createRefreshCoordinatorMock(
 function createAuthenticatedSyncMock() {
   return {
     handleAuthState: vi.fn(),
+    syncNow: vi.fn(),
     stop: vi.fn(),
     dispose: vi.fn(),
   };

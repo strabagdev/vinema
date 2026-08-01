@@ -12,7 +12,32 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/features/auth/auth-provider", () => ({
   useAuth: () => ({
     user: { email: "user@example.test", displayName: "User" },
+    isAuthenticated: true,
+    workspaceId: "workspace-1",
+    deviceId: "device-1",
+    syncNow: vi.fn(),
     logout: vi.fn(),
+  }),
+}));
+
+vi.mock("@/features/node/hooks/use-vinema-context", () => ({
+  useVinemaContext: () => ({
+    status: "ready",
+    workspace: {
+      id: "workspace-1",
+      name: "Personal",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    },
+    device: {
+      id: "device-1",
+      workspaceId: "workspace-1",
+      name: "Vinema Web",
+      platform: "WEB",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    },
+    error: null,
   }),
 }));
 
@@ -33,7 +58,11 @@ describe("AppHeader", () => {
 
     await click(screen.querySelector("button[aria-label='Abrir menu']"));
 
-    expect(screen.querySelector("a[href='/notes/archive']")).toBeTruthy();
+    expect(document.body.querySelector("a[href='/notes/archive']")).toBeTruthy();
+    expect(document.body.textContent).toContain("Respaldar conocimiento");
+    expect(document.body.textContent).toContain("Restaurar conocimiento");
+    expect(document.body.textContent).toContain("Cerrar sesion");
+    expect(document.body.textContent).not.toContain("Sincronizacion futura");
   });
 });
 
@@ -60,6 +89,7 @@ async function click(element: Element | null) {
   }
 
   await act(async () => {
+    element.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
     element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await flushPromises();
   });

@@ -185,6 +185,7 @@ function getVisualFeedbackPresentation(event: VisualFeedbackEvent | null) {
 
   switch (event.kind) {
     case "capture":
+    case "success":
       return {
         ...base,
         Icon: Check,

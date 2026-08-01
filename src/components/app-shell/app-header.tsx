@@ -17,6 +17,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { KnowledgeBackupMenuActions } from "@/components/app-shell/knowledge-backup-menu-actions";
 
 export type AppHeaderProps = {
   pathname: string;
@@ -74,9 +75,8 @@ export function AppHeader({ pathname, onFocusWriting }: AppHeaderProps) {
                 Archivo
               </Link>
             </DropdownMenuItem>
+            <KnowledgeBackupMenuActions />
             <DropdownMenuItem onClick={handleLogout}>Cerrar sesion</DropdownMenuItem>
-            <DropdownMenuItem disabled>Preferencias</DropdownMenuItem>
-            <DropdownMenuItem disabled>Sincronizacion futura</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

@@ -11,6 +11,7 @@ export type AuthenticatedSyncRuntime = {
 
 export type AuthenticatedSyncLifecycle = {
   handleAuthState(state: AuthState): void;
+  syncNow(): Promise<void>;
   stop(): void;
   dispose(): void;
 };
@@ -69,6 +70,10 @@ export function createAuthenticatedSyncLifecycle({
     runtime?.orchestrator.cancelCurrentRun();
   }
 
+  async function syncNow() {
+    await runtime?.orchestrator.syncNow();
+  }
+
   function dispose() {
     stop();
     disposeRuntime();
@@ -83,6 +88,7 @@ export function createAuthenticatedSyncLifecycle({
 
   return {
     handleAuthState,
+    syncNow,
     stop,
     dispose,
   };
