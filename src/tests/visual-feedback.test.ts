@@ -4,11 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   VisualFeedbackProvider,
   VisualFeedbackViewport,
+  VisualFeedbackWordmark,
   useVisualFeedback,
 } from "@/features/feedback/visual-feedback-provider";
 import {
   createVisualFeedbackService,
+  MIN_CAPTURE_CONFIRMATION_MS,
   MIN_CAPTURE_VISIBLE_MS,
+  SYNCED_VISIBLE_MS,
   type VisualFeedbackService,
 } from "@/features/feedback/visual-feedback-service";
 import { initialSyncState, type SyncState } from "@/features/sync/sync-state-engine";
@@ -74,6 +77,18 @@ describe("VisualFeedbackService", () => {
     ]);
   });
 
+  it("replaces transient saving with the local capture confirmation", () => {
+    const service = createVisualFeedbackService();
+
+    service.saving();
+    service.capture();
+
+    expect(service.getState().current?.kind).toBe("capture");
+    expect(service.getState().queue.map((event) => event.kind)).not.toContain(
+      "saving",
+    );
+  });
+
   it("deduplicates persistent offline and syncing states", () => {
     const service = createVisualFeedbackService();
 
@@ -113,18 +128,54 @@ describe("VisualFeedbackViewport", () => {
     document.body.replaceChildren();
   });
 
-  it("renders one fixed aria-live pulse and auto-dismisses success", async () => {
+  it("renders an aria-live region and keeps idle visually silent", async () => {
     const service = createVisualFeedbackService();
-    const screen = await renderFeedback(service, "capture");
+    const screen = await renderFeedback(service);
 
     const viewport = screen.querySelector("[data-visual-feedback-viewport]");
     expect(viewport?.getAttribute("aria-live")).toBe("polite");
-    expect(viewport?.className).toContain("fixed");
-    expect(viewport?.className).toContain("top-16");
-    expect(screen.querySelector("[data-feedback-kind='capture']")).toBeTruthy();
-    expect(visiblePulseText(screen)).toBe("");
+    expect(viewport?.className).toContain("sr-only");
+    expect(
+      screen.querySelector("[data-feedback-wordmark]")?.textContent,
+    ).toContain("Vinema");
+    expect(screen.querySelector("[data-feedback-wordmark] svg")).toBeNull();
+    expect(screen.querySelector("[data-feedback-kind='idle']")).toBeTruthy();
+  });
 
-    await advanceTime(900);
+  it("announces saving and makes the wordmark react", async () => {
+    const service = createVisualFeedbackService();
+    const screen = await renderFeedback(service, "saving");
+
+    expect(
+      screen.querySelector(
+        "[data-feedback-wordmark][data-feedback-kind='saving']",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.querySelector("[data-feedback-wordmark] .animate-pulse"),
+    ).toBeTruthy();
+    expect(
+      screen.querySelector("[data-visual-feedback-viewport]")?.textContent,
+    ).toBe("Guardando.");
+  });
+
+  it("announces local capture through the wordmark", async () => {
+    const service = createVisualFeedbackService();
+    const screen = await renderFeedback(service, "capture");
+
+    expect(
+      screen.querySelector(
+        "[data-feedback-wordmark][data-feedback-kind='capture']",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.querySelector("[data-feedback-wordmark] .text-emerald-600"),
+    ).toBeTruthy();
+    expect(
+      screen.querySelector("[data-visual-feedback-viewport]")?.textContent,
+    ).toBe("Captura creada.");
+
+    await advanceTime(MIN_CAPTURE_CONFIRMATION_MS);
 
     expect(screen.querySelector("[data-feedback-kind='idle']")).toBeTruthy();
   });
@@ -142,7 +193,7 @@ describe("VisualFeedbackViewport", () => {
 
     expect(screen.querySelector("[data-feedback-kind='capture']")).toBeTruthy();
 
-    await advanceTime(101);
+    await advanceTime(1);
 
     expect(screen.querySelector("[data-feedback-kind='syncing']")).toBeTruthy();
   });
@@ -153,7 +204,7 @@ describe("VisualFeedbackViewport", () => {
 
     expect(screen.querySelector("[data-feedback-kind='capture']")).toBeTruthy();
 
-    await advanceTime(900);
+    await advanceTime(MIN_CAPTURE_CONFIRMATION_MS);
 
     expect(screen.querySelector("[data-feedback-kind='idle']")).toBeTruthy();
   });
@@ -168,12 +219,12 @@ describe("VisualFeedbackViewport", () => {
       "capture",
     ]);
 
-    await advanceTime(900);
+    await advanceTime(MIN_CAPTURE_CONFIRMATION_MS);
 
     expect(screen.querySelector("[data-feedback-kind='capture']")).toBeTruthy();
     expect(service.getState().current?.id).not.toBe(firstId);
 
-    await advanceTime(900);
+    await advanceTime(MIN_CAPTURE_CONFIRMATION_MS);
 
     expect(screen.querySelector("[data-feedback-kind='idle']")).toBeTruthy();
   });
@@ -205,7 +256,7 @@ describe("VisualFeedbackViewport", () => {
 
     expect(screen.querySelector("[data-feedback-kind='synced']")).toBeTruthy();
 
-    await advanceTime(2_000);
+    await advanceTime(SYNCED_VISIBLE_MS);
 
     expect(screen.querySelector("[data-feedback-kind='idle']")).toBeTruthy();
   });
@@ -331,13 +382,18 @@ describe("VisualFeedbackViewport", () => {
     expect(screen.querySelector("[data-feedback-kind='syncing']")).toBeNull();
   });
 
-  it("shows offline persistently without visible words", async () => {
+  it("shows offline persistently without adding visible status copy", async () => {
     const service = createVisualFeedbackService();
     setNavigatorOnline(false);
     const screen = await renderFeedback(service);
 
     expect(screen.querySelector("[data-feedback-kind='offline']")).toBeTruthy();
-    expect(visiblePulseText(screen)).toBe("");
+    expect(screen.querySelector("[data-feedback-wordmark]")?.textContent).toBe(
+      "Vinema",
+    );
+    expect(screen.querySelector("[data-visual-feedback-viewport]")?.textContent).toBe(
+      "Modo local. Los cambios se sincronizaran luego.",
+    );
 
     await advanceTime(5_000);
 
@@ -351,9 +407,10 @@ describe("VisualFeedbackViewport", () => {
     expect(screen.querySelector("[data-feedback-kind='error']")).toBeTruthy();
     expect(screen.textContent).toContain("No fue posible sincronizar.");
     expect(screen.querySelector("[role='alert']")).toBeTruthy();
-    expect(screen.querySelector("[data-feedback-kind='error']")?.className).toContain(
-      "motion-reduce:transition-none",
-    );
+    expect(
+      screen.querySelector("[data-feedback-wordmark][data-feedback-kind='error']")
+        ?.className,
+    ).toContain("motion-reduce:transition-none");
   });
 
   it("shows multiple consecutive events one at a time", async () => {
@@ -362,7 +419,7 @@ describe("VisualFeedbackViewport", () => {
 
     expect(screen.querySelector("[data-feedback-kind='capture']")).toBeTruthy();
 
-    await advanceTime(900);
+    await advanceTime(MIN_CAPTURE_CONFIRMATION_MS);
 
     expect(screen.querySelector("[data-feedback-kind='idea']")).toBeTruthy();
 
@@ -376,6 +433,10 @@ function TestPublisher({ mode }: { mode?: string }) {
   const feedback = useVisualFeedback();
 
   useEffect(() => {
+    if (mode === "saving") {
+      feedback.saving();
+    }
+
     if (mode === "capture") {
       feedback.capture();
     }
@@ -420,6 +481,7 @@ async function renderFeedback(service: VisualFeedbackService, mode?: string) {
         VisualFeedbackProvider,
         { service },
         createElement(VisualFeedbackViewport),
+        createElement(VisualFeedbackWordmark),
         createElement(TestPublisher, { mode }),
       ),
     );
@@ -436,6 +498,7 @@ async function rerenderFeedback(service: VisualFeedbackService) {
         VisualFeedbackProvider,
         { service },
         createElement(VisualFeedbackViewport),
+        createElement(VisualFeedbackWordmark),
       ),
     );
     await flushPromises();
@@ -462,12 +525,6 @@ function syncState(overrides: Partial<SyncState>): SyncState {
     connectivity: "ONLINE",
     ...overrides,
   };
-}
-
-function visiblePulseText(container: HTMLElement) {
-  return Array.from(
-    container.querySelectorAll("[data-feedback-kind] span:not(.sr-only)"),
-  ).map((element) => element.textContent ?? "").join("");
 }
 
 async function flushPromises() {

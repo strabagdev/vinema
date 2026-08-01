@@ -49,8 +49,10 @@ export type VisualFeedbackService = {
 
 const AUTO_DISMISS_MS = 2_000;
 const BRIEF_PULSE_MS = 700;
-export const MIN_CAPTURE_VISIBLE_MS = 800;
-const CAPTURE_PULSE_MS = 900;
+export const MIN_CAPTURE_CONFIRMATION_MS = 1_800;
+export const MIN_CAPTURE_VISIBLE_MS = MIN_CAPTURE_CONFIRMATION_MS;
+export const SYNCED_VISIBLE_MS = 1_200;
+const CAPTURE_CONFIRMATION_MS = MIN_CAPTURE_CONFIRMATION_MS;
 const PRIORITY = {
   error: 1,
   syncing: 2,
@@ -111,6 +113,10 @@ export function createVisualFeedbackService(): VisualFeedbackService {
       dedupeKey: options.dedupeKey,
     };
 
+    if (event.kind === "capture" || event.kind === "error") {
+      state = removeKind(state, "saving");
+    }
+
     if (event.dedupeKey) {
       state = removeDedupeKey(state, event.dedupeKey);
     }
@@ -164,8 +170,8 @@ export function createVisualFeedbackService(): VisualFeedbackService {
     capture: () =>
       publish("capture", {
         accessibleText: "Captura creada.",
-        durationMs: CAPTURE_PULSE_MS,
-        minVisibleMs: MIN_CAPTURE_VISIBLE_MS,
+        durationMs: CAPTURE_CONFIRMATION_MS,
+        minVisibleMs: MIN_CAPTURE_CONFIRMATION_MS,
       }),
     concept: () =>
       publish("concept", {
@@ -204,6 +210,7 @@ export function createVisualFeedbackService(): VisualFeedbackService {
     synced: () =>
       publish("synced", {
         accessibleText: "Sincronizado.",
+        durationMs: SYNCED_VISIBLE_MS,
         dedupeKey: "sync",
       }),
     syncing: () =>
@@ -254,6 +261,16 @@ function removeDedupeKey(
   return {
     current: state.current?.dedupeKey === dedupeKey ? null : state.current,
     queue: state.queue.filter((event) => event.dedupeKey !== dedupeKey),
+  };
+}
+
+function removeKind(
+  state: VisualFeedbackState,
+  kind: VisualFeedbackKind,
+): VisualFeedbackState {
+  return {
+    current: state.current?.kind === kind ? null : state.current,
+    queue: state.queue.filter((event) => event.kind !== kind),
   };
 }
 

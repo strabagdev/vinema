@@ -4,7 +4,6 @@ import {
   AlertCircle,
   Brain,
   Check,
-  Circle,
   CircleDashed,
   Lightbulb,
   Link2,
@@ -104,12 +103,14 @@ export function VisualFeedbackViewport() {
 
   return (
     <div
-      className="pointer-events-none fixed left-1/2 top-16 z-50 flex w-full -translate-x-1/2 justify-center px-4 sm:top-[4.25rem]"
+      className="sr-only"
       aria-live="polite"
       aria-atomic="true"
       data-visual-feedback-viewport=""
+      data-feedback-kind={state.current?.kind ?? "idle"}
+      role={state.current?.kind === "error" ? "alert" : "status"}
     >
-      <VisualFeedbackPulse event={state.current} />
+      {getAccessibleFeedbackText(state.current)}
     </div>
   );
 }
@@ -118,43 +119,59 @@ export function createTestVisualFeedbackService() {
   return createVisualFeedbackService();
 }
 
-function VisualFeedbackPulse({ event }: { event: VisualFeedbackEvent | null }) {
-  const visual = getVisualFeedbackPresentation(event);
+export function VisualFeedbackWordmark() {
+  const service = useVisualFeedback();
+  const [state, setState] = useState<VisualFeedbackState>(() =>
+    service.getState(),
+  );
+  const visual = getVisualFeedbackPresentation(state.current);
+
+  useEffect(() => service.subscribe(setState), [service]);
 
   return (
-    <div
+    <span
       className={cn(
-        "flex min-h-9 min-w-9 items-center justify-center rounded-full border bg-white/85 shadow-[0_8px_24px_rgba(24,24,27,0.08)] backdrop-blur-sm transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none",
-        event ? "scale-100 opacity-100" : "scale-95 opacity-0",
-        visual.className,
+        "relative inline-flex min-h-8 items-center gap-1.5 text-sm font-semibold tracking-normal transition-colors duration-200 motion-reduce:transition-none",
+        visual.wordmarkClassName,
       )}
-      role={event?.kind === "error" ? "alert" : "status"}
-      data-feedback-kind={event?.kind ?? "idle"}
+      data-feedback-wordmark=""
+      data-feedback-kind={state.current?.kind ?? "idle"}
     >
-      <visual.Icon
-        className={cn(
-          "h-4 w-4",
-          visual.spin ? "animate-spin motion-reduce:animate-none" : null,
-          visual.pulse ? "animate-pulse motion-reduce:animate-none" : null,
-        )}
-        aria-hidden="true"
-      />
-      <span className="sr-only">{visual.accessibleText}</span>
-      {event?.kind === "error" && event.message ? (
-        <span className="ml-2 max-w-[min(80vw,26rem)] text-sm font-medium text-red-700">
-          {event.message}
+      <span>Vinema</span>
+      {visual.Icon ? (
+        <span
+          className={cn(
+            "inline-flex h-5 w-5 items-center justify-center rounded-full transition-[opacity,transform,color] duration-200 motion-reduce:transition-none",
+            visual.iconClassName,
+          )}
+          aria-hidden="true"
+        >
+          <visual.Icon
+            className={cn(
+              "h-3.5 w-3.5",
+              visual.spin ? "animate-spin motion-reduce:animate-none" : null,
+              visual.pulse ? "animate-pulse motion-reduce:animate-none" : null,
+            )}
+          />
         </span>
       ) : null}
-    </div>
+      {state.current?.kind === "error" && state.current.message ? (
+        <span className="hidden max-w-[18rem] truncate text-xs font-medium text-red-700 sm:inline">
+          {state.current.message}
+        </span>
+      ) : null}
+    </span>
   );
 }
 
 function getVisualFeedbackPresentation(event: VisualFeedbackEvent | null) {
   if (!event) {
     return {
-      Icon: Circle,
+      Icon: null,
       accessibleText: "Vinema en reposo.",
-      className: "border-zinc-200 text-zinc-300",
+      className: "",
+      iconClassName: "",
+      wordmarkClassName: "text-zinc-900",
       pulse: false,
       spin: false,
     };
@@ -168,11 +185,21 @@ function getVisualFeedbackPresentation(event: VisualFeedbackEvent | null) {
 
   switch (event.kind) {
     case "capture":
+      return {
+        ...base,
+        Icon: Check,
+        className: "border-violet-100 text-violet-400",
+        iconClassName: "text-emerald-600",
+        wordmarkClassName: "text-emerald-700",
+        pulse: true,
+      };
     case "saving":
       return {
         ...base,
         Icon: Sparkle,
         className: "border-violet-100 text-violet-400",
+        iconClassName: "text-violet-500",
+        wordmarkClassName: "text-violet-700",
         pulse: true,
       };
     case "concept":
@@ -180,24 +207,32 @@ function getVisualFeedbackPresentation(event: VisualFeedbackEvent | null) {
         ...base,
         Icon: Brain,
         className: "border-indigo-100 text-indigo-400",
+        iconClassName: "text-indigo-500",
+        wordmarkClassName: "text-zinc-900",
       };
     case "idea":
       return {
         ...base,
         Icon: Lightbulb,
         className: "border-amber-100 text-amber-500",
+        iconClassName: "text-amber-500",
+        wordmarkClassName: "text-zinc-900",
       };
     case "relation":
       return {
         ...base,
         Icon: Link2,
         className: "border-sky-100 text-sky-500",
+        iconClassName: "text-sky-500",
+        wordmarkClassName: "text-zinc-900",
       };
     case "syncing":
       return {
         ...base,
         Icon: LoaderCircle,
         className: "border-amber-100 text-amber-500",
+        iconClassName: "text-amber-500",
+        wordmarkClassName: "text-zinc-900",
         spin: true,
       };
     case "synced":
@@ -205,20 +240,34 @@ function getVisualFeedbackPresentation(event: VisualFeedbackEvent | null) {
         ...base,
         Icon: Check,
         className: "border-emerald-100 text-emerald-500",
+        iconClassName: "text-emerald-500",
+        wordmarkClassName: "text-zinc-900",
       };
     case "offline":
       return {
         ...base,
         Icon: CircleDashed,
         className: "border-zinc-200 text-zinc-400",
+        iconClassName: "text-zinc-400",
+        wordmarkClassName: "text-zinc-700",
       };
     case "error":
       return {
         ...base,
         Icon: AlertCircle,
         className: "border-red-100 text-red-600",
+        iconClassName: "text-red-600",
+        wordmarkClassName: "text-red-700",
       };
   }
+}
+
+function getAccessibleFeedbackText(event: VisualFeedbackEvent | null) {
+  if (!event) {
+    return "";
+  }
+
+  return event.message ?? event.accessibleText;
 }
 
 function bindSyncStateToFeedback(

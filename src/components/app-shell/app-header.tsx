@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/features/auth/auth-provider";
+import { VisualFeedbackWordmark } from "@/features/feedback/visual-feedback-provider";
 import {
   Tooltip,
   TooltipContent,
@@ -37,13 +38,10 @@ export function AppHeader({ pathname, onFocusWriting }: AppHeaderProps) {
     <header className="sticky top-0 z-30 flex min-h-14 items-center gap-3 bg-zinc-50/80 px-3 backdrop-blur sm:px-5">
       <Link
         href="/"
-        className="flex h-10 items-center gap-2 rounded-md px-2 text-sm font-semibold text-zinc-900 outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+        className="flex h-10 items-center rounded-md px-2 outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
         aria-label="Ir a Inicio"
       >
-        <span className="flex h-7 w-7 items-center justify-center rounded-md bg-zinc-900 text-xs font-semibold text-white">
-          V
-        </span>
-        <span className="hidden sm:inline">Vinema</span>
+        <VisualFeedbackWordmark />
       </Link>
       <div className="ml-auto flex items-center gap-2">
         {!onHome ? (
