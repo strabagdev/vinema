@@ -35,6 +35,8 @@ No muestra listas completas por defecto.
 
 El usuario puede abrir un panel por hover, foco o click/tap sobre el indicador. Solo un panel permanece abierto.
 
+Desde VIN-010D.1, en escritorio el panel es efimero: permanece visible mientras hay intencion de interactuar con el indicador o con el panel, y desaparece al retirar cursor o foco.
+
 ### Al volver a escribir
 
 Se cierran paneles abiertos, incluso si fueron abiertos por click, para priorizar la escritura. El borrador y las selecciones se conservan.
@@ -81,14 +83,29 @@ No se fabrica titulo ni se duplica la primera linea.
 
 ## Politica de apertura
 
-Se adopto la version conservadora del paquete:
+Se adopto una politica basada en intencion:
 
 - no hay apertura automatica por pausa;
-- hover/focus abre preview;
-- click/tap abre y fija el panel;
-- escribir cierra el panel.
+- hover abre el panel en escritorio;
+- foco de teclado abre el panel;
+- click abre el panel sin fijarlo permanentemente en escritorio;
+- tap abre bottom sheet en superficies tactiles;
+- escribir cierra el panel;
+- abrir un panel cierra el otro.
 
-Esta politica evita comportamiento invasivo hasta validar uso real.
+El cierre de escritorio tiene un retardo breve y cancelable. Si el puntero sale del indicador pero entra al panel durante ese intervalo, el cierre se cancela para evitar parpadeo.
+
+El retardo se limpia al desmontar, al escribir, al cambiar de panel y al capturar.
+
+## Estructura visual
+
+Los paneles ya no separan header y body con divisor interno. El encabezado y el contenido viven en un solo bloque suave.
+
+Regla aplicada:
+
+> En Vinema los elementos no estan contenidos por cajas. Estan contenidos por espacio.
+
+En escritorio no se renderiza boton X ni se reserva espacio para el. En mobile se conserva el cierre iconografico porque el bottom sheet no tiene hover ni salida de cursor.
 
 ## Header
 
@@ -113,9 +130,11 @@ Se mantiene:
 
 ## Responsive
 
-En escritorio, el panel se ancla cerca del editor sin mover el layout.
+En escritorio con `(hover: hover) and (pointer: fine)`, el panel se ancla cerca del editor sin mover el layout y se comporta como popover efimero.
 
-En tablet y movil, el mismo panel usa posicion fija inferior, con altura maxima y scroll interno. Esto funciona como bottom sheet parcial sin introducir una nueva dependencia ni reusar el sheet global de navegacion.
+En tablet tactil y movil, el mismo panel usa posicion fija inferior, con altura maxima y scroll interno. Esto funciona como bottom sheet parcial sin introducir una nueva dependencia ni reusar el sheet global de navegacion.
+
+La decision no depende solo del ancho: una pantalla amplia sin puntero fino usa comportamiento tactil.
 
 La composicion normal evita scroll vertical inicial. Si el texto crece demasiado, el contenido puede desplazarse naturalmente.
 
@@ -130,11 +149,13 @@ Se mantiene:
 - cierre con Escape;
 - foco devuelto al editor al cerrar panel o capturar;
 - navegacion por teclado;
+- Tab permite entrar al contenido del panel sin atraparlo como modal;
+- al abandonar foco de indicador y panel, el cierre se programa con retardo;
 - feedback mediante `aria-live`.
 
 ## Animaciones
 
-Se usan transiciones cortas de opacidad/color/posicion. No hay animacion constante.
+Se usan transiciones cortas de opacidad/color. No hay animacion constante ni movimiento de layout.
 
 Las clases usan `motion-reduce` para respetar preferencias de reduccion de movimiento.
 
@@ -154,4 +175,3 @@ Quedan para discutir:
 - si el estado de sincronizacion necesita provider React;
 - si Explorar debe reemplazar visualmente el historial actual;
 - si los paneles deben compartir un componente UI reutilizable formal.
-

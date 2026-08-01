@@ -53,6 +53,7 @@ const device: Device = {
 describe("CaptureSurface", () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    setPointerCapability("fine");
   });
 
   afterEach(() => {
@@ -430,6 +431,8 @@ describe("CaptureSurface", () => {
     expect(panel.dataset.layout).toBe("desktop-popover");
     expect(panel.className).not.toContain("bottom-0");
     expect(panel.className).toContain("md:max-h-[60vh]");
+    expect(getButtonByLabel(screen.container, "Cerrar panel")).toBeUndefined();
+    expect(screen.container.querySelector("[class*='border-b']")).toBeNull();
     expect(top).toBeGreaterThanOrEqual(16);
     expect(left).toBeGreaterThanOrEqual(16);
     expect(top + maxHeight).toBeLessThanOrEqual(768 - 16);
@@ -474,6 +477,121 @@ describe("CaptureSurface", () => {
     expect(panel.style.left).toBe("");
     expect(panel.className).toContain("bottom-[max(0.75rem,env(safe-area-inset-bottom))]");
     expect(panel.className).toContain("overflow-hidden");
+    expect(getButtonByLabel(screen.container, "Cerrar panel")).toBeDefined();
+  });
+
+  it("uses the mobile sheet on touch screens even when the viewport is wide", async () => {
+    setViewportSize({ width: 1024, height: 768 });
+    setPointerCapability("coarse");
+    const screen = await renderCaptureSurface();
+
+    await changeTextarea(screen.container, "Revisar Railway");
+    await advanceTime(500);
+    await openConceptPanel(screen.container);
+
+    const panel = getDialog(screen.container, "Conceptos detectados") as HTMLElement;
+
+    expect(panel.dataset.layout).toBe("mobile-sheet");
+    expect(getButtonByLabel(screen.container, "Cerrar panel")).toBeDefined();
+  });
+
+  it("opens desktop panels on hover and closes after the intent delay", async () => {
+    setViewportSize({ width: 1366, height: 768 });
+    const screen = await renderCaptureSurface();
+
+    await changeTextarea(screen.container, "Revisar Railway");
+    await advanceTime(500);
+    const indicator = getContextIndicator(screen.container, "conceptos detectados");
+
+    await mouseEnter(indicator);
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
+
+    await mouseLeave(indicator);
+    await advanceTime(349);
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
+
+    await advanceTime(1);
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeUndefined();
+  });
+
+  it("keeps desktop panels open when the pointer moves from indicator to panel", async () => {
+    setViewportSize({ width: 1366, height: 768 });
+    const screen = await renderCaptureSurface();
+
+    await changeTextarea(screen.container, "Revisar Railway");
+    await advanceTime(500);
+    const indicator = getContextIndicator(screen.container, "conceptos detectados");
+
+    await mouseEnter(indicator);
+    const panel = getDialog(screen.container, "Conceptos detectados") as HTMLElement;
+    await mouseLeave(indicator);
+    await advanceTime(200);
+    await mouseEnter(panel);
+    await advanceTime(200);
+
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
+
+    await mouseLeave(panel);
+    await advanceTime(350);
+
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeUndefined();
+  });
+
+  it("cancels the close delay when intent returns before it expires", async () => {
+    setViewportSize({ width: 1366, height: 768 });
+    const screen = await renderCaptureSurface();
+
+    await changeTextarea(screen.container, "Revisar Railway");
+    await advanceTime(500);
+    const indicator = getContextIndicator(screen.container, "conceptos detectados");
+
+    await mouseEnter(indicator);
+    await mouseLeave(indicator);
+    await advanceTime(200);
+    await mouseEnter(indicator);
+    await advanceTime(200);
+
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
+  });
+
+  it("opens on focus and closes after focus leaves the indicator and panel", async () => {
+    setViewportSize({ width: 1366, height: 768 });
+    const screen = await renderCaptureSurface();
+
+    await changeTextarea(screen.container, "Revisar Railway");
+    await advanceTime(500);
+    const indicator = getContextIndicator(screen.container, "conceptos detectados");
+
+    await focusElement(indicator);
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
+
+    await blurElement(indicator, getTextarea(screen.container));
+    await advanceTime(350);
+
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeUndefined();
+  });
+
+  it("click opens a desktop panel without making it permanent", async () => {
+    setViewportSize({ width: 1366, height: 768 });
+    const screen = await renderCaptureSurface();
+
+    await changeTextarea(screen.container, "Revisar Railway");
+    await advanceTime(500);
+    const indicator = getContextIndicator(screen.container, "conceptos detectados");
+
+    if (!indicator) {
+      throw new Error("Concept indicator not found");
+    }
+
+    await click(indicator);
+    const panel = getDialog(screen.container, "Conceptos detectados") as HTMLElement;
+
+    expect(panel.dataset.interactionSource).toBe("click");
+
+    await mouseLeave(indicator);
+    await advanceTime(350);
+
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeUndefined();
   });
 
   it("uses the same desktop positioning for concept and memory panels", async () => {
@@ -1163,6 +1281,12 @@ function queryButton(container: HTMLElement, name: string) {
   ) as HTMLButtonElement | undefined;
 }
 
+function getButtonByLabel(container: HTMLElement, label: string) {
+  return Array.from(container.querySelectorAll("button")).find(
+    (button) => button.getAttribute("aria-label") === label,
+  ) as HTMLButtonElement | undefined;
+}
+
 function getContextIndicator(container: HTMLElement, labelPart: string) {
   return Array.from(container.querySelectorAll("button")).find((button) =>
     button.getAttribute("aria-label")?.includes(labelPart),
@@ -1211,6 +1335,25 @@ function setViewportSize({
   Object.defineProperty(window, "innerHeight", {
     configurable: true,
     value: height,
+  });
+}
+
+function setPointerCapability(pointer: "fine" | "coarse") {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: (query: string) => ({
+      matches:
+        query === "(hover: hover) and (pointer: fine)"
+          ? pointer === "fine"
+          : false,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }),
   });
 }
 
@@ -1296,6 +1439,60 @@ async function pointerDown(target: HTMLElement) {
         });
 
     target.dispatchEvent(event);
+    await flushPromises();
+  });
+}
+
+async function mouseEnter(target: HTMLElement | undefined) {
+  if (!target) {
+    throw new Error("Expected target to exist.");
+  }
+
+  await act(async () => {
+    target.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    await flushPromises();
+  });
+}
+
+async function mouseLeave(target: HTMLElement | undefined) {
+  if (!target) {
+    throw new Error("Expected target to exist.");
+  }
+
+  await act(async () => {
+    target.dispatchEvent(new MouseEvent("mouseout", { bubbles: true }));
+    await flushPromises();
+  });
+}
+
+async function focusElement(target: HTMLElement | undefined) {
+  if (!target) {
+    throw new Error("Expected target to exist.");
+  }
+
+  await act(async () => {
+    target.focus();
+    target.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await flushPromises();
+  });
+}
+
+async function blurElement(
+  target: HTMLElement | undefined,
+  relatedTarget: HTMLElement | null,
+) {
+  if (!target) {
+    throw new Error("Expected target to exist.");
+  }
+
+  await act(async () => {
+    target.dispatchEvent(
+      new FocusEvent("focusout", {
+        bubbles: true,
+        relatedTarget,
+      }),
+    );
+    relatedTarget?.focus();
     await flushPromises();
   });
 }

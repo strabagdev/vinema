@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { Brain, Check, History, SendHorizontal, X } from "lucide-react";
-import type { CSSProperties, ReactNode } from "react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { CSSProperties, FocusEvent, ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { Node } from "@/domain/node/node";
@@ -40,9 +40,11 @@ const DESKTOP_PANEL_BREAKPOINT = 768;
 const DESKTOP_PANEL_WIDTH = 360;
 const DESKTOP_PANEL_GAP = 16;
 const DESKTOP_PANEL_MARGIN = 16;
+const EPHEMERAL_PANEL_CLOSE_DELAY_MS = 350;
 
 type DraftStatus = "idle" | "saving" | "saved" | "error";
 type ActivePanel = "concepts" | "memories" | null;
+type PanelInteractionSource = "hover" | "focus" | "click" | "tap" | null;
 type PanelPlacement = {
   layout: "mobile-sheet" | "desktop-popover";
   style?: CSSProperties;
@@ -76,9 +78,11 @@ export function CaptureSurface({
     Map<string, CaptureEmergentIdentity>
   >(new Map());
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
-  const [pinnedPanel, setPinnedPanel] = useState<ActivePanel>(null);
+  const [interactionSource, setInteractionSource] =
+    useState<PanelInteractionSource>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savePromiseRef = useRef<Promise<unknown> | null>(null);
+  const closePanelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const captureInFlightRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const indicatorRowRef = useRef<HTMLDivElement | null>(null);
@@ -107,6 +111,25 @@ export function CaptureSurface({
       associationState.status === "loading" ||
       associationState.error !== null);
   const showIndicators = showConceptIndicator || showMemoryIndicator;
+  const clearPanelCloseTimer = useCallback(() => {
+    if (closePanelTimerRef.current) {
+      clearTimeout(closePanelTimerRef.current);
+      closePanelTimerRef.current = null;
+    }
+  }, []);
+  const closePanels = useCallback(() => {
+    clearPanelCloseTimer();
+    setActivePanel(null);
+    setInteractionSource(null);
+    queueMicrotask(() => {
+      textareaRef.current?.focus();
+    });
+  }, [clearPanelCloseTimer]);
+  const closePanelsForWriting = useCallback(() => {
+    clearPanelCloseTimer();
+    setActivePanel(null);
+    setInteractionSource(null);
+  }, [clearPanelCloseTimer]);
 
   useEffect(() => {
     let cancelled = false;
@@ -153,7 +176,7 @@ export function CaptureSurface({
     function updatePanelPlacement() {
       const anchor = indicatorRowRef.current;
 
-      if (!anchor || window.innerWidth < DESKTOP_PANEL_BREAKPOINT) {
+      if (!anchor || !canUseDesktopPopover()) {
         setPanelPlacement({ layout: "mobile-sheet" });
         return;
       }
@@ -175,6 +198,12 @@ export function CaptureSurface({
   }, [activePanel, showIndicators]);
 
   useEffect(() => {
+    return () => {
+      clearPanelCloseTimer();
+    };
+  }, [clearPanelCloseTimer]);
+
+  useEffect(() => {
     function handleEscape(event: KeyboardEvent) {
       if (event.key !== "Escape" || !activePanel) {
         return;
@@ -189,7 +218,7 @@ export function CaptureSurface({
     return () => {
       window.removeEventListener("keydown", handleEscape);
     };
-  }, [activePanel]);
+  }, [activePanel, closePanels]);
 
   useEffect(() => {
     if (!activePanel) {
@@ -216,7 +245,7 @@ export function CaptureSurface({
     return () => {
       window.removeEventListener("pointerdown", handlePointerDown);
     };
-  }, [activePanel]);
+  }, [activePanel, closePanels]);
 
   useEffect(() => {
     let cancelled = false;
@@ -331,6 +360,7 @@ export function CaptureSurface({
     setCapturing(true);
     setCaptureError(null);
     setCaptureFeedback(null);
+    closePanelsForWriting();
 
     try {
       if (saveTimerRef.current) {
@@ -353,7 +383,7 @@ export function CaptureSurface({
       setSelectedContextIds([]);
       setSelectedEmergingConcepts([]);
       setActivePanel(null);
-      setPinnedPanel(null);
+      setInteractionSource(null);
       setDraftStatus("idle");
       setCaptureFeedback(
         result.relationError
@@ -398,30 +428,49 @@ export function CaptureSurface({
     });
   }
 
-  function openPanelPreview(panel: Exclude<ActivePanel, null>) {
-    if (pinnedPanel) {
+  function openPanel(
+    panel: Exclude<ActivePanel, null>,
+    source: Exclude<PanelInteractionSource, null>,
+  ) {
+    clearPanelCloseTimer();
+    setActivePanel(panel);
+    setInteractionSource(source);
+  }
+
+  function schedulePanelClose() {
+    clearPanelCloseTimer();
+    closePanelTimerRef.current = setTimeout(() => {
+      closePanelTimerRef.current = null;
+
+      if (isFocusWithinContextualPanel()) {
+        return;
+      }
+
+      setActivePanel(null);
+      setInteractionSource(null);
+    }, EPHEMERAL_PANEL_CLOSE_DELAY_MS);
+  }
+
+  function closePanelAfterFocusLeaves(event: FocusEvent<HTMLElement>) {
+    if (
+      event.relatedTarget instanceof Element &&
+      (event.relatedTarget.closest("[data-progressive-panel]") ||
+        event.relatedTarget.closest("[data-context-indicator]"))
+    ) {
       return;
     }
 
-    setActivePanel(panel);
+    schedulePanelClose();
   }
 
-  function pinPanel(panel: Exclude<ActivePanel, null>) {
-    setActivePanel(panel);
-    setPinnedPanel((current) => (current === panel ? null : panel));
-  }
+  function isFocusWithinContextualPanel() {
+    const activeElement = document.activeElement;
 
-  function closePanels() {
-    setActivePanel(null);
-    setPinnedPanel(null);
-    queueMicrotask(() => {
-      textareaRef.current?.focus();
-    });
-  }
-
-  function closePanelsForWriting() {
-    setActivePanel(null);
-    setPinnedPanel(null);
+    return (
+      activeElement instanceof Element &&
+      (activeElement.closest("[data-progressive-panel]") !== null ||
+        activeElement.closest("[data-context-indicator]") !== null)
+    );
   }
 
   async function persistCurrentDraft() {
@@ -487,8 +536,16 @@ export function CaptureSurface({
                   count={conceptSuggestions.length}
                   active={activePanel === "concepts"}
                   label={`${conceptSuggestions.length} conceptos detectados`}
-                  onPreview={() => openPanelPreview("concepts")}
-                  onPin={() => pinPanel("concepts")}
+                  onHover={() => openPanel("concepts", "hover")}
+                  onFocus={() => openPanel("concepts", "focus")}
+                  onClick={() =>
+                    openPanel(
+                      "concepts",
+                      canUseDesktopPopover() ? "click" : "tap",
+                    )
+                  }
+                  onIntentEnd={schedulePanelClose}
+                  onBlur={closePanelAfterFocusLeaves}
                 />
               ) : null}
               {showMemoryIndicator ? (
@@ -501,8 +558,16 @@ export function CaptureSurface({
                       ? "No se pudo buscar recuerdos"
                       : `${memorySuggestions.length} recuerdos relacionados`
                   }
-                  onPreview={() => openPanelPreview("memories")}
-                  onPin={() => pinPanel("memories")}
+                  onHover={() => openPanel("memories", "hover")}
+                  onFocus={() => openPanel("memories", "focus")}
+                  onClick={() =>
+                    openPanel(
+                      "memories",
+                      canUseDesktopPopover() ? "click" : "tap",
+                    )
+                  }
+                  onIntentEnd={schedulePanelClose}
+                  onBlur={closePanelAfterFocusLeaves}
                 />
               ) : null}
             </div>
@@ -510,8 +575,11 @@ export function CaptureSurface({
           {activePanel === "concepts" ? (
             <ProgressivePanel
               title="Conceptos detectados"
-              pinned={pinnedPanel === "concepts"}
+              interactionSource={interactionSource}
               placement={panelPlacement}
+              onIntentStart={clearPanelCloseTimer}
+              onIntentEnd={schedulePanelClose}
+              onBlur={closePanelAfterFocusLeaves}
               onClose={closePanels}
             >
               <ConceptPanelContent
@@ -528,8 +596,11 @@ export function CaptureSurface({
           {activePanel === "memories" ? (
             <ProgressivePanel
               title="Me recuerda a…"
-              pinned={pinnedPanel === "memories"}
+              interactionSource={interactionSource}
               placement={panelPlacement}
+              onIntentStart={clearPanelCloseTimer}
+              onIntentEnd={schedulePanelClose}
+              onBlur={closePanelAfterFocusLeaves}
               onClose={closePanels}
             >
               <MemoryPanelContent
@@ -606,15 +677,21 @@ function ContextIndicator({
   count,
   active,
   label,
-  onPreview,
-  onPin,
+  onHover,
+  onFocus,
+  onClick,
+  onIntentEnd,
+  onBlur,
 }: {
   icon: "concepts" | "memories";
   count: number;
   active: boolean;
   label: string;
-  onPreview: () => void;
-  onPin: () => void;
+  onHover: () => void;
+  onFocus: () => void;
+  onClick: () => void;
+  onIntentEnd: () => void;
+  onBlur: (event: FocusEvent<HTMLElement>) => void;
 }) {
   const Icon = icon === "concepts" ? Brain : History;
 
@@ -625,9 +702,11 @@ function ContextIndicator({
       aria-label={label}
       title={label}
       className="inline-flex h-9 min-w-12 items-center justify-center gap-1.5 rounded-full px-3 text-sm text-zinc-500 outline-none transition-colors hover:bg-zinc-100 hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400 motion-reduce:transition-none"
-      onMouseEnter={onPreview}
-      onFocus={onPreview}
-      onClick={onPin}
+      onMouseEnter={onHover}
+      onMouseLeave={onIntentEnd}
+      onFocus={onFocus}
+      onBlur={onBlur}
+      onClick={onClick}
     >
       <Icon className="h-4 w-4" aria-hidden="true" />
       {active ? null : <span>{count}</span>}
@@ -637,17 +716,25 @@ function ContextIndicator({
 
 function ProgressivePanel({
   title,
-  pinned,
+  interactionSource,
   placement,
+  onIntentStart,
+  onIntentEnd,
+  onBlur,
   onClose,
   children,
 }: {
   title: string;
-  pinned: boolean;
+  interactionSource: PanelInteractionSource;
   placement: PanelPlacement;
+  onIntentStart: () => void;
+  onIntentEnd: () => void;
+  onBlur: (event: FocusEvent<HTMLElement>) => void;
   onClose: () => void;
   children: ReactNode;
 }) {
+  const isMobileSheet = placement.layout === "mobile-sheet";
+
   return (
     <aside
       role="dialog"
@@ -655,30 +742,44 @@ function ProgressivePanel({
       aria-label={title}
       data-layout={placement.layout}
       data-progressive-panel=""
+      data-interaction-source={interactionSource ?? undefined}
       style={placement.style}
-      className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 max-h-[70vh] overflow-hidden rounded-xl border border-zinc-200 bg-white/95 shadow-lg outline-none backdrop-blur transition duration-150 motion-reduce:transition-none md:inset-auto md:max-h-[60vh] md:w-[22.5rem]"
+      className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 max-h-[70vh] overflow-hidden rounded-2xl border border-zinc-200/70 bg-white/95 shadow-[0_12px_40px_rgba(24,24,27,0.10)] outline-none backdrop-blur-sm transition duration-150 ease-out motion-reduce:transition-none md:inset-auto md:max-h-[60vh] md:w-[22.5rem] md:border-zinc-200/50 md:shadow-[0_10px_32px_rgba(24,24,27,0.08)]"
+      onMouseEnter={onIntentStart}
+      onMouseLeave={onIntentEnd}
+      onFocus={onIntentStart}
+      onBlur={onBlur}
     >
-      <div className="flex items-center justify-between gap-3 border-b border-zinc-100 px-4 py-3">
-        <h2 className="text-sm font-medium text-zinc-900">{title}</h2>
-        <div className="flex items-center gap-2">
-          {pinned ? (
-            <span className="text-xs text-zinc-400">fijado</span>
-          ) : null}
+      <div className="max-h-[calc(70vh-1.5rem)] overflow-y-auto px-4 py-4 md:max-h-[calc(60vh-1.5rem)]">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <h2 className="text-sm font-medium text-zinc-800">{title}</h2>
+          {isMobileSheet ? (
           <button
             type="button"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 outline-none hover:bg-zinc-100 hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 outline-none hover:bg-zinc-100 hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400 md:hidden"
             aria-label="Cerrar panel"
             onClick={onClose}
           >
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
+          ) : null}
         </div>
-      </div>
-      <div className="max-h-[calc(70vh-3.5rem)] overflow-y-auto px-4 py-3 md:max-h-[calc(60vh-3.5rem)]">
         {children}
       </div>
     </aside>
   );
+}
+
+function canUseDesktopPopover() {
+  if (window.innerWidth < DESKTOP_PANEL_BREAKPOINT) {
+    return false;
+  }
+
+  if (typeof window.matchMedia !== "function") {
+    return true;
+  }
+
+  return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
 }
 
 function getDesktopPanelStyle(anchorRect: DOMRect): CSSProperties {
