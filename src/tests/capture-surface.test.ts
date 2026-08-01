@@ -398,6 +398,121 @@ describe("CaptureSurface", () => {
     expect(getDialog(screen.container, "Me recuerda a…")).toBeDefined();
   });
 
+  it("positions memory panels as desktop popovers within the viewport", async () => {
+    setViewportSize({ width: 1366, height: 768 });
+    const nodeRepository = new InMemoryNodeRepository([
+      createStoredNode({
+        id: "mitcom",
+        content: "Proveedor Mitcom pendiente de seguimiento",
+        updatedAt: "2026-01-05T00:00:00.000Z",
+      }),
+    ]);
+    const screen = await renderCaptureSurface({ nodeRepository });
+
+    await changeTextarea(screen.container, "mitcom");
+    await advanceTime(500);
+    mockIndicatorRowRect(screen.container, {
+      left: 430,
+      right: 530,
+      top: 520,
+      bottom: 560,
+      width: 100,
+      height: 40,
+    });
+    await openMemoryPanel(screen.container);
+
+    const panel = getDialog(screen.container, "Me recuerda a…") as HTMLElement;
+    const top = Number(panel.style.top.replace("px", ""));
+    const left = Number(panel.style.left.replace("px", ""));
+    const width = Number(panel.style.width.replace("px", ""));
+    const maxHeight = Number(panel.style.maxHeight.replace("px", ""));
+
+    expect(panel.dataset.layout).toBe("desktop-popover");
+    expect(panel.className).not.toContain("bottom-0");
+    expect(panel.className).toContain("md:max-h-[60vh]");
+    expect(top).toBeGreaterThanOrEqual(16);
+    expect(left).toBeGreaterThanOrEqual(16);
+    expect(top + maxHeight).toBeLessThanOrEqual(768 - 16);
+    expect(left + width).toBeLessThanOrEqual(1366 - 16);
+  });
+
+  it("falls back to the left when a desktop panel does not fit on the right", async () => {
+    setViewportSize({ width: 1024, height: 768 });
+    const screen = await renderCaptureSurface();
+
+    await changeTextarea(screen.container, "Revisar Railway");
+    await advanceTime(500);
+    mockIndicatorRowRect(screen.container, {
+      left: 700,
+      right: 780,
+      top: 420,
+      bottom: 460,
+      width: 80,
+      height: 40,
+    });
+    await openConceptPanel(screen.container);
+
+    const panel = getDialog(screen.container, "Conceptos detectados") as HTMLElement;
+    const left = Number(panel.style.left.replace("px", ""));
+
+    expect(panel.dataset.layout).toBe("desktop-popover");
+    expect(left).toBeLessThan(700);
+  });
+
+  it("keeps progressive panels as mobile bottom sheets below the desktop breakpoint", async () => {
+    setViewportSize({ width: 390, height: 844 });
+    const screen = await renderCaptureSurface();
+
+    await changeTextarea(screen.container, "Revisar Railway");
+    await advanceTime(500);
+    await openConceptPanel(screen.container);
+
+    const panel = getDialog(screen.container, "Conceptos detectados") as HTMLElement;
+
+    expect(panel.dataset.layout).toBe("mobile-sheet");
+    expect(panel.style.top).toBe("");
+    expect(panel.style.left).toBe("");
+    expect(panel.className).toContain("bottom-[max(0.75rem,env(safe-area-inset-bottom))]");
+    expect(panel.className).toContain("overflow-hidden");
+  });
+
+  it("uses the same desktop positioning for concept and memory panels", async () => {
+    setViewportSize({ width: 1920, height: 1080 });
+    const nodeRepository = new InMemoryNodeRepository([
+      createStoredNode({
+        id: "mitcom",
+        content: "Proveedor Mitcom pendiente de seguimiento",
+        updatedAt: "2026-01-05T00:00:00.000Z",
+      }),
+    ]);
+    const screen = await renderCaptureSurface({ nodeRepository });
+
+    await changeTextarea(screen.container, "Revisar Mitcom");
+    await advanceTime(500);
+    mockIndicatorRowRect(screen.container, {
+      left: 760,
+      right: 860,
+      top: 520,
+      bottom: 560,
+      width: 100,
+      height: 40,
+    });
+    await openConceptPanel(screen.container);
+    const conceptPanel = getDialog(
+      screen.container,
+      "Conceptos detectados",
+    ) as HTMLElement;
+    const conceptLeft = conceptPanel.style.left;
+    const conceptTop = conceptPanel.style.top;
+
+    await openMemoryPanel(screen.container);
+    const memoryPanel = getDialog(screen.container, "Me recuerda a…") as HTMLElement;
+
+    expect(memoryPanel.dataset.layout).toBe("desktop-popover");
+    expect(memoryPanel.style.left).toBe(conceptLeft);
+    expect(memoryPanel.style.top).toBe(conceptTop);
+  });
+
   it("closes an open contextual panel with Escape and returns focus", async () => {
     const nodeRepository = new InMemoryNodeRepository([
       createStoredNode({
@@ -417,6 +532,33 @@ describe("CaptureSurface", () => {
 
     expect(getDialog(screen.container, "Me recuerda a…")).toBeUndefined();
     expect(document.activeElement).toBe(getTextarea(screen.container));
+  });
+
+  it("closes an open contextual panel when clicking outside", async () => {
+    const screen = await renderCaptureSurface();
+
+    await changeTextarea(screen.container, "Revisar Railway");
+    await advanceTime(500);
+    await openConceptPanel(screen.container);
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
+
+    await pointerDown(document.body);
+
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeUndefined();
+    expect(document.activeElement).toBe(getTextarea(screen.container));
+  });
+
+  it("does not close a contextual panel when interacting inside it", async () => {
+    const screen = await renderCaptureSurface();
+
+    await changeTextarea(screen.container, "Revisar Railway");
+    await advanceTime(500);
+    await openConceptPanel(screen.container);
+    const panel = getDialog(screen.container, "Conceptos detectados") as HTMLElement;
+
+    await pointerDown(panel);
+
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
   });
 
   it("closes an open contextual panel when writing resumes", async () => {
@@ -1033,6 +1175,45 @@ function getDialog(container: HTMLElement, label: string) {
   ) as HTMLElement | undefined;
 }
 
+function mockIndicatorRowRect(
+  container: HTMLElement,
+  rect: Partial<DOMRect> & Pick<DOMRect, "left" | "right" | "top" | "bottom">,
+) {
+  const row = container.querySelector("[aria-label='Indicadores contextuales']");
+  if (!row) {
+    throw new Error("Indicator row not found");
+  }
+
+  row.getBoundingClientRect = () => ({
+    x: rect.left,
+    y: rect.top,
+    width: rect.width ?? rect.right - rect.left,
+    height: rect.height ?? rect.bottom - rect.top,
+    left: rect.left,
+    right: rect.right,
+    top: rect.top,
+    bottom: rect.bottom,
+    toJSON: () => ({}),
+  });
+}
+
+function setViewportSize({
+  width,
+  height,
+}: {
+  width: number;
+  height: number;
+}) {
+  Object.defineProperty(window, "innerWidth", {
+    configurable: true,
+    value: width,
+  });
+  Object.defineProperty(window, "innerHeight", {
+    configurable: true,
+    value: height,
+  });
+}
+
 async function openConceptPanel(container: HTMLElement) {
   const indicator = getContextIndicator(container, "conceptos detectados");
   if (!indicator) {
@@ -1101,6 +1282,20 @@ async function keydownWindow(eventInit: KeyboardEventInit) {
         ...eventInit,
       }),
     );
+    await flushPromises();
+  });
+}
+
+async function pointerDown(target: HTMLElement) {
+  await act(async () => {
+    const event =
+      typeof PointerEvent === "undefined"
+        ? new Event("pointerdown", { bubbles: true })
+        : new PointerEvent("pointerdown", {
+          bubbles: true,
+        });
+
+    target.dispatchEvent(event);
     await flushPromises();
   });
 }

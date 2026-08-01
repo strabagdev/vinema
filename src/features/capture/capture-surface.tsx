@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { Brain, Check, History, SendHorizontal, X } from "lucide-react";
-import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { Node } from "@/domain/node/node";
@@ -33,9 +33,17 @@ import { cn } from "@/lib/cn";
 
 const EMPTY_SELECTED_CAPTURE_IDS: string[] = [];
 const INITIAL_MEMORY_RESULT_LIMIT = 3;
+const DESKTOP_PANEL_BREAKPOINT = 768;
+const DESKTOP_PANEL_WIDTH = 360;
+const DESKTOP_PANEL_GAP = 16;
+const DESKTOP_PANEL_MARGIN = 16;
 
 type DraftStatus = "idle" | "saving" | "saved" | "error";
 type ActivePanel = "concepts" | "memories" | null;
+type PanelPlacement = {
+  layout: "mobile-sheet" | "desktop-popover";
+  style?: CSSProperties;
+};
 
 export type CaptureSurfaceProps = {
   device: Device;
@@ -67,6 +75,10 @@ export function CaptureSurface({
   const savePromiseRef = useRef<Promise<unknown> | null>(null);
   const captureInFlightRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const indicatorRowRef = useRef<HTMLDivElement | null>(null);
+  const [panelPlacement, setPanelPlacement] = useState<PanelPlacement>({
+    layout: "mobile-sheet",
+  });
   const hasContent = content.trim().length > 0;
   const associationState = useAssociationSuggestions({
     text: content,
@@ -90,6 +102,35 @@ export function CaptureSurface({
       associationState.error !== null);
   const showIndicators = showConceptIndicator || showMemoryIndicator;
 
+  useLayoutEffect(() => {
+    if (!activePanel) {
+      return;
+    }
+
+    function updatePanelPlacement() {
+      const anchor = indicatorRowRef.current;
+
+      if (!anchor || window.innerWidth < DESKTOP_PANEL_BREAKPOINT) {
+        setPanelPlacement({ layout: "mobile-sheet" });
+        return;
+      }
+
+      setPanelPlacement({
+        layout: "desktop-popover",
+        style: getDesktopPanelStyle(anchor.getBoundingClientRect()),
+      });
+    }
+
+    updatePanelPlacement();
+    window.addEventListener("resize", updatePanelPlacement);
+    window.addEventListener("scroll", updatePanelPlacement, true);
+
+    return () => {
+      window.removeEventListener("resize", updatePanelPlacement);
+      window.removeEventListener("scroll", updatePanelPlacement, true);
+    };
+  }, [activePanel, showIndicators]);
+
   useEffect(() => {
     function handleEscape(event: KeyboardEvent) {
       if (event.key !== "Escape" || !activePanel) {
@@ -104,6 +145,33 @@ export function CaptureSurface({
 
     return () => {
       window.removeEventListener("keydown", handleEscape);
+    };
+  }, [activePanel]);
+
+  useEffect(() => {
+    if (!activePanel) {
+      return;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      if (!(event.target instanceof Element)) {
+        return;
+      }
+
+      if (
+        event.target.closest("[data-progressive-panel]") ||
+        event.target.closest("[data-context-indicator]")
+      ) {
+        return;
+      }
+
+      closePanels();
+    }
+
+    window.addEventListener("pointerdown", handlePointerDown);
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
     };
   }, [activePanel]);
 
@@ -366,6 +434,7 @@ export function CaptureSurface({
           />
           {showIndicators ? (
             <div
+              ref={indicatorRowRef}
               className="flex min-h-10 items-center gap-2 transition-opacity motion-reduce:transition-none"
               aria-label="Indicadores contextuales"
             >
@@ -399,6 +468,7 @@ export function CaptureSurface({
             <ProgressivePanel
               title="Conceptos detectados"
               pinned={pinnedPanel === "concepts"}
+              placement={panelPlacement}
               onClose={closePanels}
             >
               <ConceptPanelContent
@@ -416,6 +486,7 @@ export function CaptureSurface({
             <ProgressivePanel
               title="Me recuerda a…"
               pinned={pinnedPanel === "memories"}
+              placement={panelPlacement}
               onClose={closePanels}
             >
               <MemoryPanelContent
@@ -506,6 +577,7 @@ function ContextIndicator({
   return (
     <button
       type="button"
+      data-context-indicator=""
       aria-label={label}
       title={label}
       className="inline-flex h-9 min-w-12 items-center justify-center gap-1.5 rounded-full px-3 text-sm text-zinc-500 outline-none transition-colors hover:bg-zinc-100 hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400 motion-reduce:transition-none"
@@ -522,11 +594,13 @@ function ContextIndicator({
 function ProgressivePanel({
   title,
   pinned,
+  placement,
   onClose,
   children,
 }: {
   title: string;
   pinned: boolean;
+  placement: PanelPlacement;
   onClose: () => void;
   children: ReactNode;
 }) {
@@ -535,7 +609,10 @@ function ProgressivePanel({
       role="dialog"
       aria-modal="false"
       aria-label={title}
-      className="fixed inset-x-3 bottom-3 z-40 max-h-[70vh] overflow-hidden rounded-xl border border-zinc-200 bg-white/95 shadow-lg outline-none backdrop-blur transition duration-150 motion-reduce:transition-none sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-[calc(100%+0.75rem)] sm:w-[min(34rem,calc(100vw-3rem))]"
+      data-layout={placement.layout}
+      data-progressive-panel=""
+      style={placement.style}
+      className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 max-h-[70vh] overflow-hidden rounded-xl border border-zinc-200 bg-white/95 shadow-lg outline-none backdrop-blur transition duration-150 motion-reduce:transition-none md:inset-auto md:max-h-[60vh] md:w-[22.5rem]"
     >
       <div className="flex items-center justify-between gap-3 border-b border-zinc-100 px-4 py-3">
         <h2 className="text-sm font-medium text-zinc-900">{title}</h2>
@@ -553,11 +630,53 @@ function ProgressivePanel({
           </button>
         </div>
       </div>
-      <div className="max-h-[calc(70vh-3.5rem)] overflow-y-auto px-4 py-3">
+      <div className="max-h-[calc(70vh-3.5rem)] overflow-y-auto px-4 py-3 md:max-h-[calc(60vh-3.5rem)]">
         {children}
       </div>
     </aside>
   );
+}
+
+function getDesktopPanelStyle(anchorRect: DOMRect): CSSProperties {
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const maxHeight = Math.min(
+    Math.round(viewportHeight * 0.6),
+    viewportHeight - DESKTOP_PANEL_MARGIN * 2,
+  );
+  const width = Math.min(
+    DESKTOP_PANEL_WIDTH,
+    viewportWidth - DESKTOP_PANEL_MARGIN * 2,
+  );
+  const rightSideLeft = anchorRect.right + DESKTOP_PANEL_GAP;
+  const leftSideLeft = anchorRect.left - width - DESKTOP_PANEL_GAP;
+  const left =
+    rightSideLeft + width <= viewportWidth - DESKTOP_PANEL_MARGIN
+      ? rightSideLeft
+      : leftSideLeft >= DESKTOP_PANEL_MARGIN
+        ? leftSideLeft
+        : clamp(
+          anchorRect.left,
+          DESKTOP_PANEL_MARGIN,
+          viewportWidth - width - DESKTOP_PANEL_MARGIN,
+        );
+  const preferredTop = anchorRect.top;
+  const top = clamp(
+    preferredTop,
+    DESKTOP_PANEL_MARGIN,
+    viewportHeight - maxHeight - DESKTOP_PANEL_MARGIN,
+  );
+
+  return {
+    left,
+    maxHeight,
+    top,
+    width,
+  };
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), Math.max(min, max));
 }
 
 function ConceptPanelContent({
