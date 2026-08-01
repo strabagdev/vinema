@@ -15,6 +15,11 @@ import { InMemoryContextRepository } from "@/tests/fakes/in-memory-context-repos
 import { InMemoryNodeContextRelationRepository } from "@/tests/fakes/in-memory-node-context-relation-repository";
 import type { Node } from "@/domain/node/node";
 import type { Context } from "@/domain/context/context";
+import { VisualFeedbackProvider } from "@/features/feedback/visual-feedback-provider";
+import {
+  createVisualFeedbackService,
+  type VisualFeedbackService,
+} from "@/features/feedback/visual-feedback-service";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
   .IS_REACT_ACT_ENVIRONMENT = true;
@@ -217,6 +222,23 @@ describe("CaptureSurface", () => {
       "Reunion con Mitcom sobre soporte",
     );
     expect(screen.container.textContent).not.toContain("Captura guardada.");
+  });
+
+  it("publishes capture feedback immediately after local capture succeeds", async () => {
+    const storage = new MemoryStorageAdapter();
+    const nodeRepository = new InMemoryNodeRepository();
+    const feedbackService = createVisualFeedbackService();
+    const screen = await renderCaptureSurface({
+      storage,
+      nodeRepository,
+      feedbackService,
+    });
+
+    await changeTextarea(screen.container, "Reunion con Mitcom sobre soporte");
+    await advanceTime(500);
+    await click(getButton(screen.container, "Capturar"));
+
+    expect(feedbackService.getState().current?.kind).toBe("capture");
   });
 
   it("captures from an open panel and clears panels and indicators", async () => {
@@ -1348,11 +1370,13 @@ async function renderCaptureSurface({
   nodeRepository = new InMemoryNodeRepository(),
   contextRepository = new InMemoryContextRepository(),
   relationRepository = new InMemoryNodeContextRelationRepository(),
+  feedbackService,
 }: {
   storage?: MemoryStorageAdapter;
   nodeRepository?: InMemoryNodeRepository;
   contextRepository?: InMemoryContextRepository;
   relationRepository?: InMemoryNodeContextRelationRepository;
+  feedbackService?: VisualFeedbackService;
 } = {}) {
   const container = document.createElement("div");
   document.body.replaceChildren(container);
@@ -1364,13 +1388,17 @@ async function renderCaptureSurface({
   };
 
   await act(async () => {
+    const surface = createElement(CaptureSurface, {
+      device,
+      workspace,
+      storage,
+      repositories,
+    });
+
     root.render(
-      createElement(CaptureSurface, {
-        device,
-        workspace,
-        storage,
-        repositories,
-      }),
+      feedbackService
+        ? createElement(VisualFeedbackProvider, { service: feedbackService }, surface)
+        : surface,
     );
     await flushPromises();
   });

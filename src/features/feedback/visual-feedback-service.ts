@@ -17,7 +17,9 @@ export type VisualFeedbackEvent = {
   priority: number;
   persistent: boolean;
   durationMs: number;
+  minVisibleMs: number;
   sequence: number;
+  shownAt: number;
   dedupeKey?: string;
 };
 
@@ -47,6 +49,8 @@ export type VisualFeedbackService = {
 
 const AUTO_DISMISS_MS = 2_000;
 const BRIEF_PULSE_MS = 700;
+export const MIN_CAPTURE_VISIBLE_MS = 800;
+const CAPTURE_PULSE_MS = 900;
 const PRIORITY = {
   error: 1,
   syncing: 2,
@@ -79,6 +83,7 @@ export function createVisualFeedbackService(): VisualFeedbackService {
       message?: string;
       persistent?: boolean;
       durationMs?: number;
+      minVisibleMs?: number;
       dedupeKey?: string;
     },
   ) {
@@ -100,7 +105,9 @@ export function createVisualFeedbackService(): VisualFeedbackService {
       priority: PRIORITY[kind],
       persistent: options.persistent ?? false,
       durationMs: options.durationMs ?? AUTO_DISMISS_MS,
+      minVisibleMs: options.minVisibleMs ?? 0,
       sequence,
+      shownAt: Date.now(),
       dedupeKey: options.dedupeKey,
     };
 
@@ -110,6 +117,15 @@ export function createVisualFeedbackService(): VisualFeedbackService {
 
     if (!state.current) {
       state = { ...state, current: event };
+      notify();
+      return event;
+    }
+
+    if (
+      event.priority < state.current.priority &&
+      shouldKeepCurrentVisible(state.current, event)
+    ) {
+      state = { ...state, queue: sortQueue([...state.queue, event]) };
       notify();
       return event;
     }
@@ -148,7 +164,8 @@ export function createVisualFeedbackService(): VisualFeedbackService {
     capture: () =>
       publish("capture", {
         accessibleText: "Captura creada.",
-        durationMs: BRIEF_PULSE_MS,
+        durationMs: CAPTURE_PULSE_MS,
+        minVisibleMs: MIN_CAPTURE_VISIBLE_MS,
       }),
     concept: () =>
       publish("concept", {
@@ -201,7 +218,7 @@ export function createVisualFeedbackService(): VisualFeedbackService {
       }
 
       const [next, ...rest] = sortQueue(state.queue);
-      state = { current: next ?? null, queue: rest };
+      state = { current: next ? markShown(next) : null, queue: rest };
       notify();
     },
     dismissKind(kind) {
@@ -220,7 +237,7 @@ export function createVisualFeedbackService(): VisualFeedbackService {
 
       const sortedQueue = sortQueue(queue);
       const [next, ...rest] = sortedQueue;
-      state = { current: next ?? null, queue: rest };
+      state = { current: next ? markShown(next) : null, queue: rest };
       notify();
     },
     reset() {
@@ -247,9 +264,28 @@ function sortQueue(queue: VisualFeedbackEvent[]) {
   );
 }
 
+function shouldKeepCurrentVisible(
+  current: VisualFeedbackEvent,
+  incoming: VisualFeedbackEvent,
+) {
+  if (incoming.kind === "error") {
+    return false;
+  }
+
+  if (current.minVisibleMs <= 0) {
+    return false;
+  }
+
+  return Date.now() - current.shownAt < current.minVisibleMs;
+}
+
 function cloneState(state: VisualFeedbackState): VisualFeedbackState {
   return {
     current: state.current ? { ...state.current } : null,
     queue: state.queue.map((event) => ({ ...event })),
   };
+}
+
+function markShown(event: VisualFeedbackEvent): VisualFeedbackEvent {
+  return { ...event, shownAt: Date.now() };
 }

@@ -8,6 +8,7 @@ import {
 } from "@/features/feedback/visual-feedback-provider";
 import {
   createVisualFeedbackService,
+  MIN_CAPTURE_VISIBLE_MS,
   type VisualFeedbackService,
 } from "@/features/feedback/visual-feedback-service";
 import { initialSyncState, type SyncState } from "@/features/sync/sync-state-engine";
@@ -59,16 +60,16 @@ describe("VisualFeedbackService", () => {
     expect(service.getState().current?.kind).toBe("capture");
   });
 
-  it("keeps sync ahead of capture and lower-priority events", () => {
+  it("queues sync behind a fresh capture but ahead of lower-priority events", () => {
     const service = createVisualFeedbackService();
 
     service.capture();
     service.concept();
     service.syncing();
 
-    expect(service.getState().current?.kind).toBe("syncing");
+    expect(service.getState().current?.kind).toBe("capture");
     expect(service.getState().queue.map((event) => event.kind)).toEqual([
-      "capture",
+      "syncing",
       "concept",
     ]);
   });
@@ -123,9 +124,66 @@ describe("VisualFeedbackViewport", () => {
     expect(screen.querySelector("[data-feedback-kind='capture']")).toBeTruthy();
     expect(visiblePulseText(screen)).toBe("");
 
-    await advanceTime(700);
+    await advanceTime(900);
 
     expect(screen.querySelector("[data-feedback-kind='idle']")).toBeTruthy();
+  });
+
+  it("keeps capture feedback visible before immediate synchronization", async () => {
+    const service = createVisualFeedbackService();
+    const screen = await renderFeedback(service, "captureThenSync");
+
+    expect(screen.querySelector("[data-feedback-kind='capture']")).toBeTruthy();
+    expect(service.getState().queue.map((event) => event.kind)).toEqual([
+      "syncing",
+    ]);
+
+    await advanceTime(MIN_CAPTURE_VISIBLE_MS - 1);
+
+    expect(screen.querySelector("[data-feedback-kind='capture']")).toBeTruthy();
+
+    await advanceTime(101);
+
+    expect(screen.querySelector("[data-feedback-kind='syncing']")).toBeTruthy();
+  });
+
+  it("goes from capture to idle when no synchronization follows", async () => {
+    const service = createVisualFeedbackService();
+    const screen = await renderFeedback(service, "capture");
+
+    expect(screen.querySelector("[data-feedback-kind='capture']")).toBeTruthy();
+
+    await advanceTime(900);
+
+    expect(screen.querySelector("[data-feedback-kind='idle']")).toBeTruthy();
+  });
+
+  it("shows two captures in sequence without dropping either pulse", async () => {
+    const service = createVisualFeedbackService();
+    const screen = await renderFeedback(service, "twoCaptures");
+
+    const firstId = service.getState().current?.id;
+    expect(screen.querySelector("[data-feedback-kind='capture']")).toBeTruthy();
+    expect(service.getState().queue.map((event) => event.kind)).toEqual([
+      "capture",
+    ]);
+
+    await advanceTime(900);
+
+    expect(screen.querySelector("[data-feedback-kind='capture']")).toBeTruthy();
+    expect(service.getState().current?.id).not.toBe(firstId);
+
+    await advanceTime(900);
+
+    expect(screen.querySelector("[data-feedback-kind='idle']")).toBeTruthy();
+  });
+
+  it("lets a save error replace capture feedback immediately", async () => {
+    const service = createVisualFeedbackService();
+    const screen = await renderFeedback(service, "captureThenError");
+
+    expect(screen.querySelector("[data-feedback-kind='error']")).toBeTruthy();
+    expect(screen.textContent).toContain("No se pudo guardar la captura.");
   });
 
   it("shows syncing for local work and then a short synced pulse", async () => {
@@ -304,7 +362,7 @@ describe("VisualFeedbackViewport", () => {
 
     expect(screen.querySelector("[data-feedback-kind='capture']")).toBeTruthy();
 
-    await advanceTime(700);
+    await advanceTime(900);
 
     expect(screen.querySelector("[data-feedback-kind='idea']")).toBeTruthy();
 
@@ -330,6 +388,21 @@ function TestPublisher({ mode }: { mode?: string }) {
       feedback.capture();
       feedback.idea();
       feedback.relation();
+    }
+
+    if (mode === "captureThenSync") {
+      feedback.capture();
+      feedback.syncing();
+    }
+
+    if (mode === "twoCaptures") {
+      feedback.capture();
+      feedback.capture();
+    }
+
+    if (mode === "captureThenError") {
+      feedback.capture();
+      feedback.error("No se pudo guardar la captura.");
     }
   }, [feedback, mode]);
 
