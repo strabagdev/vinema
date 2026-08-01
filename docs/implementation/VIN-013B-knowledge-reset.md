@@ -1,5 +1,7 @@
 # VIN-013B - Knowledge Reset
 
+> Ampliado por VIN-013D. El reset actual incorpora inventario completo de memoria y barrera remota para rechazar mutaciones anteriores al ultimo vaciado.
+
 ## Alcance
 
 VIN-013B introduce una operacion segura para vaciar el conocimiento del workspace autenticado.

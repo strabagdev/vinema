@@ -9,7 +9,8 @@ import type { StoredEntity, SyncStore } from "./sync-store";
 export type SyncRejectedCode =
   | "WORKSPACE_NOT_FOUND"
   | "ENTITY_NOT_FOUND"
-  | "INVALID_REQUEST";
+  | "INVALID_REQUEST"
+  | "MEMORY_RESET_CONFLICT";
 
 export async function processPush(
   store: SyncStore,
@@ -56,6 +57,18 @@ export async function processPush(
       mutation.entityId,
     );
     const currentVersion = getStoredVersion(currentEntity);
+    const latestReset = await store.getLatestKnowledgeReset(request.workspaceId);
+
+    if (latestReset && isOlderThanLatestReset(mutation, latestReset.occurredAt)) {
+      response.rejected.push({
+        mutationId: mutation.mutationId,
+        entityType: mutation.entityType,
+        entityId: mutation.entityId,
+        code: "MEMORY_RESET_CONFLICT",
+        message: "La mutacion pertenece a una memoria anterior al ultimo vaciado.",
+      });
+      continue;
+    }
 
     if (currentVersion !== null && mutation.baseVersion !== currentVersion) {
       response.conflicts.push({
@@ -116,6 +129,16 @@ export async function processPush(
 
   response.serverCursor = await store.getLatestCursor(request.workspaceId);
   return response;
+}
+
+function isOlderThanLatestReset(
+  mutation: SyncMutation,
+  resetOccurredAt: string,
+) {
+  const mutationUpdatedAt = Date.parse(mutation.payload.updatedAt);
+  const resetAt = Date.parse(resetOccurredAt);
+
+  return Number.isFinite(mutationUpdatedAt) && mutationUpdatedAt <= resetAt;
 }
 
 export async function processPull(

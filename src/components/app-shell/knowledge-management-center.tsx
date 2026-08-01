@@ -430,7 +430,7 @@ function KnowledgeOverview({
       <div className="space-y-2">
         <KnowledgeAction
           icon={<Download className="h-5 w-5" aria-hidden="true" />}
-          title="Respaldar conocimiento"
+          title="Respaldar memoria"
           description="Guarda una copia completa de tu memoria."
           disabled={!ready || Boolean(processing)}
           busy={processing === "backup"}
@@ -438,7 +438,7 @@ function KnowledgeOverview({
         />
         <KnowledgeAction
           icon={<Upload className="h-5 w-5" aria-hidden="true" />}
-          title="Restaurar conocimiento"
+          title="Restaurar memoria"
           description="Recupera un respaldo guardado anteriormente."
           disabled={!ready || Boolean(processing)}
           busy={processing === "restore"}
@@ -446,7 +446,7 @@ function KnowledgeOverview({
         />
         <KnowledgeAction
           icon={<RotateCcw className="h-5 w-5" aria-hidden="true" />}
-          title="Vaciar conocimiento"
+          title="Vaciar memoria"
           description="Elimina la memoria activa y permite comenzar de nuevo."
           danger
           disabled={!ready || Boolean(processing)}
@@ -477,12 +477,12 @@ function RestoreConfirmation({
     <div className="space-y-5">
       <ViewHeading
         icon={<Upload className="h-5 w-5" aria-hidden="true" />}
-        title="Restaurar conocimiento"
+        title="Restaurar memoria"
         description="Vinema agregara solo conocimiento nuevo. Si detecta conflictos, no aplicara cambios parciales."
       />
       <div className="rounded-lg border border-zinc-200 p-4 text-sm text-zinc-600">
         <p className="truncate font-medium text-zinc-800">{preview.fileName}</p>
-        <p className="mt-2">{formatSummary(backup.summary)}</p>
+        <p className="mt-2">{formatBackupSummary(backup)}</p>
         <p className="mt-1">Exportado: {new Date(backup.exportedAt).toLocaleString()}</p>
       </div>
       {localError ? <LocalError message={localError} /> : null}
@@ -537,7 +537,7 @@ function ResetConfirmation({
     >
       <ViewHeading
         icon={<Trash2 className="h-5 w-5" aria-hidden="true" />}
-        title="Vaciar conocimiento"
+        title="Vaciar memoria"
         description="Se eliminara toda la memoria activa en todos tus dispositivos."
         danger
       />
@@ -572,7 +572,7 @@ function ResetConfirmation({
           onClick={onConfirm}
           disabled={!canReset}
         >
-          Vaciar conocimiento
+          Vaciar memoria
         </Button>
       </div>
     </form>
@@ -699,6 +699,14 @@ function LocalError({ message }: { message: string }) {
 
 function formatSummary(summary: KnowledgeResetCounts) {
   return `${summary.nodes} capturas · ${summary.contexts} conceptos · ${summary.relations} relaciones`;
+}
+
+function formatBackupSummary(backup: KnowledgeBackup) {
+  if (backup.format === "vinema-memory-backup") {
+    return `${backup.summary.captures} capturas · ${backup.summary.concepts} conceptos · ${backup.summary.relations} relaciones`;
+  }
+
+  return `${backup.summary.nodes} capturas · ${backup.summary.contexts} conceptos · ${backup.summary.relations} relaciones`;
 }
 
 function toUserRestoreError(error: unknown) {

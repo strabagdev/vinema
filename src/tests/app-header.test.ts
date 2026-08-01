@@ -166,18 +166,18 @@ describe("AppHeader", () => {
     expect(document.body.querySelector("a[href='/notes/archive']")).toBeTruthy();
     expect(document.body.textContent).toContain("Mi conocimiento");
     expect(document.body.textContent).toContain("Cerrar sesion");
-    expect(document.body.textContent).not.toContain("Respaldar conocimiento");
-    expect(document.body.textContent).not.toContain("Restaurar conocimiento");
-    expect(document.body.textContent).not.toContain("Vaciar conocimiento");
+    expect(document.body.textContent).not.toContain("Respaldar memoria");
+    expect(document.body.textContent).not.toContain("Restaurar memoria");
+    expect(document.body.textContent).not.toContain("Vaciar memoria");
     expect(document.body.textContent).not.toContain("Sincronizacion futura");
 
     await click(getByText("Mi conocimiento"));
 
     expect(getDialog()).toBeTruthy();
     expect(document.body.textContent).toContain("22 capturas · 6 conceptos · 15 relaciones");
-    expect(document.body.textContent).toContain("Respaldar conocimiento");
-    expect(document.body.textContent).toContain("Restaurar conocimiento");
-    expect(document.body.textContent).toContain("Vaciar conocimiento");
+    expect(document.body.textContent).toContain("Respaldar memoria");
+    expect(document.body.textContent).toContain("Restaurar memoria");
+    expect(document.body.textContent).toContain("Vaciar memoria");
     expect(document.body.textContent).not.toContain("workspace");
   });
 
@@ -200,7 +200,7 @@ describe("AppHeader", () => {
 
     await click(screen.querySelector("button[aria-label='Abrir menu']"));
     await click(getByText("Mi conocimiento"));
-    await click(getByText("Respaldar conocimiento"));
+    await click(getByText("Respaldar memoria"));
 
     expect(knowledgeMocks.exportKnowledgeBackup).toHaveBeenCalledTimes(1);
     expect(knowledgeMocks.downloadKnowledgeBackup).toHaveBeenCalledWith(
@@ -214,7 +214,7 @@ describe("AppHeader", () => {
 
     await click(screen.querySelector("button[aria-label='Abrir menu']"));
     await click(getByText("Mi conocimiento"));
-    await click(getByText("Restaurar conocimiento"));
+    await click(getByText("Restaurar memoria"));
     await changeFileInput(new File(["{}"], "vinema-knowledge.json", {
       type: "application/json",
     }));
@@ -230,18 +230,18 @@ describe("AppHeader", () => {
 
     await click(screen.querySelector("button[aria-label='Abrir menu']"));
     await click(getByText("Mi conocimiento"));
-    await click(getByText("Vaciar conocimiento"));
+    await click(getByText("Vaciar memoria"));
 
     expect(document.body.textContent).toContain(
       "Se eliminara toda la memoria activa en todos tus dispositivos.",
     );
-    expect(getButtonByText("Vaciar conocimiento").hasAttribute("disabled")).toBe(true);
+    expect(getButtonByText("Vaciar memoria").hasAttribute("disabled")).toBe(true);
 
     await inputText(getConfirmationInput(), "BORRAR");
-    expect(getButtonByText("Vaciar conocimiento").hasAttribute("disabled")).toBe(true);
+    expect(getButtonByText("Vaciar memoria").hasAttribute("disabled")).toBe(true);
 
     await inputText(getConfirmationInput(), "VACIAR");
-    expect(getButtonByText("Vaciar conocimiento").hasAttribute("disabled")).toBe(false);
+    expect(getButtonByText("Vaciar memoria").hasAttribute("disabled")).toBe(false);
     expect(document.body.querySelectorAll("[role='dialog']")).toHaveLength(1);
   });
 
@@ -250,7 +250,7 @@ describe("AppHeader", () => {
 
     await click(screen.querySelector("button[aria-label='Abrir menu']"));
     await click(getByText("Mi conocimiento"));
-    await click(getByText("Vaciar conocimiento"));
+    await click(getByText("Vaciar memoria"));
     await inputText(getConfirmationInput(), "VACIAR");
     await click(document.body.querySelector("button[aria-label='Cerrar Mi conocimiento']"));
 
@@ -261,7 +261,7 @@ describe("AppHeader", () => {
       await click(screen.querySelector("button[aria-label='Abrir menu']"));
     }
     await click(getByText("Mi conocimiento"));
-    await click(getByText("Vaciar conocimiento"));
+    await click(getByText("Vaciar memoria"));
 
     expect(getConfirmationInput().value).toBe("");
   });

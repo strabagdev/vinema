@@ -54,6 +54,29 @@ export class PrismaSyncStore implements SyncStore {
     return latest?.sequence.toString() ?? "0";
   }
 
+  async getLatestKnowledgeReset(
+    workspaceId: string,
+  ): Promise<{ resetVersion: string; occurredAt: string } | null> {
+    const latest = await this.prisma.syncChange.findFirst({
+      where: {
+        workspaceId,
+        entityType: RESET_MARKER_ENTITY_TYPE,
+        entityId: workspaceId,
+        operation: RESET_MARKER_OPERATION,
+        entityVersion: RESET_MARKER_ENTITY_VERSION,
+      },
+      orderBy: { sequence: "desc" },
+      select: { sequence: true, changedAt: true },
+    });
+
+    return latest
+      ? {
+        resetVersion: latest.sequence.toString(),
+        occurredAt: latest.changedAt.toISOString(),
+      }
+      : null;
+  }
+
   async getProcessedMutation(
     workspaceId: string,
     mutationId: string,

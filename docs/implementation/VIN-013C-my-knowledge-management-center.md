@@ -1,5 +1,7 @@
 # VIN-013C - My Knowledge Management Center
 
+> Ampliado por VIN-013D. El centro actual usa la semantica de memoria completa: `Respaldar memoria`, `Restaurar memoria` y `Vaciar memoria`.
+
 ## Decision de Producto
 
 VIN-013C consolida las acciones de memoria en un unico centro llamado `Mi conocimiento`.

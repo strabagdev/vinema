@@ -15,6 +15,8 @@ import { emitSyncDataChanged } from "@/features/sync/sync-data-events";
 
 export const KNOWLEDGE_BACKUP_FORMAT = "vinema-knowledge-backup";
 export const KNOWLEDGE_BACKUP_VERSION = 1;
+export const MEMORY_BACKUP_FORMAT = "vinema-memory-backup";
+export const MEMORY_BACKUP_VERSION = 2;
 export const MAX_KNOWLEDGE_BACKUP_BYTES = 5 * 1024 * 1024;
 
 const SENSITIVE_KEY_PATTERN =
@@ -46,7 +48,7 @@ export type KnowledgeBackupContext = Context & {
 
 export type KnowledgeBackupRelation = NodeContextRelation;
 
-export type KnowledgeBackup = {
+export type LegacyKnowledgeBackup = {
   format: typeof KNOWLEDGE_BACKUP_FORMAT;
   version: typeof KNOWLEDGE_BACKUP_VERSION;
   exportedAt: string;
@@ -65,6 +67,39 @@ export type KnowledgeBackup = {
     relations: number;
   };
 };
+
+export type MemoryBackup = {
+  format: typeof MEMORY_BACKUP_FORMAT;
+  version: typeof MEMORY_BACKUP_VERSION;
+  exportedAt: string;
+  applicationVersion: string;
+  memory: {
+    captures: KnowledgeBackupNode[];
+    concepts: KnowledgeBackupContext[];
+    relations: KnowledgeBackupRelation[];
+  };
+  summary: {
+    captures: number;
+    concepts: number;
+    relations: number;
+    archivedCaptures: number;
+    archivedConcepts: number;
+  };
+  integrity: {
+    algorithm: "vinema-json-stable-v1";
+    checksum: string;
+  };
+  compatibility: {
+    acceptsLegacyV1: true;
+    restoredIntoCurrentAccount: true;
+  };
+  technical: {
+    sourceWorkspaceId: string;
+    sourceWorkspaceName: string;
+  };
+};
+
+export type KnowledgeBackup = LegacyKnowledgeBackup | MemoryBackup;
 
 export type KnowledgeRepositories = {
   nodeRepository: NodeRepository;
@@ -110,7 +145,7 @@ export async function exportKnowledgeBackup({
   workspace: Workspace;
   repositories: KnowledgeRepositories;
   now?: () => string;
-}): Promise<KnowledgeBackup> {
+}): Promise<MemoryBackup> {
   const [nodes, contexts, relations] = await Promise.all([
     repositories.nodeRepository.listByWorkspace(workspace.id, {
       includeArchived: true,
@@ -143,7 +178,7 @@ export function buildKnowledgeBackup({
   contexts: Context[];
   relations: NodeContextRelation[];
   exportedAt: string;
-}): KnowledgeBackup {
+}): MemoryBackup {
   const knowledgeNodes = nodes
     .filter((node) => node.workspaceId === workspace.id && node.deletedAt === null)
     .map(toBackupNode);
@@ -160,27 +195,40 @@ export function buildKnowledgeBackup({
     )
     .map(toBackupRelation);
 
-  const backup: KnowledgeBackup = {
-    format: KNOWLEDGE_BACKUP_FORMAT,
-    version: KNOWLEDGE_BACKUP_VERSION,
+  const backup = withMemoryIntegrity({
+    format: MEMORY_BACKUP_FORMAT,
+    version: MEMORY_BACKUP_VERSION,
     exportedAt,
-    workspace: {
-      id: workspace.id,
-      name: workspace.name,
-    },
-    knowledge: {
-      nodes: knowledgeNodes,
-      contexts: knowledgeContexts,
+    applicationVersion: "0.1.0",
+    memory: {
+      captures: knowledgeNodes,
+      concepts: knowledgeContexts,
       relations: knowledgeRelations,
     },
     summary: {
-      nodes: knowledgeNodes.length,
-      contexts: knowledgeContexts.length,
+      captures: knowledgeNodes.length,
+      concepts: knowledgeContexts.length,
       relations: knowledgeRelations.length,
+      archivedCaptures: knowledgeNodes.filter((node) => node.status === "ARCHIVED")
+        .length,
+      archivedConcepts: knowledgeContexts.filter((context) => context.archivedAt)
+        .length,
     },
-  };
+    integrity: {
+      algorithm: "vinema-json-stable-v1",
+      checksum: "",
+    },
+    compatibility: {
+      acceptsLegacyV1: true,
+      restoredIntoCurrentAccount: true,
+    },
+    technical: {
+      sourceWorkspaceId: workspace.id,
+      sourceWorkspaceName: workspace.name,
+    },
+  });
 
-  return validateKnowledgeBackup(backup);
+  return validateMemoryBackup(backup);
 }
 
 export function serializeKnowledgeBackup(backup: KnowledgeBackup) {
@@ -195,7 +243,7 @@ export function createKnowledgeBackupFileName(date = new Date()) {
   const hour = pad(date.getHours());
   const minute = pad(date.getMinutes());
 
-  return `vinema-knowledge-${year}-${month}-${day}-${hour}${minute}.json`;
+  return `vinema-memory-${year}-${month}-${day}-${hour}${minute}.json`;
 }
 
 export function parseKnowledgeBackupJson(
@@ -225,6 +273,17 @@ export function parseKnowledgeBackupJson(
 
 export function validateKnowledgeBackup(value: unknown): KnowledgeBackup {
   const backup = asRecord(value, "El respaldo debe ser un objeto.");
+
+  if (backup.format === MEMORY_BACKUP_FORMAT) {
+    return validateMemoryBackup(backup);
+  }
+
+  return validateLegacyKnowledgeBackup(backup);
+}
+
+function validateLegacyKnowledgeBackup(value: unknown): LegacyKnowledgeBackup {
+  const backup = asRecord(value, "El respaldo debe ser un objeto.");
+  rejectSensitiveKeys(backup);
 
   if (backup.format !== KNOWLEDGE_BACKUP_FORMAT) {
     throw new KnowledgeBackupValidationError(
@@ -337,6 +396,181 @@ export function validateKnowledgeBackup(value: unknown): KnowledgeBackup {
   };
 }
 
+function validateMemoryBackup(value: unknown): MemoryBackup {
+  const backup = asRecord(value, "El respaldo debe ser un objeto.");
+  rejectSensitiveKeys(backup);
+
+  if (backup.version !== MEMORY_BACKUP_VERSION) {
+    throw new KnowledgeBackupValidationError(
+      "INVALID_VERSION",
+      "La version del respaldo no es compatible.",
+    );
+  }
+
+  const exportedAt = assertIsoDate(backup.exportedAt, "exportedAt");
+  const applicationVersion = assertNonEmptyString(
+    backup.applicationVersion,
+    "applicationVersion",
+  );
+  const memory = asRecord(backup.memory, "memory debe ser un objeto.");
+  const captures = assertArray(memory.captures, "memory.captures").map(validateNode);
+  const concepts = assertArray(memory.concepts, "memory.concepts").map(
+    validateContext,
+  );
+  const relations = assertArray(memory.relations, "memory.relations").map(
+    validateRelation,
+  );
+  const summary = asRecord(backup.summary, "summary debe ser un objeto.");
+  const integrity = asRecord(backup.integrity, "integrity debe ser un objeto.");
+  const compatibility = asRecord(
+    backup.compatibility,
+    "compatibility debe ser un objeto.",
+  );
+  const technical = asRecord(backup.technical, "technical debe ser un objeto.");
+  const sourceWorkspaceId = assertNonEmptyString(
+    technical.sourceWorkspaceId,
+    "technical.sourceWorkspaceId",
+  );
+  const sourceWorkspaceName = assertNonEmptyString(
+    technical.sourceWorkspaceName,
+    "technical.sourceWorkspaceName",
+  );
+
+  if (
+    summary.captures !== captures.length ||
+    summary.concepts !== concepts.length ||
+    summary.relations !== relations.length
+  ) {
+    throw new KnowledgeBackupValidationError(
+      "INVALID_SUMMARY",
+      "Los conteos del respaldo no coinciden con su contenido.",
+    );
+  }
+
+  const archivedCaptures = captures.filter((node) => node.status === "ARCHIVED")
+    .length;
+  const archivedConcepts = concepts.filter((context) => context.archivedAt).length;
+
+  if (
+    summary.archivedCaptures !== archivedCaptures ||
+    summary.archivedConcepts !== archivedConcepts
+  ) {
+    throw new KnowledgeBackupValidationError(
+      "INVALID_SUMMARY",
+      "Los conteos archivados del respaldo no coinciden.",
+    );
+  }
+
+  const nodeIds = assertUnique(captures.map((node) => node.id), "captures.id");
+  const contextIds = assertUnique(
+    concepts.map((context) => context.id),
+    "concepts.id",
+  );
+  assertUnique(relations.map((relation) => relation.id), "relations.id");
+
+  for (const node of captures) {
+    if (node.workspaceId !== sourceWorkspaceId) {
+      throw new KnowledgeBackupValidationError(
+        "MIXED_WORKSPACE",
+        "El respaldo contiene capturas de otra memoria tecnica.",
+      );
+    }
+  }
+
+  for (const context of concepts) {
+    if (context.workspaceId !== sourceWorkspaceId) {
+      throw new KnowledgeBackupValidationError(
+        "MIXED_WORKSPACE",
+        "El respaldo contiene conceptos de otra memoria tecnica.",
+      );
+    }
+
+    const expectedKey = createConceptEquivalenceKey(context.name);
+    if (context.normalizedLabel !== expectedKey) {
+      throw new KnowledgeBackupValidationError(
+        "INVALID_NORMALIZED_LABEL",
+        "Un concepto no coincide con su etiqueta normalizada.",
+      );
+    }
+  }
+
+  for (const relation of relations) {
+    if (relation.workspaceId !== sourceWorkspaceId) {
+      throw new KnowledgeBackupValidationError(
+        "MIXED_WORKSPACE",
+        "El respaldo contiene relaciones de otra memoria tecnica.",
+      );
+    }
+
+    if (!nodeIds.has(relation.nodeId) || !contextIds.has(relation.contextId)) {
+      throw new KnowledgeBackupValidationError(
+        "ORPHAN_RELATION",
+        "El respaldo contiene una relacion sin captura o concepto existente.",
+      );
+    }
+  }
+
+  if (integrity.algorithm !== "vinema-json-stable-v1") {
+    throw new KnowledgeBackupValidationError(
+      "INVALID_INTEGRITY",
+      "El algoritmo de integridad del respaldo no es compatible.",
+    );
+  }
+
+  const checksum = assertNonEmptyString(integrity.checksum, "integrity.checksum");
+  if (
+    compatibility.acceptsLegacyV1 !== true ||
+    compatibility.restoredIntoCurrentAccount !== true
+  ) {
+    throw new KnowledgeBackupValidationError(
+      "INVALID_COMPATIBILITY",
+      "La compatibilidad del respaldo no es valida.",
+    );
+  }
+
+  const normalized: MemoryBackup = {
+    format: MEMORY_BACKUP_FORMAT,
+    version: MEMORY_BACKUP_VERSION,
+    exportedAt,
+    applicationVersion,
+    memory: {
+      captures,
+      concepts,
+      relations,
+    },
+    summary: {
+      captures: captures.length,
+      concepts: concepts.length,
+      relations: relations.length,
+      archivedCaptures,
+      archivedConcepts,
+    },
+    integrity: {
+      algorithm: "vinema-json-stable-v1",
+      checksum,
+    },
+    compatibility: {
+      acceptsLegacyV1: true,
+      restoredIntoCurrentAccount: true,
+    },
+    technical: {
+      sourceWorkspaceId,
+      sourceWorkspaceName,
+    },
+  };
+
+  rejectSensitiveKeys(normalized);
+
+  if (checksum !== calculateMemoryBackupChecksum(normalized)) {
+    throw new KnowledgeBackupValidationError(
+      "INVALID_CHECKSUM",
+      "La integridad del respaldo no coincide.",
+    );
+  }
+
+  return normalized;
+}
+
 export async function restoreKnowledgeBackup({
   backup,
   workspace,
@@ -350,7 +584,7 @@ export async function restoreKnowledgeBackup({
   repositories: KnowledgeRepositories;
   syncNow?: () => Promise<void>;
 }): Promise<RestoreKnowledgeBackupResult> {
-  const validBackup = validateKnowledgeBackup(backup);
+  const validBackup = toRestorableKnowledge(validateKnowledgeBackup(backup));
 
   if (validBackup.workspace.id !== workspace.id) {
     throw new KnowledgeBackupValidationError(
@@ -502,6 +736,32 @@ export async function restoreKnowledgeBackup({
     skippedNodes,
     skippedContexts,
     skippedRelations,
+  };
+}
+
+function toRestorableKnowledge(backup: KnowledgeBackup): LegacyKnowledgeBackup {
+  if (backup.format === KNOWLEDGE_BACKUP_FORMAT) {
+    return backup;
+  }
+
+  return {
+    format: KNOWLEDGE_BACKUP_FORMAT,
+    version: KNOWLEDGE_BACKUP_VERSION,
+    exportedAt: backup.exportedAt,
+    workspace: {
+      id: backup.technical.sourceWorkspaceId,
+      name: backup.technical.sourceWorkspaceName,
+    },
+    knowledge: {
+      nodes: backup.memory.captures,
+      contexts: backup.memory.concepts,
+      relations: backup.memory.relations,
+    },
+    summary: {
+      nodes: backup.summary.captures,
+      contexts: backup.summary.concepts,
+      relations: backup.summary.relations,
+    },
   };
 }
 
@@ -697,6 +957,54 @@ function sanitizeMetadata(metadata: Record<string, unknown>) {
     }
   }
   return result;
+}
+
+function withMemoryIntegrity(
+  backup: Omit<MemoryBackup, "integrity"> & {
+    integrity: MemoryBackup["integrity"];
+  },
+): MemoryBackup {
+  return {
+    ...backup,
+    integrity: {
+      algorithm: "vinema-json-stable-v1",
+      checksum: calculateMemoryBackupChecksum(backup),
+    },
+  };
+}
+
+function calculateMemoryBackupChecksum(
+  backup: Omit<MemoryBackup, "integrity"> & {
+    integrity?: Partial<MemoryBackup["integrity"]>;
+  },
+) {
+  const { integrity: _integrity, ...withoutIntegrity } = backup;
+  void _integrity;
+  let hash = 2_166_136_261;
+  const text = stableStringify(withoutIntegrity);
+
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16_777_619);
+  }
+
+  return `fnv1a32:${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(",")}]`;
+  }
+
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .filter(([, nested]) => nested !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => `${JSON.stringify(key)}:${stableStringify(nested)}`)
+      .join(",")}}`;
+  }
+
+  return JSON.stringify(value);
 }
 
 function isSerializableMetadata(value: unknown): value is string | number | boolean | null {

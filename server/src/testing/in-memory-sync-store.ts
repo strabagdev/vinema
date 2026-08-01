@@ -47,6 +47,22 @@ export class InMemorySyncStore implements SyncStore {
       .at(-1)?.sequence ?? "0";
   }
 
+  async getLatestKnowledgeReset(
+    workspaceId: string,
+  ): Promise<{ resetVersion: string; occurredAt: string } | null> {
+    const latest = this.changes
+      .filter(
+        (change) =>
+          change.entityType === "workspaceKnowledgeReset" &&
+          change.entityId === workspaceId,
+      )
+      .at(-1);
+
+    return latest && latest.entityType === "workspaceKnowledgeReset"
+      ? { resetVersion: latest.sequence, occurredAt: latest.occurredAt }
+      : null;
+  }
+
   async getProcessedMutation(
     workspaceId: string,
     mutationId: string,

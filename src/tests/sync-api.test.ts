@@ -425,6 +425,14 @@ describe("Vinema sync API", () => {
       headers: authHeaders(),
       payload: { workspaceId, confirmation: "VACIAR" },
     });
+    const stalePush = await push(app, [
+      captureMutation({
+        mutationId: "44444444-eeee-4eee-8eee-444444444444",
+        entityId: "99999999-eeee-4eee-8eee-999999999999",
+        baseVersion: null,
+        content: "Mutacion anterior al reset",
+      }),
+    ]);
     const pullReset = await app.inject({
       method: "GET",
       url: `/api/sync/pull?workspaceId=${workspaceId}&cursor=3&limit=10`,
@@ -448,6 +456,12 @@ describe("Vinema sync API", () => {
       concepts: 0,
       relations: 0,
     });
+    expect(stalePush.json().rejected).toContainEqual(
+      expect.objectContaining({
+        code: "MEMORY_RESET_CONFLICT",
+        entityType: "capture",
+      }),
+    );
     expect(store.workspaces.has(workspaceId)).toBe(true);
     expect(store.captures.size).toBe(0);
     expect(store.concepts.size).toBe(0);

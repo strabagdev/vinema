@@ -6,6 +6,8 @@ import type { NodeContextRelation } from "@/domain/context/node-context-relation
 import type { Node } from "@/domain/node/node";
 import type { Workspace } from "@/domain/workspace/workspace";
 import {
+  KNOWLEDGE_BACKUP_FORMAT,
+  KNOWLEDGE_BACKUP_VERSION,
   buildKnowledgeBackup,
   createKnowledgeBackupFileName,
   exportKnowledgeBackup,
@@ -52,23 +54,26 @@ describe("knowledge backup", () => {
     const serialized = serializeKnowledgeBackup(backup);
 
     expect(backup).toMatchObject({
-      format: "vinema-knowledge-backup",
-      version: 1,
+      format: "vinema-memory-backup",
+      version: 2,
       summary: {
-        nodes: 1,
-        contexts: 1,
+        captures: 1,
+        concepts: 1,
         relations: 1,
+        archivedCaptures: 0,
+        archivedConcepts: 0,
       },
     });
-    expect(backup.knowledge.nodes[0].content).toBe("Reunion con Mitcom");
-    expect(backup.knowledge.contexts[0].normalizedLabel).toBe("reunion");
+    expect(backup.memory.captures[0].content).toBe("Reunion con Mitcom");
+    expect(backup.memory.concepts[0].normalizedLabel).toBe("reunion");
+    expect(backup.integrity.checksum).toMatch(/^fnv1a32:/);
     expect(serialized).not.toMatch(/accessToken|refreshToken|session|deviceName/i);
   });
 
   it("creates the expected readable file name", () => {
     expect(
       createKnowledgeBackupFileName(new Date("2026-08-01T09:07:00.000Z")),
-    ).toMatch(/^vinema-knowledge-2026-08-01-\d{4}\.json$/);
+    ).toMatch(/^vinema-memory-2026-08-01-\d{4}\.json$/);
   });
 
   it("accepts a valid JSON backup and rejects invalid files", () => {
@@ -84,13 +89,19 @@ describe("knowledge backup", () => {
       parseKnowledgeBackupJson(
         JSON.stringify({
           ...backup,
-          knowledge: {
-            ...backup.knowledge,
-            relations: [{ ...backup.knowledge.relations[0], nodeId: "missing" }],
+          memory: {
+            ...backup.memory,
+            relations: [{ ...backup.memory.relations[0], nodeId: "missing" }],
           },
         }),
       ),
     ).toThrow(KnowledgeBackupValidationError);
+  });
+
+  it("continues accepting legacy v1 backups as partial memory backups", () => {
+    const backup = legacyBackupFixture();
+
+    expect(parseKnowledgeBackupJson(JSON.stringify(backup))).toEqual(backup);
   });
 
   it("rejects backups that contain sensitive fields", () => {
@@ -133,8 +144,8 @@ describe("knowledge backup", () => {
       now: () => "2026-01-02T00:00:00.000Z",
     });
 
-    expect(backup.summary).toEqual({ nodes: 1, contexts: 1, relations: 1 });
-    expect(backup.knowledge.nodes.map((node) => node.workspaceId)).toEqual([
+    expect(backup.summary).toMatchObject({ captures: 1, concepts: 1, relations: 1 });
+    expect(backup.memory.captures.map((node) => node.workspaceId)).toEqual([
       workspace.id,
     ]);
   });
@@ -292,6 +303,30 @@ function backupFixture() {
     relations: [relationFixture()],
     exportedAt: "2026-01-02T00:00:00.000Z",
   });
+}
+
+function legacyBackupFixture() {
+  const memory = backupFixture();
+
+  return {
+    format: KNOWLEDGE_BACKUP_FORMAT,
+    version: KNOWLEDGE_BACKUP_VERSION,
+    exportedAt: memory.exportedAt,
+    workspace: {
+      id: workspace.id,
+      name: workspace.name,
+    },
+    knowledge: {
+      nodes: memory.memory.captures,
+      contexts: memory.memory.concepts,
+      relations: memory.memory.relations,
+    },
+    summary: {
+      nodes: memory.summary.captures,
+      contexts: memory.summary.concepts,
+      relations: memory.summary.relations,
+    },
+  };
 }
 
 function nodeFixture(overrides: Partial<Node> = {}): Node {

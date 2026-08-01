@@ -32,6 +32,9 @@ export interface SyncStore {
   health(): Promise<void>;
   workspaceExists(workspaceId: string): Promise<boolean>;
   getLatestCursor(workspaceId: string): Promise<string>;
+  getLatestKnowledgeReset(
+    workspaceId: string,
+  ): Promise<{ resetVersion: string; occurredAt: string } | null>;
   getProcessedMutation(
     workspaceId: string,
     mutationId: string,

@@ -1,5 +1,7 @@
 # VIN-013A - Knowledge Backup and Restore
 
+> Ampliado por VIN-013D. El respaldo actual usa `vinema-memory-backup` version 2 y mantiene compatibilidad de lectura con `vinema-knowledge-backup` version 1.
+
 ## Alcance
 
 VIN-013A introduce respaldo y restauracion segura del conocimiento local de Vinema.
