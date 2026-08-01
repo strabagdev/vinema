@@ -19,6 +19,9 @@ describe("contextual concept exploration", () => {
       "/concepts/detail?contextId=workspace&returnTo=%2Fnotes%2Fdetail%3FnodeId%3Da",
     );
     expect(
+      getConceptExplorationPath("workspace", { returnTo: "/", from: "panel" }),
+    ).toBe("/concepts/detail?contextId=workspace&returnTo=%2F&from=panel");
+    expect(
       getConceptIdFromSearchParams(new URLSearchParams("contextId=Railway")),
     ).toBe("Railway");
     expect(getConceptIdFromSearchParams(new URLSearchParams())).toBeNull();

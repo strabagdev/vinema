@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Brain, Check, History, SendHorizontal, X } from "lucide-react";
+import { Brain, Check, History, Maximize2, SendHorizontal, X } from "lucide-react";
 import type { CSSProperties, FocusEvent, ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -112,6 +112,14 @@ export function CaptureSurface({
       associationState.status === "loading" ||
       associationState.error !== null);
   const showIndicators = showConceptIndicator || showMemoryIndicator;
+  const conceptExpansionContextId = getConceptExpansionContextId(
+    conceptSuggestions,
+    selectedContextIds,
+  );
+  const memoryExpansionContextId = getMemoryExpansionContextId(
+    memorySuggestions,
+    memoryIdentities,
+  );
   const clearPanelCloseTimer = useCallback(() => {
     if (closePanelTimerRef.current) {
       clearTimeout(closePanelTimerRef.current);
@@ -580,12 +588,21 @@ export function CaptureSurface({
           {activePanel === "concepts" ? (
             <ProgressivePanel
               title="Conceptos detectados"
+              expandHref={
+                conceptExpansionContextId
+                  ? getConceptExplorationPath(conceptExpansionContextId, {
+                      returnTo: "/",
+                      from: "panel",
+                    })
+                  : null
+              }
               interactionSource={interactionSource}
               placement={panelPlacement}
               onIntentStart={clearPanelCloseTimer}
               onIntentEnd={schedulePanelClose}
               onBlur={closePanelAfterFocusLeaves}
               onClose={closePanels}
+              onExpand={persistCurrentDraft}
             >
               <ConceptPanelContent
                 suggestions={conceptSuggestions}
@@ -601,12 +618,21 @@ export function CaptureSurface({
           {activePanel === "memories" ? (
             <ProgressivePanel
               title="Me recuerda a…"
+              expandHref={
+                memoryExpansionContextId
+                  ? getConceptExplorationPath(memoryExpansionContextId, {
+                      returnTo: "/",
+                      from: "panel",
+                    })
+                  : null
+              }
               interactionSource={interactionSource}
               placement={panelPlacement}
               onIntentStart={clearPanelCloseTimer}
               onIntentEnd={schedulePanelClose}
               onBlur={closePanelAfterFocusLeaves}
               onClose={closePanels}
+              onExpand={persistCurrentDraft}
             >
               <MemoryPanelContent
                 suggestions={memorySuggestions}
@@ -677,6 +703,39 @@ function mergeSelectedConceptSuggestions(
   return Array.from(merged.values());
 }
 
+function getConceptExpansionContextId(
+  suggestions: ConceptSuggestion[],
+  selectedContextIds: string[],
+) {
+  const selectedSuggestion = suggestions.find(
+    (suggestion) =>
+      suggestion.kind === "existing" &&
+      selectedContextIds.includes(suggestion.conceptId),
+  );
+
+  if (selectedSuggestion?.kind === "existing") {
+    return selectedSuggestion.conceptId;
+  }
+
+  return suggestions.find((suggestion) => suggestion.kind === "existing")
+    ?.conceptId ?? null;
+}
+
+function getMemoryExpansionContextId(
+  suggestions: AssociationSuggestion[],
+  identities: Map<string, CaptureEmergentIdentity>,
+) {
+  for (const suggestion of suggestions) {
+    const concept = identities.get(suggestion.node.id)?.concepts[0];
+
+    if (concept) {
+      return concept.id;
+    }
+  }
+
+  return null;
+}
+
 function ContextIndicator({
   panel,
   icon,
@@ -724,21 +783,25 @@ function ContextIndicator({
 
 function ProgressivePanel({
   title,
+  expandHref,
   interactionSource,
   placement,
   onIntentStart,
   onIntentEnd,
   onBlur,
   onClose,
+  onExpand,
   children,
 }: {
   title: string;
+  expandHref?: string | null;
   interactionSource: PanelInteractionSource;
   placement: PanelPlacement;
   onIntentStart: () => void;
   onIntentEnd: () => void;
   onBlur: (event: FocusEvent<HTMLElement>) => void;
   onClose: () => void;
+  onExpand?: () => void | Promise<void>;
   children: ReactNode;
 }) {
   const isMobileSheet = placement.layout === "mobile-sheet";
@@ -761,16 +824,31 @@ function ProgressivePanel({
       <div className="max-h-[calc(70vh-1.5rem)] overflow-y-auto px-4 py-4 md:max-h-[calc(60vh-1.5rem)]">
         <div className="mb-2 flex items-center justify-between gap-3">
           <h2 className="text-sm font-medium text-zinc-800">{title}</h2>
-          {isMobileSheet ? (
-          <button
-            type="button"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 outline-none hover:bg-zinc-100 hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400 md:hidden"
-            aria-label="Cerrar panel"
-            onClick={onClose}
-          >
-            <X className="h-4 w-4" aria-hidden="true" />
-          </button>
-          ) : null}
+          <div className="flex items-center gap-1">
+            {expandHref ? (
+              <Link
+                href={expandHref}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 outline-none transition-colors hover:bg-zinc-100 hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400 motion-reduce:transition-none"
+                aria-label="Profundizar en Base de conocimiento"
+                title="Profundizar"
+                onClick={() => {
+                  void onExpand?.();
+                }}
+              >
+                <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" />
+              </Link>
+            ) : null}
+            {isMobileSheet ? (
+              <button
+                type="button"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 outline-none hover:bg-zinc-100 hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400 md:hidden"
+                aria-label="Cerrar panel"
+                onClick={onClose}
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            ) : null}
+          </div>
         </div>
         {children}
       </div>
@@ -959,7 +1037,7 @@ function MemoryPanelContent({
           href="/notes"
           className="inline-flex h-8 items-center rounded-md px-1 text-xs text-zinc-500 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
         >
-          Ver en Explorar
+          Ver historial
         </Link>
       ) : null}
     </div>

@@ -13,6 +13,7 @@ import { formatShortDate } from "@/components/app-shell/note-list-item";
 import { getContentTimestamp } from "@/features/capture/capture-timestamps";
 import { deriveConceptNeighborhood } from "@/features/exploration/concept-neighborhood";
 import {
+  getConceptExpansionSourceFromSearchParams,
   getConceptExplorationPath,
   getConceptIdFromSearchParams,
 } from "@/features/exploration/concept-routes";
@@ -31,7 +32,7 @@ import {
 } from "@/infrastructure/repositories";
 
 type LoadState = "loading" | "ready" | "error";
-type ExplorationMode = "memories" | "time";
+type KnowledgeBaseMode = "memories" | "time" | "map";
 
 const CONCEPT_EXPLORATION_INVALIDATION_TYPES = [
   "capture",
@@ -43,6 +44,7 @@ export function ConceptExplorationClient() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const contextId = getConceptIdFromSearchParams(searchParams);
+  const expansionSource = getConceptExpansionSourceFromSearchParams(searchParams);
   const returnTo = getReturnToFromSearchParams(searchParams);
   const vinemaContext = useVinemaContext();
   const [loadState, setLoadState] = useState<LoadState>("loading");
@@ -54,7 +56,7 @@ export function ConceptExplorationClient() {
   const [identities, setIdentities] = useState<
     Map<string, CaptureEmergentIdentity>
   >(new Map());
-  const [mode, setMode] = useState<ExplorationMode>("memories");
+  const [mode, setMode] = useState<KnowledgeBaseMode>("memories");
   const [conceptHistory, setConceptHistory] = useState<string[]>([]);
   const neighborhood = useMemo(() => {
     if (!contextId) {
@@ -124,7 +126,7 @@ export function ConceptExplorationClient() {
       );
       setLoadState("ready");
     } catch {
-      setError("No se pudo cargar la exploracion del concepto.");
+      setError("No se pudo cargar la base de conocimiento.");
       setLoadState("error");
     }
   }, [contextId, vinemaContext]);
@@ -156,7 +158,7 @@ export function ConceptExplorationClient() {
   if (loadState === "loading" || vinemaContext.status === "loading") {
     return (
       <section className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
-        <p className="text-sm text-zinc-500">Cargando exploracion...</p>
+        <p className="text-sm text-zinc-500">Cargando conocimiento...</p>
       </section>
     );
   }
@@ -207,7 +209,11 @@ export function ConceptExplorationClient() {
   }
 
   return (
-    <section className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-4 py-5 sm:px-6 lg:px-8">
+    <section
+      className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-4 py-5 opacity-100 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none sm:px-6 lg:px-8"
+      data-knowledge-base-surface=""
+      data-expansion-source={expansionSource ?? undefined}
+    >
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-3">
           <div className="flex items-center gap-2">
@@ -225,7 +231,7 @@ export function ConceptExplorationClient() {
               {center.name}
             </h1>
             <p className="mt-2 text-sm leading-6 text-zinc-500" aria-live="polite">
-              {memories.length} recuerdos relacionados
+              Base de conocimiento · {memories.length} recuerdos relacionados
               {neighborhood
                 ? ` · ${neighborhood.relatedConcepts.length} conceptos conectados`
                 : ""}
@@ -245,6 +251,12 @@ export function ConceptExplorationClient() {
             label="Tiempo"
             onClick={() => setMode("time")}
           />
+          <ModeButton
+            active={mode === "map"}
+            icon={<Network className="h-4 w-4" aria-hidden="true" />}
+            label="Mapa"
+            onClick={() => setMode("map")}
+          />
         </div>
       </header>
 
@@ -256,13 +268,22 @@ export function ConceptExplorationClient() {
               identities={identities}
               returnTo={getConceptExplorationPath(center.id, { returnTo })}
             />
-          ) : (
+          ) : null}
+          {mode === "time" ? (
             <TimeMemoryList
               memories={memories}
               identities={identities}
               returnTo={getConceptExplorationPath(center.id, { returnTo })}
             />
-          )}
+          ) : null}
+          {mode === "map" ? (
+            <PreparedMapView
+              center={center}
+              memories={memories}
+              neighborhood={neighborhood}
+              onNavigateToConcept={navigateToConcept}
+            />
+          ) : null}
         </div>
         <aside className="space-y-4">
           <div className="flex items-center gap-2 text-sm font-medium text-zinc-700">
@@ -295,6 +316,61 @@ export function ConceptExplorationClient() {
           )}
         </aside>
       </div>
+    </section>
+  );
+}
+
+function PreparedMapView({
+  center,
+  memories,
+  neighborhood,
+  onNavigateToConcept,
+}: {
+  center: Context;
+  memories: Node[];
+  neighborhood: ReturnType<typeof deriveConceptNeighborhood>;
+  onNavigateToConcept: (contextId: string) => void;
+}) {
+  return (
+    <section className="space-y-6" aria-label="Mapa preparado">
+      <div className="space-y-2">
+        <h2 className="text-sm font-medium text-zinc-500">
+          Mapa conceptual preparado
+        </h2>
+        <p className="text-sm font-medium text-zinc-800">{center.name}</p>
+        <p className="max-w-2xl text-sm leading-6 text-zinc-500">
+          Este modo conserva el centro actual y muestra las conexiones que ya se
+          pueden derivar por recuerdos comunes, sin introducir un grafo visual
+          todavia.
+        </p>
+      </div>
+      <div className="space-y-3">
+        <h2 className="text-sm font-medium text-zinc-500">Actividad conectada</h2>
+        <p className="text-sm leading-6 text-zinc-700">
+          {memories.length} recuerdos sostienen este concepto.
+        </p>
+      </div>
+      {neighborhood && neighborhood.relatedConcepts.length > 0 ? (
+        <div className="space-y-2">
+          <h2 className="text-sm font-medium text-zinc-500">Conceptos cercanos</h2>
+          <div className="flex flex-wrap gap-2">
+            {neighborhood.relatedConcepts.map((concept) => (
+              <button
+                key={concept.id}
+                type="button"
+                className="rounded-full border border-zinc-200 px-3 py-1.5 text-sm text-zinc-700 outline-none transition-colors hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400 motion-reduce:transition-none"
+                onClick={() => onNavigateToConcept(concept.id)}
+              >
+                {concept.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm leading-6 text-zinc-500">
+          Todavia no hay conexiones suficientes para dibujar un mapa util.
+        </p>
+      )}
     </section>
   );
 }

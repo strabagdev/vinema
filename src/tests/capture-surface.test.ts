@@ -893,6 +893,119 @@ describe("CaptureSurface", () => {
     );
   });
 
+  it("expands existing concept suggestions into the knowledge base and preserves the draft", async () => {
+    const storage = new MemoryStorageAdapter();
+    const nodeRepository = new InMemoryNodeRepository([
+      createStoredNode({
+        id: "reunion-1",
+        content: "Reunion semanal con proveedor Mitcom para revisar soporte.",
+        updatedAt: "2026-01-05T00:00:00.000Z",
+      }),
+      createStoredNode({
+        id: "reunion-2",
+        content: "Preparar reunion de seguimiento del equipo comercial.",
+        updatedAt: "2026-01-06T00:00:00.000Z",
+      }),
+    ]);
+    const contextRepository = new InMemoryContextRepository([
+      createContext({ id: "reuniones", name: "Reuniones" }),
+    ]);
+    const relationRepository = new InMemoryNodeContextRelationRepository([
+      {
+        id: "reunion-1-reuniones",
+        workspaceId: workspace.id,
+        nodeId: "reunion-1",
+        contextId: "reuniones",
+        version: 1,
+        createdAt: "2026-01-05T00:00:00.000Z",
+      },
+      {
+        id: "reunion-2-reuniones",
+        workspaceId: workspace.id,
+        nodeId: "reunion-2",
+        contextId: "reuniones",
+        version: 1,
+        createdAt: "2026-01-06T00:00:00.000Z",
+      },
+    ]);
+    const screen = await renderCaptureSurface({
+      storage,
+      nodeRepository,
+      contextRepository,
+      relationRepository,
+    });
+
+    await changeTextarea(
+      screen.container,
+      "Nueva reunion con Mitcom para revisar pendientes",
+    );
+    await advanceTime(500);
+    await openConceptPanel(screen.container);
+
+    const expandLink = getLinkByLabel(
+      screen.container,
+      "Profundizar en Base de conocimiento",
+    );
+
+    expect(expandLink?.getAttribute("href")).toBe(
+      "/concepts/detail?contextId=reuniones&returnTo=%2F&from=panel",
+    );
+
+    await clickElement(expandLink as HTMLAnchorElement);
+
+    await expect(storage.get(CAPTURE_DRAFT_KEY)).resolves.toMatchObject({
+      content: "Nueva reunion con Mitcom para revisar pendientes",
+    });
+  });
+
+  it("expands remembered captures through their emergent identity", async () => {
+    const storage = new MemoryStorageAdapter();
+    const nodeRepository = new InMemoryNodeRepository([
+      createStoredNode({
+        id: "meeting",
+        content:
+          "Las reuniones extensas reducen mi capacidad de concentración durante la tarde.",
+        updatedAt: "2026-01-05T00:00:00.000Z",
+      }),
+    ]);
+    const contextRepository = new InMemoryContextRepository([
+      createContext({ id: "reuniones", name: "Reuniones" }),
+    ]);
+    const relationRepository = new InMemoryNodeContextRelationRepository([
+      {
+        id: "meeting-reuniones",
+        workspaceId: workspace.id,
+        nodeId: "meeting",
+        contextId: "reuniones",
+        version: 1,
+        createdAt: "2026-01-05T00:00:00.000Z",
+      },
+    ]);
+    const screen = await renderCaptureSurface({
+      storage,
+      nodeRepository,
+      contextRepository,
+      relationRepository,
+    });
+
+    await changeTextarea(
+      screen.container,
+      "Después de muchas reuniones me cuesta concentrarme.",
+    );
+    await advanceTime(500);
+    await openMemoryPanel(screen.container);
+
+    const expandLink = getLinkByLabel(
+      screen.container,
+      "Profundizar en Base de conocimiento",
+    );
+
+    expect(expandLink?.getAttribute("href")).toBe(
+      "/concepts/detail?contextId=reuniones&returnTo=%2F&from=panel",
+    );
+    expect(screen.container.textContent).not.toContain("Ver en Explorar");
+  });
+
   it("shows current-input emerging concepts and persists the selected chip", async () => {
     const storage = new MemoryStorageAdapter();
     const nodeRepository = new InMemoryNodeRepository();
@@ -1452,6 +1565,12 @@ async function openMemoryPanel(container: HTMLElement) {
 function getLinkByHref(container: HTMLElement, hrefPart: string) {
   return Array.from(container.querySelectorAll("a")).find((link) =>
     link.getAttribute("href")?.includes(hrefPart),
+  ) as HTMLAnchorElement | undefined;
+}
+
+function getLinkByLabel(container: HTMLElement, label: string) {
+  return Array.from(container.querySelectorAll("a")).find(
+    (link) => link.getAttribute("aria-label") === label,
   ) as HTMLAnchorElement | undefined;
 }
 

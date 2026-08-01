@@ -85,7 +85,9 @@ describe("ConceptExplorationClient", () => {
   it("loads related memories and connected concepts without fabricated titles", async () => {
     const screen = await renderConceptExploration();
 
+    expect(screen.querySelector("[data-knowledge-base-surface]")).toBeTruthy();
     expect(screen.textContent).toContain("Railway");
+    expect(screen.textContent).toContain("Base de conocimiento");
     expect(screen.textContent).toContain("2 recuerdos relacionados");
     expect(screen.textContent).toContain("Sync");
     expect(screen.textContent).toContain("Workspace");
@@ -102,6 +104,37 @@ describe("ConceptExplorationClient", () => {
     expect(mocks.push).toHaveBeenCalledWith(
       "/concepts/detail?contextId=workspace",
     );
+  });
+
+  it("keeps Recuerdos, Tiempo and Mapa modes within the centered knowledge base", async () => {
+    const screen = await renderConceptExploration();
+
+    expect(getButtonByLabel(screen, "Recuerdos").getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(getButtonByLabel(screen, "Tiempo")).toBeDefined();
+    expect(getButtonByLabel(screen, "Mapa")).toBeDefined();
+
+    await click(getButtonByLabel(screen, "Mapa"));
+
+    expect(screen.textContent).toContain("Mapa conceptual preparado");
+    expect(screen.textContent).toContain("Actividad conectada");
+    expect(screen.textContent).toContain("Conceptos cercanos");
+    expect(screen.textContent).not.toContain("Graphify");
+  });
+
+  it("records panel expansion origin without introducing a global knowledge base entry", async () => {
+    mocks.searchParams = new URLSearchParams(
+      "contextId=railway&returnTo=%2F&from=panel",
+    );
+    const screen = await renderConceptExploration();
+
+    expect(
+      screen
+        .querySelector("[data-knowledge-base-surface]")
+        ?.getAttribute("data-expansion-source"),
+    ).toBe("panel");
+    expect(screen.textContent).not.toContain("Explorar");
   });
 
   it("refreshes the open exploration after remote sync invalidation", async () => {
@@ -227,6 +260,18 @@ function getButton(container: HTMLElement, name: string) {
 
   if (!button) {
     throw new Error(`Button not found: ${name}`);
+  }
+
+  return button as HTMLButtonElement;
+}
+
+function getButtonByLabel(container: HTMLElement, label: string) {
+  const button = Array.from(container.querySelectorAll("button")).find(
+    (item) => item.getAttribute("aria-label") === label,
+  );
+
+  if (!button) {
+    throw new Error(`Button not found: ${label}`);
   }
 
   return button as HTMLButtonElement;

@@ -12,7 +12,7 @@ export default function ConceptDetailPage() {
 function ConceptExplorationFallback() {
   return (
     <section className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
-      <p className="text-sm text-zinc-500">Cargando exploracion...</p>
+      <p className="text-sm text-zinc-500">Cargando conocimiento...</p>
     </section>
   );
 }

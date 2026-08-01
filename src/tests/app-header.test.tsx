@@ -29,6 +29,7 @@ describe("AppHeader", () => {
     expect(screen.querySelector("nav[aria-label='Navegacion principal']")).toBeNull();
     expect(screen.querySelector("a[aria-label='Explorar']")).toBeNull();
     expect(screen.textContent).not.toContain("Explorar");
+    expect(screen.textContent).not.toContain("Base de conocimiento");
 
     await click(screen.querySelector("button[aria-label='Abrir menu']"));
 
