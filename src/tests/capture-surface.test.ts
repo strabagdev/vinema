@@ -666,11 +666,19 @@ describe("CaptureSurface", () => {
       screen.container,
       "Conceptos detectados",
     ) as HTMLElement;
-    expect(conceptPanel.style.left).toBe("482px");
+    const conceptIndicator = screen.container.querySelector(
+      '[data-context-indicator-panel="concepts"]',
+    ) as HTMLElement;
+    expect(conceptPanel.style.left).toBe("480px");
+    expect(conceptIndicator.className).toContain("w-9");
 
     await openMemoryPanel(screen.container);
     const memoryPanel = getDialog(screen.container, "Me recuerda a…") as HTMLElement;
-    expect(memoryPanel.style.left).toBe("562px");
+    const memoryIndicator = screen.container.querySelector(
+      '[data-context-indicator-panel="memories"]',
+    ) as HTMLElement;
+    expect(memoryPanel.style.left).toBe("560px");
+    expect(memoryIndicator.className).toContain("w-9");
   });
 
   it("closes an open contextual panel with Escape and returns focus", async () => {

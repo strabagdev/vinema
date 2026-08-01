@@ -25,6 +25,9 @@ import {
   CAPTURE_DRAFT_DEBOUNCE_MS,
   commitCaptureText,
 } from "@/features/capture/capture-flow";
+import {
+  calculateDesktopPanelPlacement,
+} from "@/features/capture/contextual-panel-positioning";
 import type { CaptureEmergentIdentity } from "@/features/identity/capture-emergent-identity";
 import { CaptureEmergentIdentityLabel } from "@/features/identity/capture-emergent-identity-view";
 import { loadCaptureEmergentIdentities } from "@/features/identity/load-capture-emergent-identities";
@@ -38,9 +41,6 @@ import { cn } from "@/lib/cn";
 const EMPTY_SELECTED_CAPTURE_IDS: string[] = [];
 const INITIAL_MEMORY_RESULT_LIMIT = 3;
 const DESKTOP_PANEL_BREAKPOINT = 768;
-const DESKTOP_PANEL_WIDTH = 360;
-const DESKTOP_PANEL_GAP = 12;
-const DESKTOP_PANEL_MARGIN = 16;
 const EPHEMERAL_PANEL_CLOSE_DELAY_MS = 350;
 
 type DraftStatus = "idle" | "saving" | "saved" | "error";
@@ -768,7 +768,10 @@ function ContextIndicator({
       data-context-indicator-panel={panel}
       aria-label={label}
       title={label}
-      className="inline-flex h-9 min-w-12 items-center justify-center gap-1.5 rounded-full px-3 text-sm text-zinc-500 outline-none transition-colors hover:bg-zinc-100 hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400 motion-reduce:transition-none"
+      className={cn(
+        "inline-flex h-9 items-center justify-center gap-1.5 rounded-full text-sm text-zinc-500 outline-none transition-colors hover:bg-zinc-100 hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400 motion-reduce:transition-none",
+        active ? "w-9 min-w-9 px-0" : "min-w-12 px-3",
+      )}
       onMouseEnter={onHover}
       onMouseLeave={onIntentEnd}
       onFocus={onFocus}
@@ -869,45 +872,18 @@ function canUseDesktopPopover() {
 }
 
 function getDesktopPanelStyle(anchorRect: DOMRect): CSSProperties {
-  const viewportWidth = window.innerWidth;
-  const viewportHeight = window.innerHeight;
-  const maxHeight = Math.min(
-    Math.round(viewportHeight * 0.6),
-    viewportHeight - DESKTOP_PANEL_MARGIN * 2,
-  );
-  const width = Math.min(
-    DESKTOP_PANEL_WIDTH,
-    viewportWidth - DESKTOP_PANEL_MARGIN * 2,
-  );
-  const rightSideLeft = anchorRect.right + DESKTOP_PANEL_GAP;
-  const leftSideLeft = anchorRect.left - width - DESKTOP_PANEL_GAP;
-  const left =
-    rightSideLeft + width <= viewportWidth - DESKTOP_PANEL_MARGIN
-      ? rightSideLeft
-      : leftSideLeft >= DESKTOP_PANEL_MARGIN
-        ? leftSideLeft
-        : clamp(
-          anchorRect.left,
-          DESKTOP_PANEL_MARGIN,
-          viewportWidth - width - DESKTOP_PANEL_MARGIN,
-        );
-  const preferredTop = anchorRect.top;
-  const top = clamp(
-    preferredTop,
-    DESKTOP_PANEL_MARGIN,
-    viewportHeight - maxHeight - DESKTOP_PANEL_MARGIN,
-  );
+  const placement = calculateDesktopPanelPlacement({
+    anchorRect,
+    viewportWidth: window.innerWidth,
+    viewportHeight: window.innerHeight,
+  });
 
   return {
-    left,
-    maxHeight,
-    top,
-    width,
+    left: placement.left,
+    maxHeight: placement.maxHeight,
+    top: placement.top,
+    width: placement.width,
   };
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), Math.max(min, max));
 }
 
 function ConceptPanelContent({
