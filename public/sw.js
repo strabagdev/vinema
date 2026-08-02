@@ -12,10 +12,6 @@ const SHELL_ASSETS = [
   "/contexts/detail",
   "/manifest.webmanifest",
   "/icon.svg",
-  "/brand/favicon.svg",
-  "/brand/pwa-192.png",
-  "/brand/pwa-512.png",
-  "/brand/pwa-maskable-512.png",
 ];
 
 self.addEventListener("install", (event) => {

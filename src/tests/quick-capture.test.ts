@@ -88,9 +88,9 @@ describe("Global writing entry", () => {
     expect(header?.className).not.toContain("border-b");
     expect(container.querySelector("aside")).toBeNull();
     expect(nav).toBeNull();
-    expect(
-      container.querySelector("a[aria-label='Ir a Inicio'] [data-brand-monogram]"),
-    ).toBeTruthy();
+    expect(container.querySelector("a[aria-label='Ir a Inicio']")?.textContent).toContain(
+      "VN",
+    );
     expect(container.querySelector("a[aria-label='Explorar']")).toBeNull();
   });
 

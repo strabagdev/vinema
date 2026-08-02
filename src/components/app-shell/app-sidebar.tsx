@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { BrandLockup } from "@/brand";
 
 export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
   return (
@@ -21,10 +20,9 @@ export function SidebarContent({
       <Link
         href="/"
         onClick={onNavigate}
-        className="flex h-10 items-center rounded-md px-2 text-zinc-800"
-        aria-label="Ir a Inicio"
+        className="flex h-10 items-center rounded-md px-2 text-base font-medium tracking-[0.18em] text-zinc-800"
       >
-        <BrandLockup className="w-32" />
+        VN
       </Link>
       <p className="mt-5 px-2 text-xs leading-5 text-zinc-500">
         La exploracion comienza al abrir un concepto.

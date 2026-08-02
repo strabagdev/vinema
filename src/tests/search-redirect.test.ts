@@ -45,7 +45,7 @@ describe("search route consolidation", () => {
   it("does not expose separate search or global exploration entries in the sidebar", async () => {
     const screen = await render(createElement(SidebarContent));
 
-    expect(screen.textContent).toContain("Vinema");
+    expect(screen.textContent).toContain("VN");
     expect(screen.textContent).not.toContain("Explorar");
     expect(screen.textContent).not.toContain("Buscar");
     expect(

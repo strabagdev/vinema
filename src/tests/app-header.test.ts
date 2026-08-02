@@ -58,12 +58,7 @@ vi.mock("@/features/auth/public-api-url", () => ({
 }));
 
 vi.mock("@/features/feedback/visual-feedback-provider", () => ({
-  VisualFeedbackWordmark: () =>
-    createElement(
-      "span",
-      { "data-feedback-wordmark": "", "data-feedback-kind": "idle" },
-      createElement("svg", { "data-brand-monogram": "", "aria-hidden": "true" }),
-    ),
+  VisualFeedbackWordmark: () => createElement("span", null, "VN"),
   useVisualFeedback: () => ({
     saving: vi.fn(),
     success: vi.fn(),
@@ -168,8 +163,9 @@ describe("AppHeader", () => {
     expect(header?.className).toContain("grid-cols-[1fr_auto_1fr]");
     expect(wordmarkLink?.getAttribute("href")).toBe("/");
     expect(wordmarkLink?.getAttribute("data-wordmark-anchor")).toBe("");
-    expect(wordmarkLink?.querySelector("[data-brand-monogram]")).toBeTruthy();
-    expect(wordmarkLink?.textContent).toBe("");
+    expect(wordmarkLink?.textContent).toBe("VN");
+    expect(wordmarkLink?.textContent).not.toBe("V");
+    expect(wordmarkLink?.textContent).not.toContain("VA");
     expect(screen.querySelector("nav[aria-label='Navegacion principal']")).toBeNull();
     expect(screen.querySelector("a[aria-label='Explorar']")).toBeNull();
     expect(screen.textContent).not.toContain("Explorar");

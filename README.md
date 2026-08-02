@@ -1,7 +1,5 @@
 # Vinema
 
-![Vinema](src/brand/assets/wordmark.svg)
-
 Vinema es una aplicacion personal de conocimiento y notas, local-first y
 offline-first. Esta fundacion tecnica deja una misma base de codigo para web,
 PWA instalable y escritorio mediante Tauri 2.
@@ -52,7 +50,6 @@ Abrir `http://localhost:3000`.
 - [API y persistencia remota](docs/product/VIN-022-API-PERSISTENCIA-REMOTA.md)
 - [Preparacion Railway](docs/product/VIN-022-1-PREPARACION-RAILWAY.md)
 - [Despliegue Railway](docs/deployment/railway.md)
-- [Sistema de identidad](docs/brand/VINEMA-IDENTITY-SYSTEM.md)
 
 ## Escritorio
 
@@ -68,7 +65,7 @@ Tauri consume el servidor local en desarrollo y empaqueta `out/` en build.
 - Superficie unica de escritura en `/` e Historial en `/notes`.
 - Dispositivo persistente con `getOrCreateDevice()`.
 - `StorageAdapter`, `IndexedDbAdapter` y `LocalStorageAdapter`.
-- PWA con manifest, identidad VA oficial y service worker.
+- PWA con manifest, icono temporal y service worker.
 - Workspace local por defecto.
 - Capturar, editar, listar, abrir y archivar contenido local.
 - Las capturas no usan titulo editable; su vista previa se deriva del contenido.

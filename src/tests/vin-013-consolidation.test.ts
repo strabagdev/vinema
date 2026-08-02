@@ -31,7 +31,7 @@ describe("VIN-013 consolidation", () => {
   it("keeps the legacy sidebar from exposing global exploration entries", async () => {
     const screen = await renderElement(createElement(SidebarContent));
 
-    expect(screen.textContent).toContain("Vinema");
+    expect(screen.textContent).toContain("VN");
     expect(screen.textContent).toContain("La exploracion comienza");
     expect(screen.textContent).not.toContain("Explorar");
     expect(screen.textContent).not.toContain("Archivo");

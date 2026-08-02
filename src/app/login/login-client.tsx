@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { BrandWordmark } from "@/brand";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -131,8 +130,10 @@ export function AuthScreen({
   return (
     <main className="flex min-h-screen w-full items-center justify-center bg-zinc-50 px-5 py-10">
       <section className="w-full max-w-sm">
-        <div className="mb-8 flex justify-center text-zinc-950">
-          <BrandWordmark className="w-32" />
+        <div className="mb-8 flex items-center">
+          <span className="text-lg font-medium tracking-[0.18em] text-zinc-900">
+            VN
+          </span>
         </div>
         <div className="rounded-lg border border-zinc-200 bg-white p-6 shadow-sm">
           <div className="mb-6 space-y-2">
