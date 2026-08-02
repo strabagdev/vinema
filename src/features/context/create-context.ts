@@ -4,6 +4,7 @@ import {
   assertContextNameIsAvailable,
   validateEditableContext,
 } from "@/features/context/context-validation";
+import { normalizeContextAliases } from "@/features/concepts/concept-identity";
 
 export type CreateContextInput = {
   workspaceId: string;
@@ -30,7 +31,7 @@ export async function createContext(
   });
 
   const now = new Date().toISOString();
-  const context: Context = {
+  const context: Context = normalizeContextAliases({
     id: crypto.randomUUID(),
     workspaceId: validated.workspaceId,
     type: validated.type,
@@ -40,7 +41,7 @@ export async function createContext(
     createdAt: now,
     updatedAt: now,
     archivedAt: null,
-  };
+  });
 
   return repository.save(context);
 }

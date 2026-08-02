@@ -32,6 +32,7 @@ import {
   isSameEnqueuedMutation,
   type SyncMutationOutboxRecord,
 } from "@/features/sync/sync-outbox-repository";
+import { normalizeContextAliases } from "@/features/concepts/concept-identity";
 
 export type MutationOrigin = "LOCAL" | "REMOTE" | "SYSTEM";
 export type MutationIdFactory = () => string;
@@ -203,7 +204,8 @@ export class IndexedDbLocalSyncContextRepository implements ContextRepository {
   }
 
   private async persist(context: Context): Promise<Context> {
-    assertSameWorkspace(this.options.syncContext, context.workspaceId);
+    const storedContext = normalizeContextAliases(context);
+    assertSameWorkspace(this.options.syncContext, storedContext.workspaceId);
     const db = await getVinemaDb();
     const transaction = db.transaction(
       [CONTEXTS_STORE, SYNC_MUTATIONS_STORE],
@@ -212,27 +214,27 @@ export class IndexedDbLocalSyncContextRepository implements ContextRepository {
 
     return runAtomically(transaction, async () => {
       const contexts = transaction.objectStore(CONTEXTS_STORE);
-      const existing = await contexts.get(context.id);
+      const existing = await contexts.get(storedContext.id);
 
-      if (existing && !hasContextSyncChange(existing, context)) {
+      if (existing && !hasContextSyncChange(existing, storedContext)) {
         await transaction.done;
         return existing;
       }
 
-      await contexts.put(context);
+      await contexts.put(storedContext);
       await enqueueLocalMutation({
         outboxStore: transaction.objectStore(SYNC_MUTATIONS_STORE),
         syncContext: this.options.syncContext,
         origin: this.origin,
-        at: context.updatedAt,
+        at: storedContext.updatedAt,
         mutation: mapLocalContextToConceptMutation({
           mutationId: this.mutationIdFactory(),
-          context,
+          context: storedContext,
           baseVersion: existing?.version ?? null,
         }),
       });
       await transaction.done;
-      return context;
+      return storedContext;
     });
   }
 }
@@ -488,6 +490,9 @@ function hasContextSyncChange(existing: Context, next: Context) {
   return (
     existing.name !== next.name ||
     (existing.description ?? null) !== (next.description ?? null) ||
+    (existing.aliases ?? []).join("\u0001") !== (next.aliases ?? []).join("\u0001") ||
+    (existing.normalizedAliases ?? []).join("\u0001") !==
+    (next.normalizedAliases ?? []).join("\u0001") ||
     (existing.archivedAt ?? null) !== (next.archivedAt ?? null)
   );
 }

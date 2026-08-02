@@ -34,6 +34,7 @@ export type ExistingConceptSuggestion = {
   score: number;
   evidenceCaptureIds: string[];
   matchedTerms: string[];
+  matchedAlias?: string;
 };
 
 export type EmergingConceptSuggestion = {
@@ -55,6 +56,7 @@ export type ConceptSuggestionTrace = {
   contextTokens: string[];
   relatedContentTokens: string[];
   relatedCaptureIds: string[];
+  matchedAlias?: string;
   directMatches: number;
   relatedMatches: number;
   selectedBoost: number;

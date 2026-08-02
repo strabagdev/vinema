@@ -555,6 +555,88 @@ describe("concept suggestions", () => {
     );
   });
 
+  it("resolves existing concepts through explicit aliases and keeps the canonical label visible", () => {
+    const suggestions = suggestConcepts({
+      text: "OC debe consolidar contratos antes del cierre",
+      contexts: [
+        context({
+          id: "operational-core",
+          name: "Operational Core",
+          aliases: ["OC", "Ops Core"],
+        }),
+      ],
+      nodes: [],
+      relations: [],
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0]).toMatchObject({
+      kind: "existing",
+      conceptId: "operational-core",
+      label: "Operational Core",
+      matchedAlias: "OC",
+    });
+  });
+
+  it("resolves unique derived acronyms but does not choose ambiguous acronyms", () => {
+    const unique = suggestConcepts({
+      text: "MAN tiene avances operacionales",
+      contexts: [context({ id: "mina-andes-norte", name: "Mina Andes Norte" })],
+      nodes: [],
+      relations: [],
+    });
+    const ambiguous = suggestConcepts({
+      text: "AT necesita revision",
+      contexts: [
+        context({ id: "access-tracking", name: "Access Tracking" }),
+        context({ id: "andres-tapia", name: "Andres Tapia" }),
+      ],
+      nodes: [],
+      relations: [],
+    });
+
+    expect(unique).toMatchObject([
+      {
+        kind: "existing",
+        conceptId: "mina-andes-norte",
+        label: "Mina Andes Norte",
+        matchedAlias: "MAN",
+      },
+    ]);
+    expect(ambiguous).toEqual([]);
+  });
+
+  it("does not suggest a new emerging concept when an alias resolves to an existing identity", () => {
+    const evaluation = evaluateCaptureInput({
+      text: "Postgres requiere respaldos antes del cambio",
+      contexts: [
+        context({
+          id: "postgresql",
+          name: "PostgreSQL",
+          aliases: ["Postgres", "PG"],
+        }),
+      ],
+      nodes: [],
+      relations: [],
+    });
+
+    expect(evaluation.conceptSuggestions).toContainEqual(
+      expect.objectContaining({
+        kind: "existing",
+        conceptId: "postgresql",
+        label: "PostgreSQL",
+        matchedAlias: "Postgres",
+      }),
+    );
+    expect(
+      evaluation.conceptSuggestions.some(
+        (suggestion) =>
+          suggestion.kind === "emerging" &&
+          suggestion.suggestedLabel === "Postgres",
+      ),
+    ).toBe(false);
+  });
+
   it("keeps selected concepts visible even when the query changes", () => {
     const suggestions = suggestConcepts({
       text: "Texto sin coincidencias suficientes",
@@ -876,10 +958,14 @@ function node({
 function context({
   id,
   name,
+  aliases = [],
+  normalizedAliases = [],
   createdAt = "2026-01-01T00:00:00.000Z",
 }: {
   id: string;
   name: string;
+  aliases?: string[];
+  normalizedAliases?: string[];
   createdAt?: string;
 }): Context {
   return {
@@ -888,6 +974,8 @@ function context({
     type: "AREA",
     name,
     description: null,
+    aliases,
+    normalizedAliases,
     version: 1,
     createdAt,
     updatedAt: "2026-01-01T00:00:00.000Z",

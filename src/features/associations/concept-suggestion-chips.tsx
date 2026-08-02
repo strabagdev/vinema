@@ -68,7 +68,7 @@ export function ConceptSuggestionChips({
                 : `Seleccionar concepto ${suggestion.suggestedLabel}, sugerido a partir de ${suggestion.evidenceCaptureIds.length} capturas`
             }
             className={cn(
-              "inline-flex h-8 items-center gap-1 rounded-full border px-3 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-zinc-400",
+              "inline-flex min-h-8 items-center gap-1 rounded-full border px-3 py-1 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-zinc-400",
               selected
                 ? "border-zinc-800 bg-zinc-900 text-white"
                 : "border-zinc-200 bg-transparent text-zinc-700 hover:border-zinc-400 hover:text-zinc-950",
@@ -80,7 +80,19 @@ export function ConceptSuggestionChips({
             }
           >
             {selected ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : null}
-            {label}
+            <span className="flex flex-col leading-tight">
+              <span>{label}</span>
+              {suggestion.kind === "existing" && suggestion.matchedAlias ? (
+                <span
+                  className={cn(
+                    "text-[0.68rem]",
+                    selected ? "text-zinc-300" : "text-zinc-500",
+                  )}
+                >
+                  Detectado como {suggestion.matchedAlias}
+                </span>
+              ) : null}
+            </span>
           </button>
         );
       })}

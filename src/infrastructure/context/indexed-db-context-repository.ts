@@ -3,6 +3,7 @@ import type {
   ContextRepository,
   ListContextsOptions,
 } from "@/domain/context/context-repository";
+import { normalizeContextAliases } from "@/features/concepts/concept-identity";
 import { CONTEXTS_STORE, getVinemaDb } from "@/infrastructure/storage/vinema-db";
 
 export class IndexedDbContextRepository implements ContextRepository {
@@ -79,6 +80,14 @@ export function normalizeStoredContext(value: unknown): Context | null {
     type: record.type,
     name: record.name,
     description: record.description ?? null,
+    aliases: Array.isArray(record.aliases)
+      ? record.aliases.filter((alias): alias is string => typeof alias === "string")
+      : [],
+    normalizedAliases: Array.isArray(record.normalizedAliases)
+      ? record.normalizedAliases.filter(
+        (alias): alias is string => typeof alias === "string",
+      )
+      : [],
     version:
       typeof record.version === "number" && record.version > 0
         ? record.version
@@ -90,8 +99,8 @@ export function normalizeStoredContext(value: unknown): Context | null {
 }
 
 export function toStoredContext(context: Context): Context {
-  return {
+  return normalizeContextAliases({
     ...context,
     version: context.version > 0 ? context.version : 1,
-  };
+  });
 }

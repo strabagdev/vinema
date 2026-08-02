@@ -530,6 +530,8 @@ function conceptChange(input: { sequence: string; version?: number }) {
       workspaceId,
       label: "Remote Concept",
       normalizedKey: "remote|concept",
+      aliases: [],
+      normalizedAliases: [],
       createdAt: now,
       updatedAt: now,
       archivedAt: null,

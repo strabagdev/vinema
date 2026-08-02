@@ -236,6 +236,19 @@ export function ConceptExplorationClient() {
                 ? ` · ${neighborhood.relatedConcepts.length} conceptos conectados`
                 : ""}
             </p>
+            {center.aliases && center.aliases.length > 0 ? (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className="text-xs text-zinc-500">También aparece como</span>
+                {center.aliases.map((alias) => (
+                  <span
+                    key={alias}
+                    className="rounded-full border border-zinc-200 px-2 py-1 text-xs text-zinc-600"
+                  >
+                    {alias}
+                  </span>
+                ))}
+              </div>
+            ) : null}
           </div>
         </div>
         <div className="flex items-center gap-1" aria-label="Representacion">

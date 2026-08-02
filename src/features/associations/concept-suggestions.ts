@@ -11,6 +11,13 @@ import {
   tokenizeAssociationText,
   uniqueTokens,
 } from "@/features/associations/tokenize";
+import {
+  deriveConceptAcronym,
+  hasConceptIdentityMatch,
+  normalizeConceptIdentityLabel,
+  resolveConceptIdentity,
+} from "@/features/concepts/concept-identity";
+import { extractSemanticPhraseCandidates } from "@/features/semantics/semantic-phrase-extractor";
 
 export const MIN_CONCEPT_SCORE = 0.18;
 
@@ -85,7 +92,15 @@ export function diagnoseConceptSuggestions({
 
   return activeContexts.map((context) => {
     const contextTokens = uniqueTokens(
-      tokenizeAssociationText(`${context.name} ${context.description ?? ""}`),
+      tokenizeAssociationText(
+        [
+          context.name,
+          context.description ?? "",
+          ...(context.aliases ?? []),
+          ...(context.normalizedAliases ?? []),
+          deriveConceptAcronym(context.name),
+        ].join(" "),
+      ),
     );
     const relatedRelations = relations.filter(
       (relation) =>
@@ -100,7 +115,9 @@ export function diagnoseConceptSuggestions({
           .join(" "),
       ),
     );
-    const directMatches = overlapCount(queryTokens, contextTokens);
+    const identityMatch = findIdentityMatch(context, text, activeContexts);
+    const directMatches = overlapCount(queryTokens, contextTokens) +
+      (identityMatch ? Math.max(1, queryTokens.length) : 0);
     const relatedMatches = overlapCount(queryTokens, relatedContentTokens);
     const selectedBoost = selectedContextIds.includes(context.id) ? 1 : 0;
     const score =
@@ -114,6 +131,7 @@ export function diagnoseConceptSuggestions({
       contextTokens,
       relatedContentTokens,
       relatedCaptureIds,
+      matchedAlias: identityMatch?.matchedAlias,
       directMatches,
       relatedMatches,
       selectedBoost,
@@ -161,6 +179,7 @@ function toExistingConceptSuggestion(
         trace.contextTokens.includes(token) ||
         trace.relatedContentTokens.includes(token),
     ),
+    matchedAlias: trace.matchedAlias,
   };
 }
 
@@ -176,4 +195,37 @@ function getConceptLabel(suggestion: ConceptSuggestion) {
   return suggestion.kind === "existing"
     ? suggestion.label
     : suggestion.suggestedLabel;
+}
+
+function findIdentityMatch(context: Context, text: string, allContexts: Context[]) {
+  const candidates = [
+    text,
+    ...extractSemanticPhraseCandidates(text).map((candidate) => candidate.text),
+    ...text.split(/\s+/).filter(Boolean),
+    ...Array.from(text.matchAll(/[\p{L}\p{N}][\p{L}\p{N}.-]*/gu), (match) => match[0]),
+  ];
+  const seen = new Set<string>();
+
+  for (const candidate of candidates) {
+    const key = normalizeConceptIdentityLabel(candidate);
+
+    if (!key || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    const globalResolution = resolveConceptIdentity(candidate, allContexts);
+
+    if (globalResolution.status === "AMBIGUOUS") {
+      continue;
+    }
+
+    const match = hasConceptIdentityMatch(context, candidate);
+
+    if (match) {
+      return match;
+    }
+  }
+
+  return null;
 }

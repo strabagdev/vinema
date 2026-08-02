@@ -3,12 +3,15 @@ import type {
   ContextRepository,
   ListContextsOptions,
 } from "@/domain/context/context-repository";
+import { normalizeContextAliases } from "@/features/concepts/concept-identity";
 
 export class InMemoryContextRepository implements ContextRepository {
   private readonly contexts = new Map<string, Context>();
 
   constructor(contexts: Context[] = []) {
-    contexts.forEach((context) => this.contexts.set(context.id, context));
+    contexts.forEach((context) =>
+      this.contexts.set(context.id, normalizeContextAliases(context)),
+    );
   }
 
   async getById(id: string): Promise<Context | null> {
@@ -24,8 +27,9 @@ export class InMemoryContextRepository implements ContextRepository {
   }
 
   async save(context: Context): Promise<Context> {
-    this.contexts.set(context.id, context);
-    return context;
+    const stored = normalizeContextAliases(context);
+    this.contexts.set(stored.id, stored);
+    return stored;
   }
 
   async archive(context: Context): Promise<Context> {

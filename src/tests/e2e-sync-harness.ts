@@ -75,7 +75,7 @@ export type E2eSyncHarnessOptions = {
 
 export type LogicalDeviceSnapshot = {
   nodes: Array<Pick<Node, "id" | "workspaceId" | "content" | "status" | "version" | "archivedAt">>;
-  contexts: Array<Pick<Context, "id" | "workspaceId" | "name" | "type" | "version" | "archivedAt">>;
+  contexts: Array<Pick<Context, "id" | "workspaceId" | "name" | "type" | "aliases" | "normalizedAliases" | "version" | "archivedAt">>;
   relations: Array<Pick<NodeContextRelation, "id" | "workspaceId" | "nodeId" | "contextId" | "relationType" | "version">>;
 };
 
@@ -186,6 +186,8 @@ export async function snapshotDevice(
         workspaceId: context.workspaceId,
         name: context.name,
         type: context.type,
+        aliases: context.aliases ?? [],
+        normalizedAliases: context.normalizedAliases ?? [],
         version: context.version,
         archivedAt: context.archivedAt,
       }))
@@ -277,6 +279,8 @@ export function makeContext(input: {
   name: string;
   version?: number;
   archivedAt?: string | null;
+  aliases?: string[];
+  normalizedAliases?: string[];
   at?: string;
 }): Context {
   const at = input.at ?? new Date().toISOString();
@@ -287,6 +291,8 @@ export function makeContext(input: {
     type: "AREA",
     name: input.name,
     description: null,
+    aliases: input.aliases ?? [],
+    normalizedAliases: input.normalizedAliases ?? [],
     version: input.version ?? 1,
     createdAt: at,
     updatedAt: at,

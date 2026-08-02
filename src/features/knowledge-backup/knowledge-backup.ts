@@ -11,6 +11,11 @@ import type { Node } from "@/domain/node/node";
 import type { NodeRepository } from "@/domain/node/node-repository";
 import type { Workspace } from "@/domain/workspace/workspace";
 import { createConceptEquivalenceKey } from "@/features/associations/concept-label-normalization";
+import {
+  normalizeConceptIdentityLabel,
+  normalizeContextAliases,
+  resolveConceptIdentity,
+} from "@/features/concepts/concept-identity";
 import { emitSyncDataChanged } from "@/features/sync/sync-data-events";
 
 export const KNOWLEDGE_BACKUP_FORMAT = "vinema-knowledge-backup";
@@ -649,6 +654,48 @@ export async function restoreKnowledgeBackup({
       continue;
     }
 
+    const identityResolution = resolveConceptIdentity(context.name, existingContexts);
+    if (identityResolution.status === "EXACT" || identityResolution.status === "ALIAS") {
+      contextIdMap.set(context.id, identityResolution.conceptId);
+      skippedContexts += 1;
+      continue;
+    }
+
+    if (identityResolution.status === "AMBIGUOUS") {
+      conflicts.push(`concept:${context.id}`);
+      continue;
+    }
+
+    const aliasResolutions = (context.aliases ?? []).map((alias) =>
+      resolveConceptIdentity(alias, existingContexts),
+    );
+    const aliasMatches = aliasResolutions.filter(
+      (
+        resolution,
+      ): resolution is Extract<
+        ReturnType<typeof resolveConceptIdentity>,
+        { status: "EXACT" | "ALIAS" }
+      > => resolution.status === "EXACT" || resolution.status === "ALIAS",
+    );
+
+    if (aliasResolutions.some((resolution) => resolution.status === "AMBIGUOUS")) {
+      conflicts.push(`concept:${context.id}`);
+      continue;
+    }
+
+    const aliasConceptIds = new Set(aliasMatches.map((resolution) => resolution.conceptId));
+    if (aliasConceptIds.size > 1) {
+      conflicts.push(`concept:${context.id}`);
+      continue;
+    }
+
+    const [aliasMatch] = aliasMatches;
+    if (aliasMatch) {
+      contextIdMap.set(context.id, aliasMatch.conceptId);
+      skippedContexts += 1;
+      continue;
+    }
+
     contextIdMap.set(context.id, context.id);
     contextsToCreate.push(stripBackupContext(context));
   }
@@ -787,8 +834,10 @@ function toBackupNode(node: Node): KnowledgeBackupNode {
 }
 
 function toBackupContext(context: Context): KnowledgeBackupContext {
+  const normalizedContext = normalizeContextAliases(context);
+
   return {
-    ...context,
+    ...normalizedContext,
     normalizedLabel: createConceptEquivalenceKey(context.name),
   };
 }
@@ -859,7 +908,7 @@ function validateNode(value: unknown): KnowledgeBackupNode {
 function validateContext(value: unknown): KnowledgeBackupContext {
   const context = asRecord(value, "Cada concepto debe ser un objeto.");
   const type = context.type;
-  return {
+  const result = normalizeContextAliases({
     id: assertNonEmptyString(context.id, "context.id"),
     workspaceId: assertNonEmptyString(context.workspaceId, "context.workspaceId"),
     type: isContextType(type) ? type : invalid("context.type"),
@@ -875,6 +924,15 @@ function validateContext(value: unknown): KnowledgeBackupContext {
       context.archivedAt === null || context.archivedAt === undefined
         ? null
         : assertIsoDate(context.archivedAt, "context.archivedAt"),
+    aliases: assertOptionalStringArray(context.aliases, "context.aliases"),
+    normalizedAliases: assertOptionalStringArray(
+      context.normalizedAliases,
+      "context.normalizedAliases",
+    ),
+  });
+
+  return {
+    ...result,
     normalizedLabel: assertNonEmptyString(
       context.normalizedLabel,
       "context.normalizedLabel",
@@ -907,7 +965,7 @@ function validateRelation(value: unknown): KnowledgeBackupRelation {
 function stripBackupContext(context: KnowledgeBackupContext): Context {
   const { normalizedLabel, ...rest } = context;
   void normalizedLabel;
-  return rest;
+  return normalizeContextAliases(rest);
 }
 
 function sameNodeKnowledge(existing: Node, backup: KnowledgeBackupNode) {
@@ -926,8 +984,25 @@ function sameContextKnowledge(existing: Context, backup: KnowledgeBackupContext)
     createConceptEquivalenceKey(existing.name) === backup.normalizedLabel &&
     existing.type === backup.type &&
     (existing.description ?? null) === (backup.description ?? null) &&
+    haveSameAliases(existing.aliases ?? [], backup.aliases ?? []) &&
+    haveSameAliases(
+      existing.normalizedAliases ?? [],
+      backup.normalizedAliases ?? [],
+      normalizeConceptIdentityLabel,
+    ) &&
     (existing.archivedAt ?? null) === (backup.archivedAt ?? null)
   );
+}
+
+function haveSameAliases(
+  first: string[],
+  second: string[],
+  normalize: (value: string) => string = (value) => value.trim(),
+) {
+  const firstKeys = first.map(normalize).filter(Boolean).sort();
+  const secondKeys = second.map(normalize).filter(Boolean).sort();
+
+  return firstKeys.join("\u0001") === secondKeys.join("\u0001");
 }
 
 function sameRelationKnowledge(
@@ -1077,6 +1152,16 @@ function assertArray(value: unknown, label: string) {
   }
 
   return value;
+}
+
+function assertOptionalStringArray(value: unknown, label: string) {
+  if (value === undefined || value === null) {
+    return [];
+  }
+
+  return assertArray(value, label).map((item, index) =>
+    assertNonEmptyString(item, `${label}[${index}]`),
+  );
 }
 
 function assertNonEmptyString(value: unknown, label: string) {

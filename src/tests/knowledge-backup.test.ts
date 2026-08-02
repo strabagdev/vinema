@@ -66,6 +66,10 @@ describe("knowledge backup", () => {
     });
     expect(backup.memory.captures[0].content).toBe("Reunion con Mitcom");
     expect(backup.memory.concepts[0].normalizedLabel).toBe("reunion");
+    expect(backup.memory.concepts[0]).toMatchObject({
+      aliases: ["Meetings"],
+      normalizedAliases: ["meetings"],
+    });
     expect(backup.integrity.checksum).toMatch(/^fnv1a32:/);
     expect(serialized).not.toMatch(/accessToken|refreshToken|session|deviceName/i);
   });
@@ -154,6 +158,8 @@ describe("knowledge backup", () => {
     const existingContext = contextFixture({
       id: equivalentContextId,
       name: "Reuniones",
+      aliases: ["Meetings"],
+      normalizedAliases: ["meetings"],
     });
     const repositories = {
       nodeRepository: new InMemoryNodeRepository(),
@@ -361,6 +367,8 @@ function contextFixture(overrides: Partial<Context> = {}): Context {
     type: "AREA",
     name: "Reuniones",
     description: null,
+    aliases: ["Meetings"],
+    normalizedAliases: ["meetings"],
     version: 1,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",

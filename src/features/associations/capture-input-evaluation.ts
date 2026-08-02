@@ -16,6 +16,7 @@ import {
   uniqueTokens,
 } from "@/features/associations/tokenize";
 import { SPANISH_STOPWORDS } from "@/features/associations/spanish-stopwords";
+import { resolveConceptIdentity } from "@/features/concepts/concept-identity";
 import { extractSemanticPhraseCandidates } from "@/features/semantics/semantic-phrase-extractor";
 import type {
   AssociationSuggestion,
@@ -596,6 +597,21 @@ function shouldReplaceSuggestion(
 
 function hasEquivalentExistingConcept(label: string, suggestions: ConceptSuggestion[]) {
   const normalizedLabel = normalizeLabelForDeduplication(label);
+  const existingContexts = suggestions
+    .filter((suggestion): suggestion is Extract<ConceptSuggestion, { kind: "existing" }> =>
+      suggestion.kind === "existing",
+    )
+    .map((suggestion) => suggestion.context);
+  const resolution = resolveConceptIdentity(label, existingContexts);
+
+  if (resolution.status === "EXACT" || resolution.status === "ALIAS") {
+    return true;
+  }
+
+  if (resolution.status === "AMBIGUOUS") {
+    return true;
+  }
+
   return suggestions.some(
     (suggestion) =>
       suggestion.kind === "existing" &&

@@ -924,7 +924,19 @@ function ConceptPanelContent({
                   : onToggleEmerging(suggestion.candidateId)
               }
             >
-              <span className="min-w-0 truncate">{label}</span>
+              <span className="min-w-0">
+                <span className="block truncate">{label}</span>
+                {suggestion.kind === "existing" && suggestion.matchedAlias ? (
+                  <span
+                    className={cn(
+                      "block truncate text-xs",
+                      selected ? "text-zinc-300" : "text-zinc-500",
+                    )}
+                  >
+                    Detectado como {suggestion.matchedAlias}
+                  </span>
+                ) : null}
+              </span>
               {selected ? (
                 <Check className="h-4 w-4 shrink-0 text-zinc-200" aria-hidden="true" />
               ) : null}

@@ -8,6 +8,8 @@ export interface Context {
   type: ContextType;
   name: string;
   description: string | null;
+  aliases?: string[];
+  normalizedAliases?: string[];
   version: number;
   createdAt: string;
   updatedAt: string;

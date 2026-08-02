@@ -11,6 +11,10 @@ import { captureText } from "@/features/capture/capture-text";
 import { attachNodeToContext } from "@/features/context/node-context-relations";
 import type { EmergingConceptSuggestion } from "@/features/associations/association-types";
 import { createConceptEquivalenceKey } from "@/features/associations/concept-label-normalization";
+import {
+  normalizeContextAliases,
+  resolveConceptIdentity,
+} from "@/features/concepts/concept-identity";
 import type { StorageAdapter } from "@/infrastructure/storage/storage-adapter";
 
 export const CAPTURE_DRAFT_DEBOUNCE_MS = 500;
@@ -128,6 +132,16 @@ async function getOrCreateEmergingConceptContext(
     includeArchived: false,
   });
   const normalizedLabel = createConceptEquivalenceKey(emergingConcept.suggestedLabel);
+  const resolution = resolveConceptIdentity(emergingConcept.suggestedLabel, contexts);
+
+  if (resolution.status === "EXACT" || resolution.status === "ALIAS") {
+    return resolution.concept;
+  }
+
+  if (resolution.status === "AMBIGUOUS") {
+    throw new Error("El concepto emergente coincide con mas de una identidad.");
+  }
+
   const existingContext = contexts.find(
     (context) => createConceptEquivalenceKey(context.name) === normalizedLabel,
   );
@@ -137,7 +151,7 @@ async function getOrCreateEmergingConceptContext(
   }
 
   const now = new Date().toISOString();
-  const context: Context = {
+  const context: Context = normalizeContextAliases({
     id: crypto.randomUUID(),
     workspaceId,
     type: "AREA",
@@ -150,7 +164,7 @@ async function getOrCreateEmergingConceptContext(
     createdAt: now,
     updatedAt: now,
     archivedAt: null,
-  };
+  });
 
   return repository.save(context);
 }

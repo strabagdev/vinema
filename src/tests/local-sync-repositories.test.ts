@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { deleteDB } from "idb";
 import type { Device } from "@/domain/device/device";
 import { DevicePlatform } from "@/domain/device/device";
+import type { Context } from "@/domain/context/context";
 import type { Node } from "@/domain/node/node";
 import type { Workspace } from "@/domain/workspace/workspace";
 import { commitCaptureText } from "@/features/capture/capture-flow";
@@ -27,6 +28,7 @@ import {
 } from "@/infrastructure/sync/indexed-db-local-sync-repositories";
 import {
   NODES_STORE,
+  CONTEXTS_STORE,
   SYNC_MUTATIONS_STORE,
   VINEMA_DB_NAME,
   getVinemaDb,
@@ -69,6 +71,70 @@ describe("local sync repositories", () => {
   beforeEach(async () => {
     await resetVinemaDbConnectionForTests();
     await deleteDB(VINEMA_DB_NAME);
+  });
+
+  it("resolves selected emerging aliases to existing concepts without creating duplicates", async () => {
+    const mutationIds = [
+      "33333333-3333-4333-8333-333333333333",
+      "44444444-4444-4444-8444-444444444444",
+      "55555555-5555-4555-8555-555555555555",
+      "66666666-6666-4666-8666-666666666666",
+    ];
+    const repositories = createLocalSyncRepositories({
+      syncContext: {
+        workspaceId: workspace.id,
+        deviceId: device.id,
+      },
+      mutationIdFactory: () => mutationIds.shift() ?? crypto.randomUUID(),
+    });
+    await repositories.contextRepository.save(
+      contextFixture({
+        id: "77777777-7777-4777-8777-777777777777",
+        name: "Operational Core",
+        aliases: ["OC", "Ops Core"],
+      }),
+    );
+
+    const result = await commitCaptureText({
+      content: "OC debe consolidar contratos",
+      workspace,
+      device,
+      repository: repositories.nodeRepository,
+      contextRepository: repositories.contextRepository,
+      relationRepository: repositories.nodeContextRelationRepository,
+      storage: new MemoryStorageAdapter(),
+      selectedEmergingConcepts: [
+        {
+          kind: "emerging",
+          candidateId: "emerging:oc",
+          suggestedLabel: "OC",
+          score: 0.9,
+          evidenceCaptureIds: [],
+          representativeTerms: ["oc"],
+        },
+      ],
+    });
+    const db = await getVinemaDb();
+    const contexts = await db.getAllFromIndex(CONTEXTS_STORE, "by-workspace", workspace.id);
+    const relations =
+      await repositories.nodeContextRelationRepository.listByNodeId(result.node.id);
+
+    expect(contexts).toHaveLength(1);
+    expect(contexts[0]).toMatchObject({
+      id: "77777777-7777-4777-8777-777777777777",
+      name: "Operational Core",
+      aliases: ["OC", "Ops Core"],
+      normalizedAliases: ["oc", "ops core"],
+    });
+    expect(relations).toMatchObject([
+      {
+        nodeId: result.node.id,
+        contextId: "77777777-7777-4777-8777-777777777777",
+      },
+    ]);
+    await expect(
+      new IndexedDbSyncOutboxRepository().listPending(workspace.id, 10),
+    ).resolves.toHaveLength(3);
   });
 
   afterEach(async () => {
@@ -490,6 +556,25 @@ function makeNode(overrides: Partial<Node> = {}): Node {
     deletedAt: null,
     createdByDeviceId: device.id,
     lastModifiedByDeviceId: device.id,
+    ...overrides,
+  };
+}
+
+function contextFixture(overrides: Partial<Context> = {}): Context {
+  const now = "2026-07-29T09:00:00.000Z";
+
+  return {
+    id: "77777777-7777-4777-8777-777777777777",
+    workspaceId: workspace.id,
+    type: "AREA",
+    name: "Operational Core",
+    description: null,
+    aliases: [],
+    normalizedAliases: [],
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+    archivedAt: null,
     ...overrides,
   };
 }

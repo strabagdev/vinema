@@ -95,6 +95,8 @@ describe("end-to-end synchronization", () => {
     const context = makeContext({
       workspaceId,
       name: "Proyecto Andes Norte",
+      aliases: ["PAN"],
+      normalizedAliases: ["pan"],
       at: at(),
     });
     const node = makeNode({
@@ -120,7 +122,14 @@ describe("end-to-end synchronization", () => {
     await harness.runOnDevice(deviceB, () => deviceB.pullCoordinator.run());
     await harness.runOnDevice(deviceB, async () => {
       const snapshot = await snapshotDevice(workspaceId);
-      expect(snapshot.contexts).toMatchObject([{ id: context.id, version: 1 }]);
+      expect(snapshot.contexts).toMatchObject([
+        {
+          id: context.id,
+          version: 1,
+          aliases: ["PAN"],
+          normalizedAliases: ["pan"],
+        },
+      ]);
       expect(snapshot.nodes).toMatchObject([{ id: node.id, version: 1 }]);
       expect(snapshot.relations).toMatchObject([
         {

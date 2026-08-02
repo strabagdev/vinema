@@ -8,6 +8,7 @@ import type {
   SyncMutation,
 } from "@vinema/sync-contracts";
 import { createConceptEquivalenceKey } from "@/features/associations/concept-label-normalization";
+import { normalizeContextAliases } from "@/features/concepts/concept-identity";
 
 export function mapLocalNodeToCaptureMutation(input: {
   mutationId: string;
@@ -35,18 +36,22 @@ export function mapLocalContextToConceptMutation(input: {
   baseVersion: number | null;
   mergedIntoId?: string | null;
 }): SyncMutation {
+  const context = normalizeContextAliases(input.context);
+
   return {
     mutationId: input.mutationId,
     entityType: "concept",
     operation: "upsert",
-    entityId: input.context.id,
+    entityId: context.id,
     baseVersion: input.baseVersion,
     payload: {
-      label: input.context.name,
-      normalizedKey: createConceptEquivalenceKey(input.context.name),
-      createdAt: input.context.createdAt,
-      updatedAt: input.context.updatedAt,
-      archivedAt: input.context.archivedAt,
+      label: context.name,
+      normalizedKey: createConceptEquivalenceKey(context.name),
+      aliases: context.aliases ?? [],
+      normalizedAliases: context.normalizedAliases ?? [],
+      createdAt: context.createdAt,
+      updatedAt: context.updatedAt,
+      archivedAt: context.archivedAt,
       mergedIntoId: input.mergedIntoId ?? null,
     },
   };
@@ -101,7 +106,7 @@ export function mapRemoteCaptureToLocalNode(
 }
 
 export function mapRemoteConceptToLocalContext(concept: ConceptEntity): Context {
-  return {
+  return normalizeContextAliases({
     id: concept.id,
     workspaceId: concept.workspaceId,
     type: "AREA",
@@ -113,7 +118,9 @@ export function mapRemoteConceptToLocalContext(concept: ConceptEntity): Context 
     createdAt: concept.createdAt,
     updatedAt: concept.updatedAt,
     archivedAt: concept.archivedAt,
-  };
+    aliases: concept.aliases,
+    normalizedAliases: concept.normalizedAliases,
+  });
 }
 
 export function mapRemoteCaptureConceptToLocalRelation(

@@ -577,12 +577,14 @@ describe("Vinema sync API", () => {
       workspaceId,
       label: "Rare Carbon",
       normalizedKey: "carbon|rare",
+      aliases: ["RC"],
+      normalizedAliases: ["rc"],
       createdAt: now,
       updatedAt: now,
       archivedAt: null,
       mergedIntoId: null,
       version: 1,
-    })).toMatchObject({ id: context.id, name: "Rare Carbon" });
+    })).toMatchObject({ id: context.id, name: "Rare Carbon", aliases: ["RC"] });
   });
 });
 
@@ -649,6 +651,8 @@ function conceptMutation({
     payload: {
       label: "Rare Carbon",
       normalizedKey: "carbon|rare",
+      aliases: [],
+      normalizedAliases: [],
       createdAt: now,
       updatedAt: now,
       archivedAt,

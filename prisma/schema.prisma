@@ -150,15 +150,17 @@ model Capture {
 }
 
 model Concept {
-  id            String    @id
-  workspaceId   String
-  label         String
-  normalizedKey String
-  createdAt     DateTime
-  updatedAt     DateTime
-  archivedAt    DateTime?
-  mergedIntoId  String?
-  version       Int       @default(1)
+  id                String    @id
+  workspaceId       String
+  label             String
+  normalizedKey     String
+  aliases           String[] @default([])
+  normalizedAliases String[] @default([])
+  createdAt         DateTime
+  updatedAt         DateTime
+  archivedAt        DateTime?
+  mergedIntoId      String?
+  version           Int      @default(1)
 
   workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   captures  CaptureConcept[]

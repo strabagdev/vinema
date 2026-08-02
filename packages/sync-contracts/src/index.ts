@@ -31,6 +31,10 @@ export const conceptEntitySchema = z.object({
   workspaceId: uuidSchema,
   label: z.string().min(1).max(MAX_CONCEPT_LABEL_LENGTH),
   normalizedKey: z.string().min(1).max(MAX_CONCEPT_LABEL_LENGTH),
+  aliases: z.array(z.string().min(1).max(MAX_CONCEPT_LABEL_LENGTH)).default([]),
+  normalizedAliases: z
+    .array(z.string().min(1).max(MAX_CONCEPT_LABEL_LENGTH))
+    .default([]),
   createdAt: isoDateSchema,
   updatedAt: isoDateSchema,
   archivedAt: nullableIsoDateSchema,

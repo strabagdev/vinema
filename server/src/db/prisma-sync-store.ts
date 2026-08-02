@@ -318,6 +318,8 @@ async function applyEntityMutation(
         workspaceId,
         label: mutation.payload.label,
         normalizedKey: mutation.payload.normalizedKey,
+        aliases: mutation.payload.aliases,
+        normalizedAliases: mutation.payload.normalizedAliases,
         createdAt: mutation.payload.createdAt,
         updatedAt: mutation.payload.updatedAt,
         archivedAt: mutation.payload.archivedAt,
@@ -327,6 +329,8 @@ async function applyEntityMutation(
       update: {
         label: mutation.payload.label,
         normalizedKey: mutation.payload.normalizedKey,
+        aliases: mutation.payload.aliases,
+        normalizedAliases: mutation.payload.normalizedAliases,
         updatedAt: mutation.payload.updatedAt,
         archivedAt: mutation.payload.archivedAt,
         mergedIntoId: mutation.payload.mergedIntoId,
@@ -397,6 +401,8 @@ function toConceptEntity(concept: {
   workspaceId: string;
   label: string;
   normalizedKey: string;
+  aliases: string[];
+  normalizedAliases: string[];
   createdAt: Date;
   updatedAt: Date;
   archivedAt: Date | null;
@@ -408,6 +414,8 @@ function toConceptEntity(concept: {
     workspaceId: concept.workspaceId,
     label: concept.label,
     normalizedKey: concept.normalizedKey,
+    aliases: concept.aliases,
+    normalizedAliases: concept.normalizedAliases,
     createdAt: concept.createdAt.toISOString(),
     updatedAt: concept.updatedAt.toISOString(),
     archivedAt: concept.archivedAt?.toISOString() ?? null,
