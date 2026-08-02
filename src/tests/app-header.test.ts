@@ -6,14 +6,17 @@ import { AppHeader } from "@/components/app-shell/app-header";
 const knowledgeMocks = vi.hoisted(() => ({
   downloadKnowledgeBackup: vi.fn(),
   exportKnowledgeBackup: vi.fn(),
+  push: vi.fn(),
   readKnowledgeBackupFile: vi.fn(),
+  replace: vi.fn(),
   resetKnowledge: vi.fn(),
   summarizeLocalKnowledge: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
-    replace: vi.fn(),
+    push: knowledgeMocks.push,
+    replace: knowledgeMocks.replace,
   }),
 }));
 
@@ -127,7 +130,9 @@ describe("AppHeader", () => {
       relations: 15,
     });
     knowledgeMocks.exportKnowledgeBackup.mockResolvedValue(backupFixture());
+    knowledgeMocks.push.mockReset();
     knowledgeMocks.readKnowledgeBackupFile.mockResolvedValue(backupFixture());
+    knowledgeMocks.replace.mockReset();
     knowledgeMocks.resetKnowledge.mockResolvedValue({
       remote: {
         workspaceId: "workspace-1",
@@ -150,7 +155,7 @@ describe("AppHeader", () => {
     document.body.replaceChildren();
   });
 
-  it("keeps the session menu minimal and opens Mi conocimiento from it", async () => {
+  it("keeps the session menu minimal and opens Conocimiento from it", async () => {
     const screen = await renderHeader();
     const header = screen.querySelector("header");
     const wordmarkLink = screen.querySelector("a[aria-label='Ir a Inicio']");
@@ -168,28 +173,47 @@ describe("AppHeader", () => {
     await click(screen.querySelector("button[aria-label='Abrir menu']"));
 
     expect(document.body.querySelector("a[href='/notes/archive']")).toBeTruthy();
-    expect(document.body.textContent).toContain("Mi conocimiento");
+    expect(document.body.textContent).toContain("Conocimiento");
+    expect(document.body.textContent).not.toContain("Mi conocimiento");
     expect(document.body.textContent).toContain("Cerrar sesion");
+    expect(document.body.textContent).not.toContain("Explorar");
     expect(document.body.textContent).not.toContain("Respaldar memoria");
     expect(document.body.textContent).not.toContain("Restaurar memoria");
     expect(document.body.textContent).not.toContain("Vaciar memoria");
     expect(document.body.textContent).not.toContain("Sincronizacion futura");
 
-    await click(getByText("Mi conocimiento"));
+    await click(getByText("Conocimiento"));
 
     expect(getDialog()).toBeTruthy();
+    expect(document.body.textContent).toContain("Conocimiento");
     expect(document.body.textContent).toContain("22 capturas · 6 conceptos · 15 relaciones");
     expect(document.body.textContent).toContain("Respaldar memoria");
     expect(document.body.textContent).toContain("Restaurar memoria");
     expect(document.body.textContent).toContain("Vaciar memoria");
+    expect(document.body.textContent).toContain("Explorar");
+    expect(document.body.textContent).toContain(
+      "Recorre tus conceptos, recuerdos y conexiones.",
+    );
     expect(document.body.textContent).not.toContain("workspace");
+  });
+
+  it("opens Explore from Conocimiento and closes the center", async () => {
+    const screen = await renderHeader();
+
+    await click(screen.querySelector("button[aria-label='Abrir menu']"));
+    await click(getByText("Conocimiento"));
+    await click(getByText("Explorar"));
+
+    expect(knowledgeMocks.push).toHaveBeenCalledWith("/concepts");
+    expect(document.body.querySelector("[role='dialog']")).toBeNull();
+    expect(document.body.textContent).not.toContain("Respaldar memoria");
   });
 
   it("renders the center as a responsive portal with internal scrolling", async () => {
     const screen = await renderHeader();
 
     await click(screen.querySelector("button[aria-label='Abrir menu']"));
-    await click(getByText("Mi conocimiento"));
+    await click(getByText("Conocimiento"));
 
     const dialog = getDialog();
     expect(document.body.contains(dialog)).toBe(true);
@@ -203,7 +227,7 @@ describe("AppHeader", () => {
     const screen = await renderHeader();
 
     await click(screen.querySelector("button[aria-label='Abrir menu']"));
-    await click(getByText("Mi conocimiento"));
+    await click(getByText("Conocimiento"));
     await click(getByText("Respaldar memoria"));
 
     expect(knowledgeMocks.exportKnowledgeBackup).toHaveBeenCalledTimes(1);
@@ -217,7 +241,7 @@ describe("AppHeader", () => {
     const screen = await renderHeader();
 
     await click(screen.querySelector("button[aria-label='Abrir menu']"));
-    await click(getByText("Mi conocimiento"));
+    await click(getByText("Conocimiento"));
     await click(getByText("Restaurar memoria"));
     await changeFileInput(new File(["{}"], "vinema-knowledge.json", {
       type: "application/json",
@@ -233,7 +257,7 @@ describe("AppHeader", () => {
     const screen = await renderHeader();
 
     await click(screen.querySelector("button[aria-label='Abrir menu']"));
-    await click(getByText("Mi conocimiento"));
+    await click(getByText("Conocimiento"));
     await click(getByText("Vaciar memoria"));
 
     expect(document.body.textContent).toContain(
@@ -253,18 +277,18 @@ describe("AppHeader", () => {
     const screen = await renderHeader();
 
     await click(screen.querySelector("button[aria-label='Abrir menu']"));
-    await click(getByText("Mi conocimiento"));
+    await click(getByText("Conocimiento"));
     await click(getByText("Vaciar memoria"));
     await inputText(getConfirmationInput(), "VACIAR");
-    await click(document.body.querySelector("button[aria-label='Cerrar Mi conocimiento']"));
+    await click(document.body.querySelector("button[aria-label='Cerrar Conocimiento']"));
 
     expect(document.body.querySelector("[role='dialog']")).toBeNull();
 
     await click(screen.querySelector("button[aria-label='Abrir menu']"));
-    if (!document.body.textContent?.includes("Mi conocimiento")) {
+    if (!document.body.textContent?.includes("Conocimiento")) {
       await click(screen.querySelector("button[aria-label='Abrir menu']"));
     }
-    await click(getByText("Mi conocimiento"));
+    await click(getByText("Conocimiento"));
     await click(getByText("Vaciar memoria"));
 
     expect(getConfirmationInput().value).toBe("");

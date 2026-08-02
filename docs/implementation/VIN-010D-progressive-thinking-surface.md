@@ -42,8 +42,8 @@ Muestra texto, cursor, estado de borrador y accion de captura si corresponde. No
 
 Muestra indicadores:
 
-- conceptos detectados;
-- recuerdos relacionados.
+- conceptos sugeridos;
+- ideas relacionadas.
 
 No muestra listas completas por defecto.
 
@@ -72,7 +72,22 @@ Los indicadores son botones discretos con icono y cantidad:
 - `Brain`: conceptos;
 - `Lightbulb`: ideas o recuerdos relacionados.
 
-Cada indicador incluye `aria-label` con el conteo. Cuando el panel correspondiente esta abierto, el contador visual se oculta para reducir redundancia, pero la informacion accesible permanece.
+Cada indicador incluye `aria-label` con el conteo:
+
+- `N conceptos sugeridos`;
+- `N ideas relacionadas`.
+
+La interfaz no comunica la ausencia de una sugerencia. Solo aparece cuando existe algo util que mostrar.
+
+Por eso:
+
+- `Brain` solo existe cuando hay al menos un concepto;
+- `Lightbulb` solo existe cuando hay al menos una idea o recuerdo relacionado;
+- no se renderizan iconos inactivos, placeholders ni contadores en cero;
+- si no hay indicadores, no se reserva espacio visual;
+- si el indicador activo desaparece, el panel se cierra.
+
+Cuando el panel correspondiente esta abierto, el contador visual se oculta para reducir redundancia, pero la informacion accesible permanece.
 
 ## Paneles contextuales
 

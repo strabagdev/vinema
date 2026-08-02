@@ -1,9 +1,11 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
+import { useRouter } from "next/navigation";
 import {
   Brain,
   Download,
+  Network,
   RotateCcw,
   Trash2,
   Upload,
@@ -58,6 +60,7 @@ const emptySummary: KnowledgeResetCounts = {
 };
 
 export function KnowledgeManagementCenterMenuItem() {
+  const router = useRouter();
   const auth = useAuth();
   const vinemaContext = useVinemaContext();
   const feedback = useVisualFeedback();
@@ -271,6 +274,12 @@ export function KnowledgeManagementCenterMenuItem() {
     }
   }
 
+  function handleExplore() {
+    setOpen(false);
+    resetCenterState();
+    router.push("/concepts");
+  }
+
   return (
     <Dialog.Root open={open} onOpenChange={handleOpenChange}>
       <Dialog.Trigger asChild>
@@ -283,7 +292,7 @@ export function KnowledgeManagementCenterMenuItem() {
           }}
         >
           <Brain className="mr-2 h-4 w-4" aria-hidden="true" />
-          Mi conocimiento
+          Conocimiento
         </DropdownMenuItem>
       </Dialog.Trigger>
       <Dialog.Portal>
@@ -314,7 +323,7 @@ export function KnowledgeManagementCenterMenuItem() {
                     tabIndex={-1}
                     className="text-lg font-semibold text-zinc-950 outline-none"
                   >
-                    Mi conocimiento
+                    Conocimiento
                   </Dialog.Title>
                   <Dialog.Description
                     id="knowledge-center-description"
@@ -327,7 +336,7 @@ export function KnowledgeManagementCenterMenuItem() {
                   <button
                     type="button"
                     className="shrink-0 rounded-md p-2 text-zinc-500 outline-none hover:bg-zinc-100 hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
-                    aria-label="Cerrar Mi conocimiento"
+                    aria-label="Cerrar Conocimiento"
                     disabled={Boolean(processing)}
                   >
                     <X className="h-4 w-4" aria-hidden="true" />
@@ -346,6 +355,7 @@ export function KnowledgeManagementCenterMenuItem() {
                   onBackup={handleBackup}
                   onRestore={handleRestoreSelect}
                   onReset={prepareReset}
+                  onExplore={handleExplore}
                 />
               ) : null}
               {view === "restore-confirmation" && restorePreview ? (
@@ -414,6 +424,7 @@ function KnowledgeOverview({
   onBackup,
   onRestore,
   onReset,
+  onExplore,
 }: {
   summary: KnowledgeResetCounts;
   ready: boolean;
@@ -422,6 +433,7 @@ function KnowledgeOverview({
   onBackup(): void;
   onRestore(): void;
   onReset(): void;
+  onExplore(): void;
 }) {
   return (
     <div className="space-y-5">
@@ -452,6 +464,14 @@ function KnowledgeOverview({
           disabled={!ready || Boolean(processing)}
           busy={processing === "reset"}
           onClick={onReset}
+        />
+        <KnowledgeAction
+          icon={<Network className="h-5 w-5" aria-hidden="true" />}
+          title="Explorar"
+          description="Recorre tus conceptos, recuerdos y conexiones."
+          disabled={!ready || Boolean(processing)}
+          busy={false}
+          onClick={onExplore}
         />
       </div>
     </div>

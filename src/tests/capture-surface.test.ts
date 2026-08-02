@@ -98,8 +98,8 @@ describe("CaptureSurface", () => {
     const screen = await renderCaptureSurface({ storage, nodeRepository });
 
     expect(queryButton(screen.container, "Capturar")).toBeUndefined();
-    expect(getContextIndicator(screen.container, "conceptos detectados")).toBeUndefined();
-    expect(getContextIndicator(screen.container, "recuerdos relacionados")).toBeUndefined();
+    expect(getContextIndicator(screen.container, "conceptos sugeridos")).toBeUndefined();
+    expect(getContextIndicator(screen.container, "ideas relacionadas")).toBeUndefined();
 
     await changeTextarea(screen.container, "   ");
     await advanceTime(500);
@@ -122,11 +122,26 @@ describe("CaptureSurface", () => {
     await changeTextarea(screen.container, "Revisar Mitcom");
     await advanceTime(500);
 
-    expect(getContextIndicator(screen.container, "conceptos detectados")).toBeDefined();
-    expect(getContextIndicator(screen.container, "recuerdos relacionados")).toBeDefined();
+    expect(getContextIndicator(screen.container, "conceptos sugeridos")).toBeDefined();
+    expect(getContextIndicator(screen.container, "ideas relacionadas")).toBeDefined();
     expect(screen.container.textContent).not.toContain("Conceptos detectados");
     expect(screen.container.textContent).not.toContain("Me recuerda a…");
     expect(screen.container.textContent).not.toContain("Proveedor Mitcom");
+  });
+
+  it("shows only Brain when concepts exist without related ideas", async () => {
+    const screen = await renderCaptureSurface();
+
+    await changeTextarea(screen.container, "Revisar Railway");
+    await advanceTime(500);
+
+    const group = screen.container.querySelector("[data-context-indicator-group]");
+
+    expect(getContextIndicator(screen.container, "conceptos sugeridos")).toBeDefined();
+    expect(getContextIndicator(screen.container, "ideas relacionadas")).toBeUndefined();
+    expect(group?.className).toContain("justify-center");
+    expect(group?.querySelectorAll("[data-context-indicator]")).toHaveLength(1);
+    expect(group?.textContent).not.toContain("0");
   });
 
   it("does not show association suggestions before there is enough useful text", async () => {
@@ -161,7 +176,7 @@ describe("CaptureSurface", () => {
     await changeTextarea(screen.container, "mitcom");
     await advanceTime(500);
 
-    expect(getContextIndicator(screen.container, "recuerdos relacionados")).toBeDefined();
+    expect(getContextIndicator(screen.container, "ideas relacionadas")).toBeDefined();
     await openMemoryPanel(screen.container);
     expect(getDialog(screen.container, "Me recuerda a…")).toBeDefined();
     expect(screen.container.textContent).toContain("Proveedor Mitcom");
@@ -254,7 +269,7 @@ describe("CaptureSurface", () => {
     await waitFor(() => getTextarea(screen.container)?.value === "");
 
     expect(getDialog(screen.container, "Conceptos detectados")).toBeUndefined();
-    expect(getContextIndicator(screen.container, "conceptos detectados")).toBeUndefined();
+    expect(getContextIndicator(screen.container, "conceptos sugeridos")).toBeUndefined();
     expect(document.activeElement).toBe(getTextarea(screen.container));
   });
 
@@ -463,7 +478,7 @@ describe("CaptureSurface", () => {
 
     await changeTextarea(screen.container, "Revisar Railway");
     await advanceTime(500);
-    const indicator = getContextIndicator(screen.container, "conceptos detectados");
+    const indicator = getContextIndicator(screen.container, "conceptos sugeridos");
     const getRectSpy = vi.fn(() => ({
       x: 700,
       y: 420,
@@ -533,7 +548,7 @@ describe("CaptureSurface", () => {
 
     await changeTextarea(screen.container, "Revisar Railway");
     await advanceTime(500);
-    const indicator = getContextIndicator(screen.container, "conceptos detectados");
+    const indicator = getContextIndicator(screen.container, "conceptos sugeridos");
 
     await mouseEnter(indicator);
     expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
@@ -552,7 +567,7 @@ describe("CaptureSurface", () => {
 
     await changeTextarea(screen.container, "Revisar Railway");
     await advanceTime(500);
-    const indicator = getContextIndicator(screen.container, "conceptos detectados");
+    const indicator = getContextIndicator(screen.container, "conceptos sugeridos");
 
     await mouseEnter(indicator);
     const panel = getDialog(screen.container, "Conceptos detectados") as HTMLElement;
@@ -575,7 +590,7 @@ describe("CaptureSurface", () => {
 
     await changeTextarea(screen.container, "Revisar Railway");
     await advanceTime(500);
-    const indicator = getContextIndicator(screen.container, "conceptos detectados");
+    const indicator = getContextIndicator(screen.container, "conceptos sugeridos");
 
     await mouseEnter(indicator);
     await mouseLeave(indicator);
@@ -592,7 +607,7 @@ describe("CaptureSurface", () => {
 
     await changeTextarea(screen.container, "Revisar Railway");
     await advanceTime(500);
-    const indicator = getContextIndicator(screen.container, "conceptos detectados");
+    const indicator = getContextIndicator(screen.container, "conceptos sugeridos");
 
     await focusElement(indicator);
     expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
@@ -609,7 +624,7 @@ describe("CaptureSurface", () => {
 
     await changeTextarea(screen.container, "Revisar Railway");
     await advanceTime(500);
-    const indicator = getContextIndicator(screen.container, "conceptos detectados");
+    const indicator = getContextIndicator(screen.container, "conceptos sugeridos");
 
     if (!indicator) {
       throw new Error("Concept indicator not found");
@@ -792,7 +807,7 @@ describe("CaptureSurface", () => {
     );
     await advanceTime(500);
 
-    expect(getContextIndicator(screen.container, "conceptos detectados")).toBeDefined();
+    expect(getContextIndicator(screen.container, "conceptos sugeridos")).toBeDefined();
     await openConceptPanel(screen.container);
     expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
     expect(screen.container.textContent).toContain("Perfumes");
@@ -1091,6 +1106,23 @@ describe("CaptureSurface", () => {
 
     expect(screen.container.textContent).not.toContain("Conceptos");
     expect(screen.container.textContent).not.toContain("Railway");
+    expect(screen.container.querySelector("[data-context-indicator-group]")).toBeNull();
+  });
+
+  it("closes an open panel when its indicator disappears", async () => {
+    const screen = await renderCaptureSurface();
+
+    await changeTextarea(screen.container, "Revisar Railway");
+    await advanceTime(500);
+    await openConceptPanel(screen.container);
+
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
+
+    await changeTextarea(screen.container, "");
+    await advanceTime(500);
+
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeUndefined();
+    expect(screen.container.querySelector("[data-context-indicator-group]")).toBeNull();
   });
 
   it("does not let stale concept suggestions replace newer input", async () => {
@@ -1314,7 +1346,7 @@ describe("CaptureSurface", () => {
     expect(screen.container.textContent).not.toContain("No pude buscar asociaciones.");
   });
 
-  it("shows retry when association query fails and reruns without losing text", async () => {
+  it("keeps memory indicators silent when association query fails without results", async () => {
     const nodeRepository = new InMemoryNodeRepository([
       createStoredNode({
         id: "meeting",
@@ -1342,16 +1374,12 @@ describe("CaptureSurface", () => {
     );
     await advanceTime(500);
 
-    await openMemoryPanel(screen.container);
-    expect(getButton(screen.container, "Reintentar")).toBeDefined();
-    await click(getButton(screen.container, "Reintentar"));
-    await advanceTime(500);
-
     expect(getTextarea(screen.container)?.value).toBe(
       "Después de muchas reuniones me cuesta concentrarme.",
     );
-    await openMemoryPanel(screen.container);
-    expect(getDialog(screen.container, "Me recuerda a…")).toBeDefined();
+    expect(getContextIndicator(screen.container, "ideas relacionadas")).toBeUndefined();
+    expect(screen.container.querySelector("[data-context-indicator-group]")).toBeNull();
+    expect(getButton(screen.container, "Reintentar")).toBeUndefined();
   });
 });
 
@@ -1517,7 +1545,7 @@ function setPointerCapability(pointer: "fine" | "coarse") {
 }
 
 async function openConceptPanel(container: HTMLElement) {
-  const indicator = getContextIndicator(container, "conceptos detectados");
+  const indicator = getContextIndicator(container, "conceptos sugeridos");
   if (!indicator) {
     throw new Error("Concept indicator not found");
   }
@@ -1527,7 +1555,7 @@ async function openConceptPanel(container: HTMLElement) {
 
 async function openMemoryPanel(container: HTMLElement) {
   const indicator =
-    getContextIndicator(container, "recuerdos relacionados") ??
+    getContextIndicator(container, "ideas relacionadas") ??
     getContextIndicator(container, "No se pudo buscar recuerdos");
 
   if (!indicator) {

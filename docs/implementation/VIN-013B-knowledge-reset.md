@@ -122,12 +122,12 @@ Luego limpia el borrador de captura mediante el adaptador de storage y emite inv
 
 ## Confirmacion
 
-Desde VIN-013C, el reset vive dentro del centro `Mi conocimiento`.
+Desde VIN-013C.1, el reset vive dentro del centro `Conocimiento`.
 
 El centro agrega:
 
 ```text
-Vaciar conocimiento
+Vaciar memoria
 ```
 
 La accion abre un dialogo con:

@@ -102,11 +102,7 @@ export function CaptureSurface({
   );
   const memorySuggestions = associationState.suggestions;
   const showConceptIndicator = hasContent && conceptSuggestions.length > 0;
-  const showMemoryIndicator =
-    hasContent &&
-    (memorySuggestions.length > 0 ||
-      associationState.status === "loading" ||
-      associationState.error !== null);
+  const showMemoryIndicator = hasContent && memorySuggestions.length > 0;
   const showIndicators = showConceptIndicator || showMemoryIndicator;
   const conceptExpansionContextId = getConceptExpansionContextId(
     conceptSuggestions,
@@ -197,6 +193,19 @@ export function CaptureSurface({
       clearPanelCloseTimer();
     };
   }, [clearPanelCloseTimer]);
+
+  useEffect(() => {
+    if (
+      (activePanel === "concepts" && !showConceptIndicator) ||
+      (activePanel === "memories" && !showMemoryIndicator)
+    ) {
+      clearPanelCloseTimer();
+      queueMicrotask(() => {
+        setActivePanel(null);
+        setInteractionSource(null);
+      });
+    }
+  }, [activePanel, clearPanelCloseTimer, showConceptIndicator, showMemoryIndicator]);
 
   useEffect(() => {
     function handleEscape(event: KeyboardEvent) {
@@ -606,7 +615,7 @@ export function CaptureSurface({
                     icon="concepts"
                     count={conceptSuggestions.length}
                     active={activePanel === "concepts"}
-                    label={`${conceptSuggestions.length} conceptos detectados`}
+                    label={`${conceptSuggestions.length} conceptos sugeridos`}
                     onHover={() => openPanel("concepts", "hover")}
                     onFocus={() => openPanel("concepts", "focus")}
                     onClick={() =>
@@ -625,11 +634,7 @@ export function CaptureSurface({
                     icon="memories"
                     count={memorySuggestions.length}
                     active={activePanel === "memories"}
-                    label={
-                      associationState.error
-                        ? "No se pudo buscar recuerdos"
-                        : `${memorySuggestions.length} recuerdos relacionados`
-                    }
+                    label={`${memorySuggestions.length} ideas relacionadas`}
                     onHover={() => openPanel("memories", "hover")}
                     onFocus={() => openPanel("memories", "focus")}
                     onClick={() =>

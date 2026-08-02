@@ -1,26 +1,29 @@
-# VIN-013C - My Knowledge Management Center
+# VIN-013C - Knowledge Management Center
 
-> Ampliado por VIN-013D. El centro actual usa la semantica de memoria completa: `Respaldar memoria`, `Restaurar memoria` y `Vaciar memoria`.
+> Ampliado por VIN-013D y VIN-013C.1. El centro actual se llama `Conocimiento` y usa la semantica de memoria completa: `Respaldar memoria`, `Restaurar memoria`, `Vaciar memoria` y `Explorar`.
 
 ## Decision de Producto
 
-VIN-013C consolida las acciones de memoria en un unico centro llamado `Mi conocimiento`.
+VIN-013C consolida las acciones de memoria en un unico centro. Desde VIN-013C.1, ese centro se llama simplemente `Conocimiento`.
 
 El menu de sesion vuelve a ser minimo:
 
 - Archivo;
-- Mi conocimiento;
+- Conocimiento;
 - Cerrar sesion.
 
 Las acciones de respaldo, restauracion y vaciado dejan de vivir directamente en el menu. El usuario administra su memoria activa desde un lugar claro y no desde una lista de comandos destructivos mezclados con la sesion.
 
-## Centro Mi Conocimiento
+## Centro Conocimiento
 
-`Mi conocimiento` es un dialogo responsive que reune:
+`Conocimiento` es un dialogo responsive que reune:
 
-- `Respaldar conocimiento`;
-- `Restaurar conocimiento`;
-- `Vaciar conocimiento`.
+- `Respaldar memoria`;
+- `Restaurar memoria`;
+- `Vaciar memoria`;
+- `Explorar`.
+
+`Explorar` abre la entrada global de conocimiento en `/concepts`, cierra el centro y no queda como accion permanente del header ni como item directo del menu de sesion.
 
 El centro muestra un resumen compacto:
 
@@ -29,6 +32,12 @@ El centro muestra un resumen compacto:
 ```
 
 No muestra IDs, detalles de base de datos ni el concepto tecnico de workspace.
+
+## Explorar
+
+La accion `Explorar` pertenece al centro `Conocimiento`.
+
+La entrada global no fabrica conceptos ni muestra una lista de capturas como fallback. Si existen conceptos, los presenta como puntos de entrada a la Base de conocimiento contextual existente. Si no existen conceptos, muestra un estado vacio sereno y permite volver al canvas.
 
 ## Backup
 
@@ -153,5 +162,6 @@ Regla de producto: una cuenta posee una unica memoria activa. El workspace tecni
 
 - No existe metadata local persistida para mostrar el ultimo respaldo real. El centro lo deja documentado como pendiente y no inventa una fecha.
 - No se agregan opciones de administracion avanzada.
+- Explorar es una entrada por conceptos existentes; no implementa grafo global ni Plazas.
 - No se ejecuta reset real durante validacion de desarrollo.
 - Las pruebas responsive son de clases/layout DOM; la verificacion visual manual debe hacerse en navegador real cuando se autorice.

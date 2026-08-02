@@ -119,12 +119,12 @@ Despues de aplicar una restauracion con cambios, Vinema solicita sincronizacion 
 
 ## UI
 
-Desde VIN-013C, el menu de sesion contiene un acceso minimo a `Mi conocimiento`.
+Desde VIN-013C.1, el menu de sesion contiene un acceso minimo a `Conocimiento`.
 
-El centro `Mi conocimiento` contiene:
+El centro `Conocimiento` contiene:
 
-- Respaldar conocimiento;
-- Restaurar conocimiento;
+- Respaldar memoria;
+- Restaurar memoria;
 
 Respaldar descarga el JSON directamente.
 
