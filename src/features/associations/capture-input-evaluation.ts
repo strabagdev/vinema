@@ -16,6 +16,7 @@ import {
   uniqueTokens,
 } from "@/features/associations/tokenize";
 import { SPANISH_STOPWORDS } from "@/features/associations/spanish-stopwords";
+import { extractSemanticPhraseCandidates } from "@/features/semantics/semantic-phrase-extractor";
 import type {
   AssociationSuggestion,
   ConceptSuggestion,
@@ -66,14 +67,9 @@ const DISPLAY_LABELS: Record<string, string> = {
   sponsor: "Sponsor Meeting",
 };
 
-const CURRENT_INPUT_DISPLAY_LABELS: Record<string, string> = {
-  mitcom: "Mitcom",
-  railway: "Railway",
-};
-
 const MIN_INPUT_EMERGING_TOKENS = 1;
 const MIN_INPUT_EMERGING_SCORE = 0.42;
-const INPUT_EMERGING_LIMIT = 3;
+const INPUT_EMERGING_LIMIT = 5;
 
 type ExpressionCandidate = {
   key: string;
@@ -319,107 +315,17 @@ function detectInputEmergingConcepts({
 }
 
 function collectInputConceptCandidates(text: string) {
-  const words = extractWords(text);
-  const candidates = new Map<
-    string,
-    { label: string; terms: string[]; score: number }
-  >();
-
-  for (const [index, word] of words.entries()) {
-    const terms = uniqueTokens(tokenizeAssociationText(word));
-    const [term] = terms;
-
-    if (!term || GENERIC_CONCEPT_TERMS.has(term)) {
-      continue;
-    }
-
-    const displayLabel = CURRENT_INPUT_DISPLAY_LABELS[term];
-    const isNamedTerm = index > 0 && hasUppercaseLetter(word);
-
-    if (!displayLabel && !isNamedTerm) {
-      continue;
-    }
-
-    const label = displayLabel ?? formatExpressionLabel([word]);
-    candidates.set(normalizeLabelForDeduplication(label), {
-      label,
-      terms,
-      score: displayLabel ? 0.72 : 0.52,
-    });
-  }
-
-  for (const wordCount of [2, 3]) {
-    for (let index = 0; index <= words.length - wordCount; index += 1) {
-      const phraseWords = words.slice(index, index + wordCount);
-      const candidate = createCurrentExpressionCandidate(phraseWords);
-
-      if (!candidate) {
-        continue;
-      }
-
-      const key = normalizeLabelForDeduplication(candidate.label);
-      const current = candidates.get(key);
-
-      if (!current || candidate.score > current.score) {
-        candidates.set(key, candidate);
-      }
-    }
-  }
-
-  return Array.from(candidates.values()).sort((first, second) => {
+  return extractSemanticPhraseCandidates(text).map((candidate) => ({
+    label: candidate.text,
+    terms: candidate.tokens,
+    score: candidate.score,
+  })).sort((first, second) => {
     if (second.score !== first.score) {
       return second.score - first.score;
     }
 
     return first.label.localeCompare(second.label);
   });
-}
-
-function createCurrentExpressionCandidate(phraseWords: string[]) {
-  const normalizedWords = phraseWords.map((word) => normalizeAssociationText(word));
-  const startsWithStopword = SPANISH_STOPWORDS.has(normalizedWords[0] ?? "");
-  const endsWithStopword = SPANISH_STOPWORDS.has(
-    normalizedWords[normalizedWords.length - 1] ?? "",
-  );
-  const startsWithGenericTerm = isGenericConceptWord(phraseWords[0] ?? "");
-  const endsWithGenericTerm = isGenericConceptWord(
-    phraseWords[phraseWords.length - 1] ?? "",
-  );
-
-  if (
-    startsWithStopword ||
-    endsWithStopword ||
-    startsWithGenericTerm ||
-    endsWithGenericTerm
-  ) {
-    return null;
-  }
-
-  const terms = uniqueTokens(tokenizeAssociationText(phraseWords.join(" "))).filter(
-    (term) => !GENERIC_CONCEPT_TERMS.has(term),
-  );
-
-  if (terms.length < 2) {
-    return null;
-  }
-
-  const hasProperCase = hasExpressionCapitalization(phraseWords);
-
-  if (!hasProperCase) {
-    return null;
-  }
-
-  return {
-    label: formatExpressionLabel(phraseWords),
-    terms,
-    score: 0.48,
-  };
-}
-
-function isGenericConceptWord(word: string) {
-  const terms = uniqueTokens(tokenizeAssociationText(word));
-
-  return terms.length > 0 && terms.every((term) => GENERIC_CONCEPT_TERMS.has(term));
 }
 
 function dedupeEmergingConcepts(suggestions: EmergingConceptSuggestion[]) {

@@ -1093,6 +1093,25 @@ describe("CaptureSurface", () => {
     );
   });
 
+  it("shows semantic phrase concepts in the UI without partial capitalized words", async () => {
+    const screen = await renderCaptureSurface();
+
+    await changeTextarea(
+      screen.container,
+      "Los perfumes que quiero comprar son Ombre Leather de Tom Ford y Erba Pura.",
+    );
+    await advanceTime(500);
+    await openConceptPanel(screen.container);
+
+    expect(screen.container.textContent).toContain("Perfumes");
+    expect(screen.container.textContent).toContain("Ombre Leather");
+    expect(screen.container.textContent).toContain("Tom Ford");
+    expect(screen.container.textContent).toContain("Erba Pura");
+    expect(getButton(screen.container, "Ombre")).toBeUndefined();
+    expect(getButton(screen.container, "Ford")).toBeUndefined();
+    expect(getButton(screen.container, "Erba")).toBeUndefined();
+  });
+
   it("clears current-input emerging concepts when the editor is cleared", async () => {
     const screen = await renderCaptureSurface();
 
