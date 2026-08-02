@@ -139,6 +139,9 @@ export function ConceptIndexClient() {
                 ) : null}
                 <span className="mt-2 block text-xs text-zinc-500">
                   {formatRelationCount(relationCounts.get(concept.id) ?? 0)}
+                  {concept.aliases && concept.aliases.length > 0
+                    ? ` · ${concept.aliases.length} alias`
+                    : ""}
                 </span>
               </span>
             </span>

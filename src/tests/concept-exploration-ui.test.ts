@@ -89,6 +89,9 @@ describe("ConceptExplorationClient", () => {
     expect(screen.textContent).toContain("Railway");
     expect(screen.textContent).toContain("Base de conocimiento");
     expect(screen.textContent).toContain("2 recuerdos relacionados");
+    expect(screen.textContent).toContain("Recuerdos representativos");
+    expect(screen.textContent).toContain("Conectado con");
+    expect(screen.textContent).toContain("Evolución");
     expect(screen.textContent).toContain("Sync");
     expect(screen.textContent).toContain("Workspace");
     expect(screen.textContent).toContain("Captura sobre Railway y Sync");
@@ -103,6 +106,22 @@ describe("ConceptExplorationClient", () => {
 
     expect(mocks.push).toHaveBeenCalledWith(
       "/concepts/detail?contextId=workspace",
+    );
+  });
+
+  it("keeps local concept history and returns without a global list hop", async () => {
+    const screen = await renderConceptExploration();
+
+    await click(getButton(screen, "Workspace"));
+    await click(getButton(screen, "← Volver"));
+
+    expect(mocks.push).toHaveBeenNthCalledWith(
+      1,
+      "/concepts/detail?contextId=workspace",
+    );
+    expect(mocks.push).toHaveBeenNthCalledWith(
+      2,
+      "/concepts/detail?contextId=railway",
     );
   });
 
@@ -160,7 +179,48 @@ describe("ConceptExplorationClient", () => {
     });
 
     expect(screen.textContent).toContain("3 recuerdos relacionados");
+    expect(screen.textContent).toContain("3");
     expect(screen.textContent).toContain("Nueva captura remota de Railway");
+  });
+
+  it("shows aliases as identity evidence without technical normalized values", async () => {
+    mocks.contexts.set(
+      "railway",
+      context({
+        id: "railway",
+        name: "Railway",
+        aliases: ["Railway Cloud"],
+        normalizedAliases: ["railway cloud"],
+      }),
+    );
+    const screen = await renderConceptExploration();
+
+    expect(screen.textContent).toContain("También aparece como");
+    expect(screen.textContent).toContain("Railway Cloud");
+    expect(screen.textContent).not.toContain("railway cloud");
+  });
+
+  it("shows a one-memory profile without empty sections or unnecessary temporal noise", async () => {
+    mocks.nodes.clear();
+    mocks.relations.clear();
+    mocks.nodes.set(
+      "single",
+      node({ id: "single", content: "Railway despliega Vinema API" }),
+    );
+    mocks.relations.set(
+      "single-railway",
+      relation({ id: "single-railway", nodeId: "single", contextId: "railway" }),
+    );
+
+    const screen = await renderConceptExploration();
+
+    expect(screen.textContent).toContain("1 recuerdos relacionados");
+    expect(screen.textContent).toContain("Recuerdos representativos");
+    expect(screen.textContent).toContain("Railway despliega Vinema API");
+    expect(screen.textContent).not.toContain("Conectado con");
+    expect(screen.textContent).not.toContain("Evolución");
+    expect(screen.textContent).not.toContain("últimos 7 días");
+    expect(screen.textContent).not.toContain("Aún sin recuerdos");
   });
 });
 
@@ -212,6 +272,8 @@ function context(overrides: Partial<Context>): Context {
     type: "PROJECT",
     name: "Context",
     description: null,
+    aliases: [],
+    normalizedAliases: [],
     version: 1,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",

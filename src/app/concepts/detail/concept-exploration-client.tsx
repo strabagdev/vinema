@@ -13,6 +13,10 @@ import { formatShortDate } from "@/components/app-shell/note-list-item";
 import { getContentTimestamp } from "@/features/capture/capture-timestamps";
 import { deriveConceptNeighborhood } from "@/features/exploration/concept-neighborhood";
 import {
+  deriveConceptProfile,
+  type ConceptProfile,
+} from "@/features/exploration/concept-profile";
+import {
   getConceptExpansionSourceFromSearchParams,
   getConceptExplorationPath,
   getConceptIdFromSearchParams,
@@ -64,6 +68,18 @@ export function ConceptExplorationClient() {
     }
 
     return deriveConceptNeighborhood({
+      currentContextId: contextId,
+      contexts,
+      relations,
+      nodes: memories,
+    });
+  }, [contextId, contexts, memories, relations]);
+  const profile = useMemo(() => {
+    if (!contextId) {
+      return null;
+    }
+
+    return deriveConceptProfile({
       currentContextId: contextId,
       contexts,
       relations,
@@ -273,63 +289,188 @@ export function ConceptExplorationClient() {
         </div>
       </header>
 
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_18rem]">
-        <div className="min-w-0">
-          {mode === "memories" ? (
-            <MemoryList
-              memories={memories}
-              identities={identities}
-              returnTo={getConceptExplorationPath(center.id, { returnTo })}
-            />
-          ) : null}
-          {mode === "time" ? (
-            <TimeMemoryList
-              memories={memories}
-              identities={identities}
-              returnTo={getConceptExplorationPath(center.id, { returnTo })}
-            />
-          ) : null}
-          {mode === "map" ? (
-            <PreparedMapView
-              center={center}
-              memories={memories}
-              neighborhood={neighborhood}
-              onNavigateToConcept={navigateToConcept}
-            />
-          ) : null}
-        </div>
-        <aside className="space-y-4">
-          <div className="flex items-center gap-2 text-sm font-medium text-zinc-700">
-            <Network className="h-4 w-4" aria-hidden="true" />
-            Caminos cercanos
-          </div>
-          {neighborhood && neighborhood.relatedConcepts.length > 0 ? (
-            <div className="flex flex-col gap-2">
-              {neighborhood.relatedConcepts.map((concept) => (
-                <button
-                  key={concept.id}
-                  type="button"
-                  className="rounded-md px-1 py-1.5 text-left outline-none transition-colors hover:bg-zinc-100/70 focus-visible:ring-2 focus-visible:ring-zinc-400"
-                  onClick={() => navigateToConcept(concept.id)}
-                >
-                  <span className="block text-sm font-medium text-zinc-800">
-                    {concept.label}
-                  </span>
-                  <span className="block text-xs text-zinc-500">
-                    {concept.sharedCaptureCount} recuerdos en comun ·{" "}
-                    {formatShortDate(concept.lastSharedActivityAt)}
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm leading-6 text-zinc-500">
-              Todavia no hay conceptos conectados por recuerdos comunes.
-            </p>
-          )}
-        </aside>
+      {profile && profile.memoryCount > 0 ? (
+        <ConceptProfileSummary
+          profile={profile}
+          returnTo={getConceptExplorationPath(center.id, { returnTo })}
+          onNavigateToConcept={navigateToConcept}
+        />
+      ) : null}
+
+      <div className="min-w-0">
+        {mode === "memories" ? (
+          <MemoryList
+            memories={memories}
+            identities={identities}
+            returnTo={getConceptExplorationPath(center.id, { returnTo })}
+          />
+        ) : null}
+        {mode === "time" ? (
+          <TimeMemoryList
+            memories={memories}
+            identities={identities}
+            returnTo={getConceptExplorationPath(center.id, { returnTo })}
+          />
+        ) : null}
+        {mode === "map" ? (
+          <PreparedMapView
+            center={center}
+            memories={memories}
+            neighborhood={neighborhood}
+            onNavigateToConcept={navigateToConcept}
+          />
+        ) : null}
       </div>
     </section>
+  );
+}
+
+function ConceptProfileSummary({
+  profile,
+  returnTo,
+  onNavigateToConcept,
+}: {
+  profile: ConceptProfile;
+  returnTo: string;
+  onNavigateToConcept: (contextId: string) => void;
+}) {
+  const hasTemporalProfile = profile.memoryCount > 1;
+  const hasSecondaryProfile =
+    profile.relatedConcepts.length > 0 || hasTemporalProfile;
+
+  return (
+    <section
+      className={
+        hasSecondaryProfile
+          ? "grid gap-5 rounded-2xl bg-zinc-50/70 p-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_18rem]"
+          : "rounded-2xl bg-zinc-50/70 p-4 sm:p-5"
+      }
+      aria-label="Perfil conceptual"
+    >
+      <div className="min-w-0 space-y-5">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <ProfileMetric
+            label="Recuerdos"
+            value={String(profile.memoryCount)}
+          />
+          {hasTemporalProfile ? (
+            <>
+              <ProfileMetric
+                label="Primera aparición"
+                value={formatProfileDate(profile.firstSeenAt)}
+              />
+              <ProfileMetric
+                label="Última actividad"
+                value={formatProfileDate(profile.lastSeenAt)}
+              />
+            </>
+          ) : null}
+        </div>
+
+        {profile.representativeMemories.length > 0 ? (
+          <div className="space-y-3">
+            <h2 className="text-sm font-medium text-zinc-700">
+              Recuerdos representativos
+            </h2>
+            <div className="space-y-3">
+              {profile.representativeMemories.map((memory) => (
+                <Link
+                  key={memory.nodeId}
+                  href={getNodeDetailPath(memory.nodeId, { returnTo })}
+                  className="block rounded-lg bg-white/70 p-3 outline-none transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-zinc-400 motion-reduce:transition-none"
+                >
+                  {memory.identityLabels.length > 0 ? (
+                    <span className="mb-1 block truncate text-xs text-zinc-500">
+                      {memory.identityLabels.join(" · ")}
+                    </span>
+                  ) : null}
+                  <span className="block text-sm leading-6 text-zinc-800">
+                    {memory.excerpt}
+                  </span>
+                  <time className="mt-1 block text-xs text-zinc-500">
+                    {formatShortDate(memory.createdAt.toISOString())}
+                  </time>
+                </Link>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {hasTemporalProfile && profile.activity.monthlyBuckets.length > 0 ? (
+          <ActivityBuckets activity={profile.activity} />
+        ) : null}
+      </div>
+
+      {hasSecondaryProfile ? (
+        <aside className="space-y-4">
+          {profile.relatedConcepts.length > 0 ? (
+            <div className="space-y-2">
+              <h2 className="text-sm font-medium text-zinc-700">Conectado con</h2>
+              <div className="space-y-2">
+                {profile.relatedConcepts.map((concept) => (
+                  <button
+                    key={concept.conceptId}
+                    type="button"
+                    className="w-full rounded-lg bg-white/70 px-3 py-2 text-left outline-none transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-zinc-400 motion-reduce:transition-none"
+                    onClick={() => onNavigateToConcept(concept.conceptId)}
+                  >
+                    <span className="block truncate text-sm font-medium text-zinc-800">
+                      {concept.label}
+                    </span>
+                    <span className="block text-xs text-zinc-500">
+                      {concept.sharedMemoryCount} recuerdos compartidos
+                      {concept.lastSharedAt
+                        ? ` · ${formatShortDate(concept.lastSharedAt.toISOString())}`
+                        : ""}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {profile.activity.total > 1 ? (
+            <div className="space-y-2 text-sm text-zinc-600">
+              <p>{profile.activity.last7Days} en los últimos 7 días</p>
+              <p>{profile.activity.last30Days} en los últimos 30 días</p>
+            </div>
+          ) : null}
+        </aside>
+      ) : null}
+    </section>
+  );
+}
+
+function ProfileMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-xs text-zinc-500">{label}</p>
+      <p className="mt-1 text-base font-medium text-zinc-900">{value}</p>
+    </div>
+  );
+}
+
+function ActivityBuckets({ activity }: { activity: ConceptProfile["activity"] }) {
+  const maxCount = Math.max(...activity.monthlyBuckets.map((bucket) => bucket.count), 1);
+
+  return (
+    <div className="space-y-3">
+      <h2 className="text-sm font-medium text-zinc-700">Evolución</h2>
+      <div className="space-y-2">
+        {activity.monthlyBuckets.map((bucket) => (
+          <div key={bucket.month} className="grid grid-cols-[4.5rem_minmax(0,1fr)_2rem] items-center gap-3">
+            <span className="text-xs text-zinc-500">{formatMonth(bucket.month)}</span>
+            <span className="h-2 overflow-hidden rounded-full bg-zinc-200">
+              <span
+                className="block h-full rounded-full bg-emerald-500/70"
+                style={{ width: `${Math.max(8, (bucket.count / maxCount) * 100)}%` }}
+              />
+            </span>
+            <span className="text-right text-xs text-zinc-500">{bucket.count}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -548,6 +689,24 @@ function groupMemoriesByTime(nodes: Node[]) {
     label,
     nodes: groupNodes,
   }));
+}
+
+function formatProfileDate(date: Date | null) {
+  return date ? formatShortDate(date.toISOString()) : "Aún sin recuerdos";
+}
+
+function formatMonth(month: string) {
+  const [year, monthNumber] = month.split("-");
+  const date = new Date(Date.UTC(Number(year), Number(monthNumber) - 1, 1));
+
+  if (Number.isNaN(date.getTime())) {
+    return month;
+  }
+
+  return new Intl.DateTimeFormat("es", {
+    month: "short",
+    year: "numeric",
+  }).format(date);
 }
 
 function startOfDay(date: Date) {
