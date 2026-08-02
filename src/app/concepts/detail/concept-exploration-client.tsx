@@ -17,6 +17,11 @@ import {
   type ConceptProfile,
 } from "@/features/exploration/concept-profile";
 import {
+  deriveConceptGraphNeighborhood,
+  type ConceptGraphNeighborhood,
+  type RelationshipStrength,
+} from "@/features/exploration/concept-relationships";
+import {
   getConceptExpansionSourceFromSearchParams,
   getConceptExplorationPath,
   getConceptIdFromSearchParams,
@@ -55,6 +60,7 @@ export function ConceptExplorationClient() {
   const [error, setError] = useState<string | null>(null);
   const [center, setCenter] = useState<Context | null>(null);
   const [memories, setMemories] = useState<Node[]>([]);
+  const [workspaceNodes, setWorkspaceNodes] = useState<Node[]>([]);
   const [relations, setRelations] = useState<NodeContextRelation[]>([]);
   const [contexts, setContexts] = useState<Context[]>([]);
   const [identities, setIdentities] = useState<
@@ -83,9 +89,21 @@ export function ConceptExplorationClient() {
       currentContextId: contextId,
       contexts,
       relations,
-      nodes: memories,
+      nodes: workspaceNodes,
     });
-  }, [contextId, contexts, memories, relations]);
+  }, [contextId, contexts, relations, workspaceNodes]);
+  const graphNeighborhood = useMemo(() => {
+    if (!contextId) {
+      return null;
+    }
+
+    return deriveConceptGraphNeighborhood({
+      currentConceptId: contextId,
+      contexts,
+      relations,
+      nodes: workspaceNodes,
+    });
+  }, [contextId, contexts, relations, workspaceNodes]);
 
   const loadConcept = useCallback(async () => {
     if (!contextId || vinemaContext.status !== "ready") {
@@ -109,6 +127,7 @@ export function ConceptExplorationClient() {
       if (!nextCenter || nextCenter.workspaceId !== vinemaContext.workspace.id) {
         setCenter(null);
         setMemories([]);
+        setWorkspaceNodes([]);
         setRelations([]);
         setContexts([]);
         setIdentities(new Map());
@@ -133,6 +152,7 @@ export function ConceptExplorationClient() {
       setCenter(nextCenter);
       setContexts(nextContexts);
       setRelations(nextRelations);
+      setWorkspaceNodes(nodes);
       setMemories(nextMemories);
       setIdentities(
         await loadCaptureEmergentIdentities(
@@ -316,7 +336,7 @@ export function ConceptExplorationClient() {
           <PreparedMapView
             center={center}
             memories={memories}
-            neighborhood={neighborhood}
+            graphNeighborhood={graphNeighborhood}
             onNavigateToConcept={navigateToConcept}
           />
         ) : null}
@@ -408,22 +428,41 @@ function ConceptProfileSummary({
               <h2 className="text-sm font-medium text-zinc-700">Conectado con</h2>
               <div className="space-y-2">
                 {profile.relatedConcepts.map((concept) => (
-                  <button
+                  <div
                     key={concept.conceptId}
-                    type="button"
-                    className="w-full rounded-lg bg-white/70 px-3 py-2 text-left outline-none transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-zinc-400 motion-reduce:transition-none"
-                    onClick={() => onNavigateToConcept(concept.conceptId)}
+                    className="rounded-lg bg-white/70 px-3 py-2"
                   >
-                    <span className="block truncate text-sm font-medium text-zinc-800">
-                      {concept.label}
-                    </span>
-                    <span className="block text-xs text-zinc-500">
-                      {concept.sharedMemoryCount} recuerdos compartidos
-                      {concept.lastSharedAt
-                        ? ` · ${formatShortDate(concept.lastSharedAt.toISOString())}`
-                        : ""}
-                    </span>
-                  </button>
+                    <button
+                      type="button"
+                      className="w-full text-left outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+                      onClick={() => onNavigateToConcept(concept.conceptId)}
+                    >
+                      <span className="flex items-center justify-between gap-3">
+                        <span className="block truncate text-sm font-medium text-zinc-800">
+                          {concept.label}
+                        </span>
+                        <span
+                          className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${getStrengthClass(concept.strength)}`}
+                        >
+                          {formatStrength(concept.strength)}
+                        </span>
+                      </span>
+                      <span className="mt-1 block text-xs text-zinc-500">
+                        {concept.sharedMemoryCount} recuerdos compartidos
+                        {concept.lastSharedAt
+                          ? ` · ${formatShortDate(concept.lastSharedAt.toISOString())}`
+                          : ""}
+                      </span>
+                    </button>
+                    {concept.evidence[0] ? (
+                      <Link
+                        href={getNodeDetailPath(concept.evidence[0].nodeId, { returnTo })}
+                        className="mt-2 block rounded-md border-l-2 border-zinc-200 pl-2 text-xs leading-5 text-zinc-500 outline-none hover:text-zinc-800 focus-visible:ring-2 focus-visible:ring-zinc-400"
+                      >
+                        {concept.evidence[0].excerpt}
+                      </Link>
+                    ) : null}
+                  </div>
                 ))}
               </div>
             </div>
@@ -474,15 +513,47 @@ function ActivityBuckets({ activity }: { activity: ConceptProfile["activity"] })
   );
 }
 
+function formatStrength(strength: RelationshipStrength) {
+  return strength === "STRONG"
+    ? "Fuerte"
+    : strength === "MEDIUM"
+      ? "Media"
+      : "Débil";
+}
+
+function getStrengthClass(strength: RelationshipStrength) {
+  if (strength === "STRONG") {
+    return "bg-emerald-100 text-emerald-800";
+  }
+
+  if (strength === "MEDIUM") {
+    return "bg-sky-100 text-sky-800";
+  }
+
+  return "bg-zinc-100 text-zinc-600";
+}
+
+function getMapStrengthClass(strength: RelationshipStrength) {
+  if (strength === "STRONG") {
+    return "border-emerald-300 bg-emerald-50/80 text-emerald-800";
+  }
+
+  if (strength === "MEDIUM") {
+    return "border-sky-300 bg-sky-50/80 text-sky-800";
+  }
+
+  return "border-zinc-200 bg-white text-zinc-600";
+}
+
 function PreparedMapView({
   center,
   memories,
-  neighborhood,
+  graphNeighborhood,
   onNavigateToConcept,
 }: {
   center: Context;
   memories: Node[];
-  neighborhood: ReturnType<typeof deriveConceptNeighborhood>;
+  graphNeighborhood: ConceptGraphNeighborhood | null;
   onNavigateToConcept: (contextId: string) => void;
 }) {
   return (
@@ -504,20 +575,30 @@ function PreparedMapView({
           {memories.length} recuerdos sostienen este concepto.
         </p>
       </div>
-      {neighborhood && neighborhood.relatedConcepts.length > 0 ? (
+      {graphNeighborhood && graphNeighborhood.edges.length > 0 ? (
         <div className="space-y-2">
           <h2 className="text-sm font-medium text-zinc-500">Conceptos cercanos</h2>
           <div className="flex flex-wrap gap-2">
-            {neighborhood.relatedConcepts.map((concept) => (
-              <button
-                key={concept.id}
-                type="button"
-                className="rounded-full border border-zinc-200 px-3 py-1.5 text-sm text-zinc-700 outline-none transition-colors hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400 motion-reduce:transition-none"
-                onClick={() => onNavigateToConcept(concept.id)}
-              >
-                {concept.label}
-              </button>
-            ))}
+            {graphNeighborhood.edges.map((edge) => {
+              const concept = graphNeighborhood.nodes.find(
+                (node) => node.conceptId === edge.targetId,
+              );
+
+              if (!concept) {
+                return null;
+              }
+
+              return (
+                <button
+                  key={edge.targetId}
+                  type="button"
+                  className={`rounded-full border px-3 py-1.5 text-sm outline-none transition-colors hover:bg-zinc-50 hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400 motion-reduce:transition-none ${getMapStrengthClass(edge.strength)}`}
+                  onClick={() => onNavigateToConcept(edge.targetId)}
+                >
+                  {concept.label} · {edge.sharedMemoryCount}
+                </button>
+              );
+            })}
           </div>
         </div>
       ) : (

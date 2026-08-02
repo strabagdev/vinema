@@ -6,12 +6,15 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Context } from "@/domain/context/context";
 import type { NodeContextRelation } from "@/domain/context/node-context-relation";
+import type { Node } from "@/domain/node/node";
 import { Button } from "@/components/ui/button";
+import { deriveConceptRelationships } from "@/features/exploration/concept-relationships";
 import { getConceptExplorationPath } from "@/features/exploration/concept-routes";
 import { useVinemaContext } from "@/features/node/hooks/use-vinema-context";
 import { useSyncDataInvalidation } from "@/features/sync/use-sync-data-invalidation";
 import {
   contextRepository,
+  nodeRepository,
   nodeContextRelationRepository,
 } from "@/infrastructure/repositories";
 
@@ -27,6 +30,7 @@ export function ConceptIndexClient() {
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [concepts, setConcepts] = useState<Context[]>([]);
   const [relations, setRelations] = useState<NodeContextRelation[]>([]);
+  const [nodes, setNodes] = useState<Node[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const loadConcepts = useCallback(async () => {
@@ -38,20 +42,23 @@ export function ConceptIndexClient() {
     setError(null);
 
     try {
-      const [nextConcepts, nextRelations] = await Promise.all([
+      const [nextConcepts, nextRelations, nextNodes] = await Promise.all([
         contextRepository.list({
           workspaceId: vinemaContext.workspace.id,
           includeArchived: false,
         }),
         nodeContextRelationRepository.listByWorkspace(vinemaContext.workspace.id),
+        nodeRepository.listByWorkspace(vinemaContext.workspace.id),
       ]);
 
       setConcepts(nextConcepts);
       setRelations(nextRelations);
+      setNodes(nextNodes);
       setLoadState("ready");
     } catch {
       setConcepts([]);
       setRelations([]);
+      setNodes([]);
       setError("No se pudo cargar tu conocimiento.");
       setLoadState("error");
     }
@@ -73,6 +80,10 @@ export function ConceptIndexClient() {
   }, [loadConcepts]);
 
   const relationCounts = useMemo(() => countRelationsByContext(relations), [relations]);
+  const relationshipCounts = useMemo(
+    () => countDerivedRelationshipsByContext({ concepts, relations, nodes }),
+    [concepts, nodes, relations],
+  );
 
   if (vinemaContext.status === "loading" || loadState === "loading") {
     return (
@@ -141,6 +152,9 @@ export function ConceptIndexClient() {
                   {formatRelationCount(relationCounts.get(concept.id) ?? 0)}
                   {concept.aliases && concept.aliases.length > 0
                     ? ` · ${concept.aliases.length} alias`
+                    : ""}
+                  {relationshipCounts.get(concept.id)
+                    ? ` · ${formatConnectionCount(relationshipCounts.get(concept.id) ?? 0)}`
                     : ""}
                 </span>
               </span>
@@ -220,4 +234,38 @@ function formatRelationCount(count: number) {
   }
 
   return `${count} recuerdos relacionados`;
+}
+
+function formatConnectionCount(count: number) {
+  if (count === 1) {
+    return "1 conexión";
+  }
+
+  return `${count} conexiones`;
+}
+
+function countDerivedRelationshipsByContext({
+  concepts,
+  relations,
+  nodes,
+}: {
+  concepts: Context[];
+  relations: NodeContextRelation[];
+  nodes: Node[];
+}) {
+  const counts = new Map<string, number>();
+
+  for (const concept of concepts) {
+    counts.set(
+      concept.id,
+      deriveConceptRelationships({
+        sourceConceptId: concept.id,
+        contexts: concepts,
+        relations,
+        nodes,
+      }).length,
+    );
+  }
+
+  return counts;
 }

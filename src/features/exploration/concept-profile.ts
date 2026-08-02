@@ -1,9 +1,12 @@
 import type { Context } from "@/domain/context/context";
-import { normalizeContextNameForComparison } from "@/domain/context/context";
 import type { NodeContextRelation } from "@/domain/context/node-context-relation";
 import type { Node } from "@/domain/node/node";
 import { getContentTimestamp } from "@/features/capture/capture-timestamps";
-import { deriveConceptNeighborhood } from "@/features/exploration/concept-neighborhood";
+import {
+  deriveConceptRelationships,
+  type RelationshipEvidence,
+  type RelationshipStrength,
+} from "@/features/exploration/concept-relationships";
 import { deriveCaptureEmergentIdentity } from "@/features/identity/capture-emergent-identity";
 import { getCapturePreview } from "@/features/node/node-display";
 
@@ -25,7 +28,12 @@ export interface ConceptProfileRelation {
   conceptId: string;
   label: string;
   sharedMemoryCount: number;
+  firstSharedAt: Date | null;
   lastSharedAt: Date | null;
+  recentSharedMemoryCount: number;
+  monthlySpread: number;
+  strength: RelationshipStrength;
+  evidence: RelationshipEvidence[];
 }
 
 export interface ConceptProfileMemory {
@@ -132,29 +140,23 @@ export function deriveRelatedConcepts({
   nodes: Node[];
   limit?: number;
 }): ConceptProfileRelation[] {
-  const neighborhood = deriveConceptNeighborhood({
-    currentContextId,
+  return deriveConceptRelationships({
+    sourceConceptId: currentContextId,
     contexts,
     relations,
     nodes,
-    limit: Math.max(limit * 2, limit),
-  });
-  const center = neighborhood?.center;
-  const currentIdentityLabels = new Set(
-    [center?.name, ...(center?.aliases ?? [])]
-      .map((label) => normalizeContextNameForComparison(label ?? ""))
-      .filter(Boolean),
-  );
-
-  return (neighborhood?.relatedConcepts ?? [])
-    .filter((concept) => !currentIdentityLabels.has(concept.normalizedLabel))
-    .slice(0, Math.max(0, limit))
-    .map((concept) => ({
-      conceptId: concept.id,
-      label: concept.label,
-      sharedMemoryCount: concept.sharedCaptureCount,
-      lastSharedAt: toDateOrNull(concept.lastSharedActivityAt),
-    }));
+    limit,
+  }).map((relationship) => ({
+    conceptId: relationship.targetConceptId,
+    label: relationship.targetLabel,
+    sharedMemoryCount: relationship.sharedMemoryCount,
+    firstSharedAt: relationship.firstSharedAt,
+    lastSharedAt: relationship.lastSharedAt,
+    recentSharedMemoryCount: relationship.recentSharedMemoryCount,
+    monthlySpread: relationship.monthlySpread,
+    strength: relationship.strength,
+    evidence: relationship.evidence,
+  }));
 }
 
 export function deriveRepresentativeMemories({

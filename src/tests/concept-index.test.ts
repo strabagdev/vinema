@@ -4,9 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ConceptIndexClient } from "@/app/concepts/concept-index-client";
 import type { Context } from "@/domain/context/context";
 import type { NodeContextRelation } from "@/domain/context/node-context-relation";
+import type { Node } from "@/domain/node/node";
 
 const mocks = vi.hoisted(() => ({
   contexts: new Map<string, Context>(),
+  nodes: new Map<string, Node>(),
   relations: new Map<string, NodeContextRelation>(),
   vinemaContext: {
     status: "ready",
@@ -35,6 +37,13 @@ vi.mock("@/infrastructure/repositories", () => ({
       ),
     ),
   },
+  nodeRepository: {
+    listByWorkspace: vi.fn(async (workspaceId: string) =>
+      Array.from(mocks.nodes.values()).filter(
+        (node) => node.workspaceId === workspaceId && node.deletedAt === null,
+      ),
+    ),
+  },
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
@@ -43,6 +52,7 @@ vi.mock("@/infrastructure/repositories", () => ({
 describe("ConceptIndexClient", () => {
   beforeEach(() => {
     mocks.contexts.clear();
+    mocks.nodes.clear();
     mocks.relations.clear();
   });
 
@@ -66,9 +76,14 @@ describe("ConceptIndexClient", () => {
   it("lists existing concepts as entry points to contextual exploration", async () => {
     mocks.contexts.set("railway", context({ id: "railway", name: "Railway" }));
     mocks.contexts.set("sync", context({ id: "sync", name: "Sync" }));
+    mocks.nodes.set("a", node({ id: "a", content: "Captura sobre Railway y Sync" }));
     mocks.relations.set(
       "a-railway",
       relation({ id: "a-railway", nodeId: "a", contextId: "railway" }),
+    );
+    mocks.relations.set(
+      "a-sync",
+      relation({ id: "a-sync", nodeId: "a", contextId: "sync" }),
     );
 
     const screen = await renderConceptIndex();
@@ -77,6 +92,7 @@ describe("ConceptIndexClient", () => {
     expect(screen.textContent).toContain("Railway");
     expect(screen.textContent).toContain("Sync");
     expect(screen.textContent).toContain("1 recuerdo relacionado");
+    expect(screen.textContent).toContain("1 conexión");
     const railwayLink = Array.from(screen.querySelectorAll("a")).find((link) =>
       link.getAttribute("href")?.startsWith("/concepts/detail?contextId=railway"),
     );
@@ -110,6 +126,25 @@ function context(overrides: Partial<Context>): Context {
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     archivedAt: null,
+    ...overrides,
+  };
+}
+
+function node(overrides: Partial<Node>): Node {
+  return {
+    id: "node",
+    workspaceId: "workspace-1",
+    type: "NOTE",
+    content: "Contenido",
+    status: "ACTIVE",
+    organizationStatus: "ORGANIZED",
+    metadata: {},
+    version: 1,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    deletedAt: null,
+    createdByDeviceId: "device-1",
+    lastModifiedByDeviceId: "device-1",
     ...overrides,
   };
 }

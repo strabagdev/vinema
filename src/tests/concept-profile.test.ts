@@ -286,8 +286,8 @@ describe("concept profiles", () => {
     expect(profile?.memoryCount).toBe(5000);
     expect(profile?.representativeMemories).toHaveLength(5);
     expect(profile?.relatedConcepts).toMatchObject([
-      { conceptId: "operational-core", sharedMemoryCount: 3333 },
       { conceptId: "mitcom", sharedMemoryCount: 1667 },
+      { conceptId: "operational-core", sharedMemoryCount: 3333 },
     ]);
   });
 
