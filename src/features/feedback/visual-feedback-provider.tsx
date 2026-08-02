@@ -18,6 +18,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { BrandIntro } from "@/brand";
 import { useAuth } from "@/features/auth/auth-provider";
 import type { SyncState } from "@/features/sync/sync-state-engine";
 import {
@@ -131,24 +132,24 @@ export function VisualFeedbackWordmark() {
   return (
     <span
       className={cn(
-        "relative inline-flex min-h-8 items-center gap-1.5 text-sm font-semibold tracking-normal transition-colors duration-200 motion-reduce:transition-none",
+        "relative inline-flex min-h-8 items-center gap-1.5 transition-colors duration-200 motion-reduce:transition-none",
         visual.wordmarkClassName,
       )}
       data-feedback-wordmark=""
       data-feedback-kind={state.current?.kind ?? "idle"}
     >
-      <span>Vinema</span>
+      <BrandIntro decorative />
       {visual.Icon ? (
         <span
           className={cn(
-            "inline-flex h-5 w-5 items-center justify-center rounded-full transition-[opacity,transform,color] duration-200 motion-reduce:transition-none",
+            "absolute left-1/2 top-0 ml-4 inline-flex h-4 w-4 items-center justify-center rounded-full bg-zinc-50 transition-[opacity,transform,color] duration-200 motion-reduce:transition-none",
             visual.iconClassName,
           )}
           aria-hidden="true"
         >
           <visual.Icon
             className={cn(
-              "h-3.5 w-3.5",
+              "h-3 w-3",
               visual.spin ? "animate-spin motion-reduce:animate-none" : null,
               visual.pulse ? "animate-pulse motion-reduce:animate-none" : null,
             )}

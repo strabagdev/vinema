@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AppShell } from "@/components/app-shell/app-shell";
+import "@/brand/styles/brand.css";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -17,6 +18,10 @@ export const metadata: Metadata = {
   title: "Vinema",
   description: "Tu memoria viva, local-first y offline-first.",
   manifest: "/manifest.webmanifest",
+  icons: {
+    icon: "/brand/favicon.svg",
+    apple: "/brand/apple-touch-icon.png",
+  },
 };
 
 export default function RootLayout({

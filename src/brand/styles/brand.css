@@ -1,0 +1,92 @@
+:root {
+  --vinema-brand-intro-duration: 1500ms;
+  --vinema-brand-intro-easing: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.brand-intro {
+  pointer-events: none;
+}
+
+.brand-spatial-identity {
+  display: block;
+  overflow: visible;
+}
+
+.brand-spatial-identity [data-brand-spatial-letter="V"],
+.brand-spatial-identity [data-brand-spatial-letter="A"],
+.brand-spatial-identity [data-brand-inner-letters] {
+  transform-box: view-box;
+  transform-origin: center;
+}
+
+.brand-spatial-identity[data-brand-intro-state="running"]
+  [data-brand-spatial-letter="V"] {
+  animation: brand-spatial-v-settle var(--vinema-brand-intro-duration)
+    var(--vinema-brand-intro-easing) forwards;
+}
+
+.brand-spatial-identity[data-brand-intro-state="running"]
+  [data-brand-spatial-letter="A"] {
+  animation: brand-spatial-a-settle var(--vinema-brand-intro-duration)
+    var(--vinema-brand-intro-easing) forwards;
+}
+
+.brand-spatial-identity[data-brand-intro-state="running"] [data-brand-inner-letters] {
+  animation: brand-spatial-inner-fade var(--vinema-brand-intro-duration)
+    var(--vinema-brand-intro-easing) forwards;
+}
+
+.brand-spatial-identity[data-brand-intro-state="settled"]
+  [data-brand-spatial-letter="V"] {
+  transform: translateX(120px);
+}
+
+.brand-spatial-identity[data-brand-intro-state="settled"]
+  [data-brand-spatial-letter="A"] {
+  transform: translateX(-110px);
+}
+
+.brand-spatial-identity[data-brand-intro-state="settled"] [data-brand-inner-letters] {
+  opacity: 0;
+}
+
+@keyframes brand-spatial-v-settle {
+  0%,
+  18% {
+    transform: translateX(0);
+  }
+
+  100% {
+    transform: translateX(120px);
+  }
+}
+
+@keyframes brand-spatial-a-settle {
+  0%,
+  18% {
+    transform: translateX(0);
+  }
+
+  100% {
+    transform: translateX(-110px);
+  }
+}
+
+@keyframes brand-spatial-inner-fade {
+  0%,
+  22% {
+    opacity: 1;
+  }
+
+  68%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-spatial-identity [data-brand-spatial-letter],
+  .brand-spatial-identity [data-brand-inner-letters] {
+    animation: none;
+  }
+}

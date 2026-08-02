@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { BrandLockup } from "@/brand";
 
 export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
   return (
@@ -20,12 +21,10 @@ export function SidebarContent({
       <Link
         href="/"
         onClick={onNavigate}
-        className="flex h-10 items-center gap-2 rounded-md px-2 text-base font-semibold text-zinc-800"
+        className="flex h-10 items-center rounded-md px-2 text-zinc-800"
+        aria-label="Ir a Inicio"
       >
-        <span className="flex h-7 w-7 items-center justify-center rounded-md bg-zinc-900 text-xs font-semibold text-white">
-          V
-        </span>
-        Vinema
+        <BrandLockup className="w-32" />
       </Link>
       <p className="mt-5 px-2 text-xs leading-5 text-zinc-500">
         La exploracion comienza al abrir un concepto.
