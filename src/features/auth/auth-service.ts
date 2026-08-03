@@ -41,12 +41,16 @@ export type AuthSessionInterruption = {
   message: string;
 };
 
+const DEFAULT_RESTORE_TIMEOUT_MS = 4_000;
+
 export function createAuthService({
   authClient,
   authSessionStorage,
   authStateEngine = createAuthStateEngine(),
   deviceIdentityProvider,
   clock = () => new Date().toISOString(),
+  isOnline = defaultIsOnline,
+  restoreTimeoutMs = DEFAULT_RESTORE_TIMEOUT_MS,
   logger,
 }: {
   authClient: AuthClient;
@@ -54,6 +58,8 @@ export function createAuthService({
   authStateEngine?: AuthStateEngine;
   deviceIdentityProvider: DeviceIdentityProvider;
   clock?: () => string;
+  isOnline?: () => boolean;
+  restoreTimeoutMs?: number;
   logger?: { warn?(message: string, context?: Record<string, unknown>): void };
 }): AuthService {
   let accessToken: string | undefined;
@@ -246,8 +252,7 @@ export function createAuthService({
 
       return (
         status === "AUTHENTICATED_ONLINE" ||
-        status === "AUTHENTICATED_OFFLINE" ||
-        (Boolean(accessToken) && status === "AUTHENTICATED")
+        status === "AUTHENTICATED_OFFLINE"
       );
     },
     clearLocalSession() {
@@ -331,9 +336,18 @@ export function createAuthService({
         return null;
       }
 
-      const session = await authClient.refresh({
-        refreshToken: storedSession.refreshToken,
-      });
+      if (!isOnline()) {
+        if (restoreStoredSessionOffline(storedSession)) {
+          return null;
+        }
+
+        accessToken = undefined;
+        refreshToken = undefined;
+        authStateEngine.dispatch({ type: "AUTH_CLEARED", at: clock() });
+        return null;
+      }
+
+      const session = await refreshStoredSessionWithTimeout(storedSession.refreshToken);
 
       if (session.deviceId !== storedSession.deviceId) {
         await clearStoredSession(logger);
@@ -360,20 +374,7 @@ export function createAuthService({
       }
 
       if (authError.code === "NETWORK_ERROR") {
-        if (canRestoreOffline(storedSession)) {
-          accessToken = undefined;
-          refreshToken = storedSession.refreshToken;
-          authStateEngine.dispatch({
-            type: "AUTH_OFFLINE_RESTORED",
-            at: clock(),
-            user: storedSession.user,
-            workspaceId: storedSession.workspaceId,
-            deviceId: storedSession.deviceId,
-            sessionId: storedSession.sessionId,
-            accessTokenExpiresAt: storedSession.accessTokenExpiresAt,
-            refreshTokenExpiresAt: storedSession.refreshTokenExpiresAt,
-            message: "Sesion local disponible sin conexion.",
-          });
+        if (restoreStoredSessionOffline(storedSession)) {
           return null;
         }
 
@@ -452,6 +453,55 @@ export function createAuthService({
     });
   }
 
+  function restoreStoredSessionOffline(
+    storedSession: Awaited<ReturnType<AuthSessionStorage["load"]>>,
+  ) {
+    if (!canRestoreOffline(storedSession)) {
+      return false;
+    }
+
+    accessToken = undefined;
+    refreshToken = storedSession.refreshToken;
+    authStateEngine.dispatch({
+      type: "AUTH_OFFLINE_RESTORED",
+      at: clock(),
+      user: storedSession.user,
+      workspaceId: storedSession.workspaceId,
+      deviceId: storedSession.deviceId,
+      sessionId: storedSession.sessionId,
+      accessTokenExpiresAt: storedSession.accessTokenExpiresAt,
+      refreshTokenExpiresAt: storedSession.refreshTokenExpiresAt,
+      message: "Sesion local disponible sin conexion.",
+    });
+    return true;
+  }
+
+  async function refreshStoredSessionWithTimeout(refreshTokenInput: string) {
+    const controller = new AbortController();
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timeoutId = setTimeout(() => {
+        controller.abort();
+        reject(new AuthClientError("NETWORK_ERROR", "La restauracion remota excedio el tiempo limite."));
+      }, normalizedRestoreTimeoutMs(restoreTimeoutMs));
+    });
+
+    try {
+      return await Promise.race([
+        authClient.refresh(
+          { refreshToken: refreshTokenInput },
+          { signal: controller.signal },
+        ),
+        timeout,
+      ]);
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    }
+  }
+
   function restoreCurrentStateOffline(message: string) {
     const current = authStateEngine.getState();
     if (!canUseCurrentStateOffline(current) || !refreshToken) {
@@ -476,7 +526,6 @@ export function createAuthService({
   function assertRefreshSessionConsistency(session: AuthenticatedSession) {
     const current = authStateEngine.getState();
     if (
-      current.status !== "AUTHENTICATED" &&
       current.status !== "AUTHENTICATED_ONLINE" &&
       current.status !== "AUTHENTICATED_OFFLINE"
     ) {
@@ -511,11 +560,22 @@ function canUseCurrentStateOffline(state: AuthState): state is AuthState & {
       state.sessionId &&
       state.accessTokenExpiresAt &&
       state.refreshTokenExpiresAt &&
-      (state.status === "AUTHENTICATED" ||
-        state.status === "AUTHENTICATED_ONLINE" ||
+      (state.status === "AUTHENTICATED_ONLINE" ||
         state.status === "AUTHENTICATED_OFFLINE" ||
         state.status === "REFRESHING"),
   );
+}
+
+function defaultIsOnline() {
+  if (typeof navigator === "undefined") {
+    return true;
+  }
+
+  return navigator.onLine !== false;
+}
+
+function normalizedRestoreTimeoutMs(value: number) {
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_RESTORE_TIMEOUT_MS;
 }
 
 function canRestoreOffline(

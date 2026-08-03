@@ -13,18 +13,15 @@ import React, {
   useState,
 } from "react";
 import {
+  AuthClientError,
   createAuthClient,
   type AuthClient,
 } from "@/features/auth/auth-client";
 import {
-  createAuthenticationLifecycle,
-  type AuthenticationLifecycle,
-} from "@/features/auth/authentication-lifecycle";
+  createAuthController,
+  type AuthController,
+} from "@/features/auth/auth-controller";
 import {
-  createAuthRefreshCoordinator,
-} from "@/features/auth/auth-refresh-coordinator";
-import {
-  createAuthService,
   type AuthLoginInput,
   type AuthRegisterInput,
 } from "@/features/auth/auth-service";
@@ -64,6 +61,7 @@ export type AuthContextValue = {
   workspaceId: string | null;
   deviceId: string | null;
   accessToken: string | undefined;
+  authStatus: AuthState["status"];
   syncState: SyncState;
   isAuthenticated: boolean;
   isLoading: boolean;
@@ -76,7 +74,7 @@ export type AuthContextValue = {
 };
 
 type AuthRuntime = {
-  lifecycle: AuthenticationLifecycle;
+  controller: AuthController;
   syncStateEngine: ReturnType<typeof createSyncStateEngine>;
 };
 
@@ -90,50 +88,30 @@ export function AuthProvider({
   authSessionStorage?: AuthSessionStorage;
 }) {
   const [runtime] = useState(() => createAuthRuntime(authSessionStorage));
-  const [state, setState] = useState<AuthState>(() => runtime.lifecycle.getState());
+  const [state, setState] = useState<AuthState>(() => runtime.controller.getState());
   const [syncState, setSyncState] = useState<SyncState>(() =>
     runtime.syncStateEngine.getState(),
   );
   const [accessToken, setAccessToken] = useState<string | undefined>(() =>
-    runtime.lifecycle.getAccessToken(),
+    runtime.controller.getAccessToken(),
   );
   const disposeGenerationRef = useRef(0);
 
-  useEffect(() => runtime.lifecycle.subscribe((nextState) => {
+  useEffect(() => runtime.controller.subscribe((nextState) => {
     setState(nextState);
-    setAccessToken(runtime.lifecycle.getAccessToken());
+    setAccessToken(runtime.controller.getAccessToken());
   }), [runtime]);
   useEffect(() => runtime.syncStateEngine.subscribe(setSyncState), [runtime]);
-
-  useEffect(() => {
-    function handleOnline() {
-      if (runtime.lifecycle.getState().status !== "AUTHENTICATED_OFFLINE") {
-        return;
-      }
-
-      runtime.lifecycle.refresh()
-        .then(() => {
-          setAccessToken(runtime.lifecycle.getAccessToken());
-        })
-        .catch(() => undefined);
-    }
-
-    window.addEventListener("online", handleOnline);
-
-    return () => {
-      window.removeEventListener("online", handleOnline);
-    };
-  }, [runtime]);
 
   useEffect(() => {
     let mounted = true;
     disposeGenerationRef.current += 1;
 
-    runtime.lifecycle.initialize()
+    runtime.controller.initialize()
       .catch(() => undefined)
       .finally(() => {
         if (mounted) {
-          setAccessToken(runtime.lifecycle.getAccessToken());
+          setAccessToken(runtime.controller.getAccessToken());
         }
       });
 
@@ -143,7 +121,7 @@ export function AuthProvider({
       const disposeGeneration = disposeGenerationRef.current;
       queueMicrotask(() => {
         if (disposeGenerationRef.current === disposeGeneration) {
-          runtime.lifecycle.dispose();
+          runtime.controller.dispose();
         }
       });
     };
@@ -151,32 +129,32 @@ export function AuthProvider({
 
   const register = useCallback(
     async (input: AuthRegisterInput) => {
-      await runtime.lifecycle.register(input);
-      setAccessToken(runtime.lifecycle.getAccessToken());
+      await runtime.controller.register(input);
+      setAccessToken(runtime.controller.getAccessToken());
     },
     [runtime],
   );
 
   const login = useCallback(
     async (input: AuthLoginInput) => {
-      await runtime.lifecycle.login(input);
-      setAccessToken(runtime.lifecycle.getAccessToken());
+      await runtime.controller.login(input);
+      setAccessToken(runtime.controller.getAccessToken());
     },
     [runtime],
   );
 
   const refresh = useCallback(async () => {
-    await runtime.lifecycle.refresh();
-    setAccessToken(runtime.lifecycle.getAccessToken());
+    await runtime.controller.refresh();
+    setAccessToken(runtime.controller.getAccessToken());
   }, [runtime]);
 
   const logout = useCallback(async () => {
-    await runtime.lifecycle.logout();
+    await runtime.controller.logout();
     setAccessToken(undefined);
   }, [runtime]);
 
   const syncNow = useCallback(async () => {
-    await runtime.lifecycle.syncNow();
+    await runtime.controller.syncNow();
   }, [runtime]);
 
   const value = useMemo<AuthContextValue>(() => ({
@@ -185,18 +163,18 @@ export function AuthProvider({
     workspaceId: state.workspaceId,
     deviceId: state.deviceId,
     accessToken,
+    authStatus: state.status,
     syncState,
     isAuthenticated:
       state.status === "AUTHENTICATED_ONLINE" ||
-      state.status === "AUTHENTICATED_OFFLINE" ||
-      (Boolean(accessToken) && state.status === "AUTHENTICATED"),
+      state.status === "AUTHENTICATED_OFFLINE",
     isLoading:
       state.status === "BOOT" ||
-      state.status === "RESTORING" ||
-      state.status === "UNKNOWN" ||
-      state.status === "AUTH_UNKNOWN" ||
-      state.status === "AUTHENTICATING" ||
+      state.status === "CHECKING_LOCAL_SESSION" ||
+      state.status === "VALIDATING_REMOTE" ||
+      state.status === "LOGGING_IN" ||
       state.status === "REFRESHING" ||
+      state.status === "REVALIDATING" ||
       state.status === "LOGGING_OUT" ||
       state.status === "DISPOSING",
     error: state.error,
@@ -242,23 +220,15 @@ function createAuthRuntime(authSessionStorage?: AuthSessionStorage): AuthRuntime
     }
   }
 
-  const service = createAuthService({
-    authClient,
-    authSessionStorage: authSessionStorage ?? createWebAuthSessionStorage(),
-    authStateEngine,
-    deviceIdentityProvider: createDeviceIdentityProvider(),
-    logger: process.env.NODE_ENV === "development" ? console : undefined,
-  });
-  const syncBridge = createAuthSyncStateBridge({
-    authStateEngine,
-    syncStateEngine,
-  });
+  const controllerRef: { current?: AuthController } = {};
   const authenticatedSync = apiBaseUrl
     ? createAuthenticatedSyncLifecycle({
       createRuntime({ workspaceId, deviceId }) {
         const syncClient = createSyncClient({
           baseUrl: apiBaseUrl,
-          accessTokenProvider: service,
+          accessTokenProvider: {
+            getAccessToken: () => controllerRef.current?.getAccessToken(),
+          },
         });
         const outboxRepository = new IndexedDbSyncOutboxRepository();
         const metadataRepository = new IndexedDbSyncMetadataRepository();
@@ -300,45 +270,34 @@ function createAuthRuntime(authSessionStorage?: AuthSessionStorage): AuthRuntime
       logger: process.env.NODE_ENV === "development" ? console : undefined,
     })
     : undefined;
-  const refreshCoordinator = createAuthRefreshCoordinator({
-    refresh: () => service.refresh({ silent: true }),
-    visibilityDocument: typeof document === "undefined" ? undefined : document,
-    onRefreshFailed(error, { tokenExpired }) {
-      if (
-        error instanceof Error &&
-        "code" in error &&
-        String(error.code) === "NETWORK_ERROR"
-      ) {
-        return;
-      }
 
-      if (!tokenExpired) {
-        return;
-      }
-
-      service.interruptSession({
-        code: error instanceof Error ? error.name : undefined,
-        message:
-          "No fue posible renovar la sesion. Revisa tu conexion e inicia sesion nuevamente si el problema continua.",
-      });
-    },
-    logger: process.env.NODE_ENV === "development" ? console : undefined,
-  });
-  const lifecycle = createAuthenticationLifecycle({
-    service,
-    refreshCoordinator,
-    configError,
-    syncBridge,
+  const controller = createAuthController({
+    authClient,
+    authSessionStorage: authSessionStorage ?? createWebAuthSessionStorage(),
+    authStateEngine,
+    deviceIdentityProvider: createDeviceIdentityProvider(),
     authenticatedSync,
     logger: process.env.NODE_ENV === "development" ? console : undefined,
   });
+  controllerRef.current = controller;
+  const syncBridge = createAuthSyncStateBridge({
+    authStateEngine,
+    syncStateEngine,
+  });
+  void configError;
 
-  return { lifecycle, syncStateEngine };
+  const originalDispose = controller.dispose;
+  controller.dispose = () => {
+    syncBridge.dispose();
+    originalDispose();
+  };
+
+  return { controller, syncStateEngine };
 }
 
 function createUnavailableAuthClient(error: PublicApiUrlError): AuthClient {
   const reject = async (): Promise<never> => {
-    throw error;
+    throw new AuthClientError("NETWORK_ERROR", error.message);
   };
 
   return {

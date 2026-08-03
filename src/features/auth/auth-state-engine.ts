@@ -2,18 +2,16 @@ import type { AuthenticatedUser } from "@vinema/sync-contracts";
 
 export type AuthStatus =
   | "BOOT"
-  | "RESTORING"
-  | "AUTH_UNKNOWN"
-  | "UNKNOWN"
-  | "AUTHENTICATING"
-  | "REFRESHING"
+  | "CHECKING_LOCAL_SESSION"
+  | "VALIDATING_REMOTE"
+  | "UNAUTHENTICATED"
+  | "LOGGING_IN"
   | "LOGGING_OUT"
   | "AUTHENTICATED_ONLINE"
   | "AUTHENTICATED_OFFLINE"
-  | "AUTHENTICATED"
-  | "UNAUTHENTICATED"
-  | "DISPOSING"
-  | "ERROR";
+  | "REFRESHING"
+  | "REVALIDATING"
+  | "DISPOSING";
 
 export type AuthStateError = {
   code?: string;
@@ -34,31 +32,15 @@ export type AuthState = {
 };
 
 export type AuthEvent =
-  | { type: "AUTH_STARTED"; at: string }
-  | {
-      type: "AUTH_SUCCEEDED";
-      at: string;
-      user: AuthenticatedUser;
-      workspaceId: string;
-      deviceId: string;
-      sessionId: string;
-      accessTokenExpiresAt: string;
-      refreshTokenExpiresAt: string;
-    }
-  | {
-      type: "AUTH_OFFLINE_RESTORED";
-      at: string;
-      user: AuthenticatedUser;
-      workspaceId: string;
-      deviceId: string;
-      sessionId: string;
-      accessTokenExpiresAt: string;
-      refreshTokenExpiresAt: string;
-      message: string;
-    }
+  | { type: "CHECK_LOCAL_SESSION_STARTED"; at: string }
+  | { type: "REMOTE_VALIDATION_STARTED"; at: string }
+  | { type: "LOGIN_STARTED"; at: string }
   | { type: "REFRESH_STARTED"; at: string }
+  | { type: "REVALIDATE_STARTED"; at: string }
+  | { type: "LOGOUT_STARTED"; at: string }
+  | { type: "DISPOSE_STARTED"; at: string }
   | {
-      type: "REFRESH_SUCCEEDED";
+      type: "AUTHENTICATED_ONLINE";
       at: string;
       user: AuthenticatedUser;
       workspaceId: string;
@@ -67,16 +49,31 @@ export type AuthEvent =
       accessTokenExpiresAt: string;
       refreshTokenExpiresAt: string;
     }
+  | {
+      type: "AUTHENTICATED_OFFLINE";
+      at: string;
+      user: AuthenticatedUser;
+      workspaceId: string;
+      deviceId: string;
+      sessionId: string;
+      accessTokenExpiresAt: string;
+      refreshTokenExpiresAt: string;
+      message?: string;
+    }
+  | { type: "UNAUTHENTICATED"; at: string; error?: { code?: string; message: string } | null }
+  | { type: "AUTH_RESET" }
+  // Transitional event aliases retained for non-runtime tests and code paths during the refactor.
+  | { type: "AUTH_STARTED"; at: string }
   | { type: "RESTORE_STARTED"; at: string }
-  | { type: "RESTORE_FAILED"; at: string; code?: string; message: string }
-  | { type: "REFRESH_FAILED"; at: string; code?: string; message: string }
-  | { type: "AUTH_INTERRUPTED"; at: string; code?: string; message: string }
-  | { type: "LOGOUT_STARTED"; at: string }
-  | { type: "LOGOUT_COMPLETED"; at: string }
-  | { type: "DISPOSE_STARTED"; at: string }
+  | { type: "AUTH_SUCCEEDED"; at: string; user: AuthenticatedUser; workspaceId: string; deviceId: string; sessionId: string; accessTokenExpiresAt: string; refreshTokenExpiresAt: string }
+  | { type: "REFRESH_SUCCEEDED"; at: string; user: AuthenticatedUser; workspaceId: string; deviceId: string; sessionId: string; accessTokenExpiresAt: string; refreshTokenExpiresAt: string }
+  | { type: "AUTH_OFFLINE_RESTORED"; at: string; user: AuthenticatedUser; workspaceId: string; deviceId: string; sessionId: string; accessTokenExpiresAt: string; refreshTokenExpiresAt: string; message: string }
   | { type: "AUTH_FAILED"; at: string; code?: string; message: string }
+  | { type: "REFRESH_FAILED"; at: string; code?: string; message: string }
+  | { type: "RESTORE_FAILED"; at: string; code?: string; message: string }
+  | { type: "AUTH_INTERRUPTED"; at: string; code?: string; message: string }
   | { type: "AUTH_CLEARED"; at: string }
-  | { type: "AUTH_RESET" };
+  | { type: "LOGOUT_COMPLETED"; at: string };
 
 export type AuthStateEngine = {
   getState(): AuthState;
@@ -103,12 +100,18 @@ export function reduceAuthState(state: AuthState, event: AuthEvent): AuthState {
   }
 
   switch (event.type) {
-    case "AUTH_STARTED":
-      return { ...state, status: "AUTHENTICATING", error: null };
+    case "CHECK_LOCAL_SESSION_STARTED":
     case "RESTORE_STARTED":
-      return { ...state, status: "RESTORING", error: null };
+      return { ...state, status: "CHECKING_LOCAL_SESSION", error: null };
+    case "REMOTE_VALIDATION_STARTED":
+      return { ...state, status: "VALIDATING_REMOTE", error: null };
+    case "LOGIN_STARTED":
+    case "AUTH_STARTED":
+      return { ...state, status: "LOGGING_IN", error: null };
     case "REFRESH_STARTED":
       return { ...state, status: "REFRESHING", error: null };
+    case "REVALIDATE_STARTED":
+      return { ...state, status: "REVALIDATING", error: null };
     case "LOGOUT_STARTED":
       return { ...state, status: "LOGGING_OUT", error: null };
     case "DISPOSE_STARTED":
@@ -123,6 +126,7 @@ export function reduceAuthState(state: AuthState, event: AuthEvent): AuthState {
         refreshTokenExpiresAt: null,
         error: null,
       };
+    case "AUTHENTICATED_ONLINE":
     case "AUTH_SUCCEEDED":
     case "REFRESH_SUCCEEDED":
       return {
@@ -136,6 +140,7 @@ export function reduceAuthState(state: AuthState, event: AuthEvent): AuthState {
         lastAuthenticatedAt: event.at,
         error: null,
       };
+    case "AUTHENTICATED_OFFLINE":
     case "AUTH_OFFLINE_RESTORED":
       return {
         status: "AUTHENTICATED_OFFLINE",
@@ -146,54 +151,23 @@ export function reduceAuthState(state: AuthState, event: AuthEvent): AuthState {
         accessTokenExpiresAt: event.accessTokenExpiresAt,
         refreshTokenExpiresAt: event.refreshTokenExpiresAt,
         lastAuthenticatedAt: state.lastAuthenticatedAt ?? event.at,
-        error: {
-          code: "NETWORK_ERROR",
-          message: event.message,
-          occurredAt: event.at,
-        },
+        error: event.message
+          ? { code: "NETWORK_ERROR", message: event.message, occurredAt: event.at }
+          : null,
       };
-    case "REFRESH_FAILED":
+    case "UNAUTHENTICATED":
+      return unauthenticatedState(state, event.at, event.error);
     case "AUTH_FAILED":
-      return {
-        ...state,
-        status: "ERROR",
-        error: {
-          code: event.code,
-          message: event.message,
-          occurredAt: event.at,
-        },
-      };
+    case "REFRESH_FAILED":
     case "RESTORE_FAILED":
     case "AUTH_INTERRUPTED":
-      return {
-        status: "UNAUTHENTICATED",
-        user: null,
-        workspaceId: null,
-        deviceId: null,
-        sessionId: null,
-        accessTokenExpiresAt: null,
-        refreshTokenExpiresAt: null,
-        lastAuthenticatedAt: state.lastAuthenticatedAt,
-        error: {
-          code: event.code,
-          message: event.message,
-          occurredAt: event.at,
-        },
-      };
+      return unauthenticatedState(state, event.at, {
+        code: event.code,
+        message: event.message,
+      });
     case "AUTH_CLEARED":
-      return {
-        status: "UNAUTHENTICATED",
-        user: null,
-        workspaceId: null,
-        deviceId: null,
-        sessionId: null,
-        accessTokenExpiresAt: null,
-        refreshTokenExpiresAt: null,
-        lastAuthenticatedAt: state.lastAuthenticatedAt,
-        error: null,
-      };
     case "LOGOUT_COMPLETED":
-      return reduceAuthState(state, { type: "AUTH_CLEARED", at: event.at });
+      return unauthenticatedState(state, event.at, null);
     case "AUTH_RESET":
       return cloneState(initialAuthState);
     default:
@@ -240,6 +214,30 @@ export function createAuthStateEngine(
     reset() {
       return dispatch({ type: "AUTH_RESET" });
     },
+  };
+}
+
+function unauthenticatedState(
+  state: AuthState,
+  at: string,
+  error?: { code?: string; message: string } | null,
+): AuthState {
+  return {
+    status: "UNAUTHENTICATED",
+    user: null,
+    workspaceId: null,
+    deviceId: null,
+    sessionId: null,
+    accessTokenExpiresAt: null,
+    refreshTokenExpiresAt: null,
+    lastAuthenticatedAt: state.lastAuthenticatedAt,
+    error: error
+      ? {
+          code: error.code,
+          message: error.message,
+          occurredAt: at,
+        }
+      : null,
   };
 }
 

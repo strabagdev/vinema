@@ -10,19 +10,22 @@ import { AppShell } from "@/components/app-shell/app-shell";
 const mocks = vi.hoisted(() => ({
   pathname: "/notes",
   push: vi.fn(),
+  replace: vi.fn(),
+  logout: vi.fn(async (): Promise<void> => undefined),
 }));
 
 vi.mock("next/navigation", () => ({
   usePathname: () => mocks.pathname,
   useRouter: () => ({
     push: mocks.push,
+    replace: mocks.replace,
   }),
 }));
 
 vi.mock("@/features/auth/auth-provider", () => ({
   AuthProvider: ({ children }: { children: ReactNode }) => children,
   useAuth: () => ({
-    state: { status: "AUTHENTICATED", error: null },
+    state: { status: "AUTHENTICATED_ONLINE", error: null },
     user: { email: "user@example.test", displayName: "User" },
     workspaceId: "workspace-1",
     accessToken: "access-token",
@@ -47,7 +50,7 @@ vi.mock("@/features/auth/auth-provider", () => ({
     register: vi.fn(),
     login: vi.fn(),
     refresh: vi.fn(),
-    logout: vi.fn(),
+    logout: mocks.logout,
   }),
 }));
 
@@ -57,6 +60,9 @@ describe("Global writing entry", () => {
   beforeEach(() => {
     mocks.pathname = "/notes";
     mocks.push.mockClear();
+    mocks.replace.mockClear();
+    mocks.logout.mockReset();
+    mocks.logout.mockResolvedValue(undefined);
     setNavigatorOnline(true);
   });
 
@@ -92,6 +98,35 @@ describe("Global writing entry", () => {
       "VN",
     );
     expect(container.querySelector("a[aria-label='Explorar']")).toBeNull();
+  });
+
+  it("waits for local logout before navigating to login", async () => {
+    let resolveLogout: (() => void) | undefined;
+    mocks.logout.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveLogout = resolve;
+        }),
+    );
+    const { container } = await renderAppShell();
+
+    await pointerDown(container.querySelector<HTMLButtonElement>("button[aria-label='Abrir menu']"));
+    const logoutItem = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+      .find((item) => item.textContent?.includes("Cerrar sesion"));
+    if (!logoutItem) {
+      throw new Error("Missing logout menu item.");
+    }
+    await click(logoutItem);
+
+    expect(mocks.logout).toHaveBeenCalledTimes(1);
+    expect(mocks.replace).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveLogout?.();
+      await flushPromises();
+    });
+
+    expect(mocks.replace).toHaveBeenCalledWith("/login");
   });
 
   it("does not show the old permanent local-only badge while online", async () => {
@@ -243,9 +278,27 @@ function getWritingButton(container: HTMLElement) {
   return button;
 }
 
-async function click(button: HTMLButtonElement) {
+async function click(button: HTMLElement) {
   await act(async () => {
     button.click();
+    await flushPromises();
+  });
+}
+
+async function pointerDown(element: HTMLElement | null) {
+  if (!element) {
+    throw new Error("Missing pointer target.");
+  }
+
+  await act(async () => {
+    element.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        ctrlKey: false,
+      }),
+    );
     await flushPromises();
   });
 }

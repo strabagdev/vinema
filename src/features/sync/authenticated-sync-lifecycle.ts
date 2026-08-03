@@ -33,7 +33,7 @@ export function createAuthenticatedSyncLifecycle({
   let initialSyncStarted = false;
 
   function handleAuthState(state: AuthState) {
-    if (state.status !== "AUTHENTICATED_ONLINE" && state.status !== "AUTHENTICATED") {
+    if (state.status !== "AUTHENTICATED_ONLINE") {
       stop();
       return;
     }

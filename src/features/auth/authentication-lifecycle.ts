@@ -120,8 +120,7 @@ export function createAuthenticationLifecycle({
     }
 
     if (
-      (state.status === "AUTHENTICATED_ONLINE" ||
-        state.status === "AUTHENTICATED") &&
+      state.status === "AUTHENTICATED_ONLINE" &&
       state.accessTokenExpiresAt
     ) {
       try {

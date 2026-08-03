@@ -51,7 +51,7 @@ export function LoginClient() {
     }
   }
 
-  if (state.status === "RESTORING") {
+  if (state.status === "CHECKING_LOCAL_SESSION" || state.status === "VALIDATING_REMOTE") {
     return (
       <AuthScreen
         title="Restaurando sesion"

@@ -85,6 +85,10 @@ describe("minimal authentication UI", () => {
     container.remove();
     globalThis.fetch = originalFetch;
     process.env.NEXT_PUBLIC_API_URL = originalApiUrl;
+    Object.defineProperty(window.navigator, "onLine", {
+      configurable: true,
+      value: true,
+    });
     vi.useRealTimers();
     await resetVinemaDbConnectionForTests();
     await deleteDB(VINEMA_DB_NAME);
@@ -179,7 +183,7 @@ describe("minimal authentication UI", () => {
     await click("button");
     expect(text("[data-testid='status']")).toBe("AUTHENTICATED_ONLINE");
     await click("button:nth-of-type(2)");
-    expect(text("[data-testid='status']")).toBe("ERROR");
+    expect(text("[data-testid='status']")).toBe("UNAUTHENTICATED");
     expect(text("[data-testid='error']")).toBe("INVALID_CREDENTIALS");
   });
 
@@ -358,7 +362,7 @@ describe("minimal authentication UI", () => {
 
     await click("button");
 
-    expect(text("[data-testid='status']")).toBe("ERROR");
+    expect(text("[data-testid='status']")).toBe("UNAUTHENTICATED");
     expect(text("[data-testid='error']")).toBe("La API de Vinema no esta configurada.");
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
@@ -564,6 +568,102 @@ describe("minimal authentication UI", () => {
     expect(text("[data-testid='status']")).toBe("AUTHENTICATED_ONLINE");
     expect(text("[data-testid='token']")).toBe("online-again-access-token");
     expect(storage.snapshot()?.refreshToken).toBe("online-again-refresh-token");
+  });
+
+  it("AuthProvider exits restoring immediately when opened offline with a validated local session", async () => {
+    const storage = new TrackingAuthSessionStorage();
+    await storage.save({
+      refreshToken: "stored-refresh-token",
+      sessionId,
+      deviceId,
+      storedAt: "2026-07-30T12:00:00.000Z",
+      user,
+      workspaceId,
+      accessTokenExpiresAt,
+      refreshTokenExpiresAt,
+    });
+    Object.defineProperty(window.navigator, "onLine", {
+      configurable: true,
+      value: false,
+    });
+    globalThis.fetch = vi.fn() as unknown as typeof fetch;
+
+    function Probe() {
+      const auth = useAuth();
+      return (
+        <div>
+          <p data-testid="status">{auth.state.status}</p>
+          <p data-testid="authenticated">{auth.isAuthenticated ? "yes" : "no"}</p>
+          <p data-testid="workspace">{auth.workspaceId ?? "none"}</p>
+        </div>
+      );
+    }
+
+    await render(
+      <AuthProvider authSessionStorage={storage}>
+        <AuthGuard>
+          <Probe />
+        </AuthGuard>
+      </AuthProvider>,
+    );
+    await flush();
+
+    expect(container.textContent).not.toContain("Restaurando sesion");
+    expect(text("[data-testid='status']")).toBe("AUTHENTICATED_OFFLINE");
+    expect(text("[data-testid='authenticated']")).toBe("yes");
+    expect(text("[data-testid='workspace']")).toBe(workspaceId);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(routerReplace).not.toHaveBeenCalledWith("/login");
+  });
+
+  it("AuthProvider times out a pending restore request and shows the local workspace offline", async () => {
+    vi.useFakeTimers();
+    const storage = new TrackingAuthSessionStorage();
+    await storage.save({
+      refreshToken: "stored-refresh-token",
+      sessionId,
+      deviceId,
+      storedAt: "2026-07-30T12:00:00.000Z",
+      user,
+      workspaceId,
+      accessTokenExpiresAt,
+      refreshTokenExpiresAt,
+    });
+    globalThis.fetch = vi.fn(
+      () =>
+        new Promise<Response>(() => {
+          // Keeps the remote restore pending until the explicit timeout wins.
+        }),
+    ) as unknown as typeof fetch;
+
+    function Probe() {
+      const auth = useAuth();
+      return (
+        <div>
+          <p data-testid="status">{auth.state.status}</p>
+          <p data-testid="workspace">{auth.workspaceId ?? "none"}</p>
+        </div>
+      );
+    }
+
+    await render(
+      <AuthProvider authSessionStorage={storage}>
+        <AuthGuard>
+          <Probe />
+        </AuthGuard>
+      </AuthProvider>,
+    );
+    expect(container.textContent).toContain("Restaurando sesion");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_000);
+    });
+    await flush();
+
+    expect(container.textContent).not.toContain("Restaurando sesion");
+    expect(text("[data-testid='status']")).toBe("AUTHENTICATED_OFFLINE");
+    expect(text("[data-testid='workspace']")).toBe(workspaceId);
+    expect(routerReplace).not.toHaveBeenCalledWith("/login");
   });
 
   it("AuthProvider silently refreshes an active session without leaving the authenticated UI", async () => {

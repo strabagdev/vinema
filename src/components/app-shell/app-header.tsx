@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Archive, MoreHorizontal, SquarePen } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -27,11 +28,17 @@ export type AppHeaderProps = {
 export function AppHeader({ pathname, onFocusWriting }: AppHeaderProps) {
   const router = useRouter();
   const { user, logout } = useAuth();
+  const [loggingOut, setLoggingOut] = useState(false);
   const onHome = pathname === "/";
   const identity = user?.displayName || user?.email || "Sesion local";
 
-  function handleLogout() {
-    logout();
+  async function handleLogout() {
+    if (loggingOut) {
+      return;
+    }
+
+    setLoggingOut(true);
+    await logout();
     router.replace("/login");
   }
 
@@ -80,7 +87,9 @@ export function AppHeader({ pathname, onFocusWriting }: AppHeaderProps) {
               </Link>
             </DropdownMenuItem>
             <KnowledgeManagementCenterMenuItem />
-            <DropdownMenuItem onClick={handleLogout}>Cerrar sesion</DropdownMenuItem>
+            <DropdownMenuItem disabled={loggingOut} onClick={handleLogout}>
+              Cerrar sesion
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

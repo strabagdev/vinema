@@ -17,14 +17,6 @@ export function createAuthSyncStateBridge({
       return;
     }
 
-    if (status === "AUTHENTICATED") {
-      syncStateEngine.dispatch({
-        type: "AUTHENTICATION_CHANGED",
-        authentication: "AUTHENTICATED",
-      });
-      return;
-    }
-
     if (status === "UNAUTHENTICATED") {
       syncStateEngine.dispatch({
         type: "AUTHENTICATION_CHANGED",

@@ -31,10 +31,12 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
 
-  if (isLoading || (publicRoute && isAuthenticated) || !isAuthenticated || state.status === "ERROR") {
+  if (isLoading || (publicRoute && isAuthenticated) || !isAuthenticated) {
     return (
       <div className="flex min-h-screen flex-1 items-center justify-center bg-zinc-50 px-6 text-sm text-zinc-500">
-        {state.status === "RESTORING" ? "Restaurando sesion..." : "Preparando Vinema..."}
+        {state.status === "CHECKING_LOCAL_SESSION" || state.status === "VALIDATING_REMOTE"
+          ? "Restaurando sesion..."
+          : "Preparando Vinema..."}
       </div>
     );
   }

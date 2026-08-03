@@ -27,7 +27,7 @@ describe("authenticated sync lifecycle", () => {
     const createRuntime = vi.fn(() => createRuntimeMock());
     const lifecycle = createAuthenticatedSyncLifecycle({ createRuntime });
 
-    lifecycle.handleAuthState({ ...authenticatedState(), status: "RESTORING" });
+    lifecycle.handleAuthState({ ...authenticatedState(), status: "CHECKING_LOCAL_SESSION" });
     lifecycle.handleAuthState({ ...authenticatedState(), status: "AUTHENTICATED_OFFLINE" });
     lifecycle.handleAuthState({ ...authenticatedState(), workspaceId: null });
     lifecycle.handleAuthState({ ...authenticatedState(), deviceId: null });

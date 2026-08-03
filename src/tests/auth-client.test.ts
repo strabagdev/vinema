@@ -301,9 +301,9 @@ describe("auth client and state", () => {
     });
 
     expect(previous).toEqual(initialAuthState);
-    expect(started.status).toBe("AUTHENTICATING");
+    expect(started.status).toBe("LOGGING_IN");
     expect(succeeded).toMatchObject({ status: "AUTHENTICATED_ONLINE", user, workspaceId });
-    expect(failed).toMatchObject({ status: "ERROR", error: { code: "SERVER_ERROR" } });
+    expect(failed).toMatchObject({ status: "UNAUTHENTICATED", error: { code: "SERVER_ERROR" } });
     expect(cleared).toMatchObject({ status: "UNAUTHENTICATED", user: null });
   });
 
@@ -320,7 +320,7 @@ describe("auth client and state", () => {
     unsubscribe();
     engine.dispatch({ type: "AUTH_CLEARED", at: "2026-07-30T12:01:00.000Z" });
     const snapshot = engine.getState();
-    snapshot.status = "ERROR";
+    snapshot.status = "UNAUTHENTICATED";
 
     expect(good).toHaveBeenCalledTimes(1);
     expect(bad).toHaveBeenCalledTimes(2);
@@ -496,7 +496,7 @@ describe("auth client and state", () => {
       message: "No se pudo guardar la sesion local.",
     });
     expect(service.getAccessToken()).toBeUndefined();
-    expect(service.getState().status).toBe("ERROR");
+    expect(service.getState().status).toBe("UNAUTHENTICATED");
     expect(storage.clearCalls).toBeGreaterThanOrEqual(1);
   });
 
@@ -754,7 +754,10 @@ describe("auth client and state", () => {
       refreshToken: "rotated-refresh-token",
     });
 
-    expect(client.refresh).toHaveBeenCalledWith({ refreshToken: "stored-refresh-token" });
+    expect(client.refresh).toHaveBeenCalledWith(
+      { refreshToken: "stored-refresh-token" },
+      { signal: expect.any(AbortSignal) },
+    );
     expect(storage.snapshot()).toMatchObject({
       refreshToken: "rotated-refresh-token",
       sessionId: "77777777-7777-4777-8777-777777777777",
@@ -856,6 +859,107 @@ describe("auth client and state", () => {
       deviceId,
       error: { code: "NETWORK_ERROR" },
     });
+  });
+
+  it("AuthService restores offline immediately when the browser is already offline", async () => {
+    const storage = new InMemoryAuthSessionStorage();
+    await storage.save({
+      refreshToken: "stored-refresh-token",
+      sessionId,
+      deviceId,
+      storedAt: "2026-07-30T11:59:00.000Z",
+      user,
+      workspaceId,
+      accessTokenExpiresAt,
+      refreshTokenExpiresAt,
+    });
+    const client = createMockAuthClient();
+    const service = createAuthService({
+      authClient: client,
+      authSessionStorage: storage,
+      deviceIdentityProvider: createDeviceIdentityProvider(),
+      isOnline: () => false,
+    });
+
+    await expect(service.restoreSession()).resolves.toBeNull();
+
+    expect(client.refresh).not.toHaveBeenCalled();
+    expect(service.isAuthenticated()).toBe(true);
+    expect(service.getState()).toMatchObject({
+      status: "AUTHENTICATED_OFFLINE",
+      workspaceId,
+      deviceId,
+    });
+  });
+
+  it("AuthService sends incomplete offline snapshots to login without a remote refresh", async () => {
+    const storage = new InMemoryAuthSessionStorage();
+    await storage.save({
+      refreshToken: "stored-refresh-token",
+      sessionId,
+      deviceId,
+      storedAt: "2026-07-30T11:59:00.000Z",
+    });
+    const client = createMockAuthClient();
+    const service = createAuthService({
+      authClient: client,
+      authSessionStorage: storage,
+      deviceIdentityProvider: createDeviceIdentityProvider(),
+      isOnline: () => false,
+    });
+
+    await expect(service.restoreSession()).resolves.toBeNull();
+
+    expect(client.refresh).not.toHaveBeenCalled();
+    expect(service.isAuthenticated()).toBe(false);
+    expect(service.getState()).toMatchObject({
+      status: "UNAUTHENTICATED",
+      user: null,
+      workspaceId: null,
+    });
+  });
+
+  it("AuthService times out a pending restore refresh and leaves checking state", async () => {
+    vi.useFakeTimers();
+    const storage = new InMemoryAuthSessionStorage();
+    await storage.save({
+      refreshToken: "stored-refresh-token",
+      sessionId,
+      deviceId,
+      storedAt: "2026-07-30T11:59:00.000Z",
+      user,
+      workspaceId,
+      accessTokenExpiresAt,
+      refreshTokenExpiresAt,
+    });
+    const client = createMockAuthClient({
+      refresh: vi.fn(
+        () =>
+          new Promise<typeof session>(() => {
+            // Simulates a browser fetch that never resolves while connectivity is lost.
+          }),
+      ),
+    });
+    const service = createAuthService({
+      authClient: client,
+      authSessionStorage: storage,
+      deviceIdentityProvider: createDeviceIdentityProvider(),
+      restoreTimeoutMs: 50,
+    });
+
+    const restore = service.restoreSession();
+    expect(service.getState().status).toBe("CHECKING_LOCAL_SESSION");
+    await vi.advanceTimersByTimeAsync(50);
+
+    await expect(restore).resolves.toBeNull();
+    expect(service.getState()).toMatchObject({
+      status: "AUTHENTICATED_OFFLINE",
+      workspaceId,
+      deviceId,
+    });
+    expect(service.getState().status).not.toBe("CHECKING_LOCAL_SESSION");
+    expect(service.getAccessToken()).toBeUndefined();
+    expect(storage.snapshot()?.refreshToken).toBe("stored-refresh-token");
   });
 
   it("AuthService restore rejects device mismatch and persistence failures safely", async () => {
