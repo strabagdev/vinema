@@ -182,6 +182,10 @@ Integración de producto:
   conceptos;
 - las sugerencias emergentes existentes continúan siendo locales a la captura y
   no se convierten automáticamente en conceptos persistidos.
+- una selección explícita de texto dentro del editor puede convertirse en
+  concepto aceptado para la captura actual; primero se resuelve contra conceptos
+  canónicos, aliases normalizados y acrónimos, y solo crea un concepto nuevo
+  cuando el usuario lo confirma.
 
 Límites:
 

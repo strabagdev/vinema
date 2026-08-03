@@ -26,6 +26,14 @@ import {
   commitCaptureText,
 } from "@/features/capture/capture-flow";
 import {
+  createSelectionEmergingConcept,
+  readValidTextareaSelection,
+  resolveCapturedSelectionConcept,
+  type CapturedTextSelection,
+  type CaptureSelectionResolution,
+} from "@/features/capture/capture-selection";
+import { CaptureSelectionAction } from "@/features/capture/capture-selection-action";
+import {
   KNOWLEDGE_SUGGESTION_LABELS,
   type KnowledgeSuggestionKind,
 } from "@/features/cognition/knowledge-suggestions";
@@ -82,6 +90,11 @@ export function CaptureSurface({
     Map<string, CaptureEmergentIdentity>
   >(new Map());
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
+  const [capturedSelection, setCapturedSelection] =
+    useState<CapturedTextSelection | null>(null);
+  const [selectionResolution, setSelectionResolution] =
+    useState<CaptureSelectionResolution | null>(null);
+  const [selectionProcessing, setSelectionProcessing] = useState(false);
   const [interactionSource, setInteractionSource] =
     useState<PanelInteractionSource>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -215,12 +228,20 @@ export function CaptureSurface({
 
   useEffect(() => {
     function handleEscape(event: KeyboardEvent) {
-      if (event.key !== "Escape" || !activePanel) {
+      if (event.key !== "Escape") {
         return;
       }
 
-      event.preventDefault();
-      closePanels();
+      if (capturedSelection) {
+        event.preventDefault();
+        clearCapturedSelection();
+        return;
+      }
+
+      if (activePanel) {
+        event.preventDefault();
+        closePanels();
+      }
     }
 
     window.addEventListener("keydown", handleEscape);
@@ -228,7 +249,7 @@ export function CaptureSurface({
     return () => {
       window.removeEventListener("keydown", handleEscape);
     };
-  }, [activePanel, closePanels]);
+  }, [activePanel, capturedSelection, closePanels]);
 
   useEffect(() => {
     if (!activePanel) {
@@ -404,6 +425,7 @@ export function CaptureSurface({
       setContent("");
       setSelectedContextIds([]);
       setSelectedEmergingConcepts([]);
+      clearCapturedSelection();
       setActivePanel(null);
       setInteractionSource(null);
       setDraftStatus("idle");
@@ -447,6 +469,95 @@ export function CaptureSurface({
 
       return suggestion ? [...current, suggestion] : current;
     });
+  }
+
+  function updateCapturedSelection() {
+    setCapturedSelection(readValidTextareaSelection(textareaRef.current));
+    setSelectionResolution(null);
+  }
+
+  function clearCapturedSelection() {
+    setCapturedSelection(null);
+    setSelectionResolution(null);
+  }
+
+  async function captureSelectedText() {
+    const selection = capturedSelection ?? readValidTextareaSelection(textareaRef.current);
+
+    if (!selection || selectionProcessing) {
+      clearCapturedSelection();
+      return;
+    }
+
+    setCapturedSelection(selection);
+    setSelectionProcessing(true);
+    feedback.saving();
+
+    try {
+      const contexts = await repositories.contextRepository.list({
+        workspaceId: workspace.id,
+        includeArchived: false,
+      });
+      const resolution = resolveCapturedSelectionConcept(selection, contexts);
+
+      if (resolution.status === "EXACT" || resolution.status === "ALIAS") {
+        const alreadyAssociated = selectedContextIds.includes(resolution.conceptId);
+        setSelectedContextIds((current) =>
+          current.includes(resolution.conceptId)
+            ? current
+            : [...current, resolution.conceptId],
+        );
+        clearCapturedSelection();
+        showSelectionFeedback(
+          feedback,
+          alreadyAssociated ? "Ya estaba asociado" : "Concepto asociado",
+        );
+        queueMicrotask(() => textareaRef.current?.focus());
+        return;
+      }
+
+      setSelectionResolution(resolution);
+    } catch {
+      feedback.error("No se pudo capturar la seleccion.");
+      clearCapturedSelection();
+    } finally {
+      setSelectionProcessing(false);
+    }
+  }
+
+  function confirmNewSelectionConcept(selection = capturedSelection) {
+    if (!selection) {
+      return;
+    }
+
+    const emergingConcept = createSelectionEmergingConcept(selection);
+    const alreadySelected = selectedEmergingConcepts.some(
+      (concept) => concept.candidateId === emergingConcept.candidateId,
+    );
+    setSelectedEmergingConcepts((current) =>
+      current.some((concept) => concept.candidateId === emergingConcept.candidateId)
+        ? current
+        : [...current, emergingConcept],
+    );
+    clearCapturedSelection();
+    showSelectionFeedback(
+      feedback,
+      alreadySelected ? "Ya estaba asociado" : "Concepto incorporado",
+    );
+    queueMicrotask(() => textareaRef.current?.focus());
+  }
+
+  function chooseAmbiguousSelectionConcept(contextId: string) {
+    const alreadyAssociated = selectedContextIds.includes(contextId);
+    setSelectedContextIds((current) =>
+      current.includes(contextId) ? current : [...current, contextId],
+    );
+    clearCapturedSelection();
+    showSelectionFeedback(
+      feedback,
+      alreadyAssociated ? "Ya estaba asociado" : "Concepto asociado",
+    );
+    queueMicrotask(() => textareaRef.current?.focus());
   }
 
   function openPanel(
@@ -537,14 +648,28 @@ export function CaptureSurface({
                 void handleCapture();
               }
             }}
+            onMouseUp={updateCapturedSelection}
+            onKeyUp={updateCapturedSelection}
+            onSelect={updateCapturedSelection}
             onChange={(event) => {
               const nextContent = event.target.value;
 
               closePanelsForWriting();
+              clearCapturedSelection();
               setContent(nextContent);
               setDraftStatus(nextContent.trim() ? "saving" : "idle");
               setDraftError(null);
             }}
+          />
+          <CaptureSelectionAction
+            selection={capturedSelection}
+            resolution={selectionResolution}
+            processing={selectionProcessing}
+            touch={!canUseDesktopPopover()}
+            onCapture={() => void captureSelectedText()}
+            onConfirmNew={() => confirmNewSelectionConcept()}
+            onChoose={chooseAmbiguousSelectionConcept}
+            onCancel={clearCapturedSelection}
           />
           {hasContent ? (
             <div
@@ -893,7 +1018,10 @@ function ProgressivePanel({
 }
 
 function canUseDesktopPopover() {
-  if (window.innerWidth < DESKTOP_PANEL_BREAKPOINT) {
+  if (
+    typeof window === "undefined" ||
+    window.innerWidth < DESKTOP_PANEL_BREAKPOINT
+  ) {
     return false;
   }
 
@@ -902,6 +1030,14 @@ function canUseDesktopPopover() {
   }
 
   return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+}
+
+function showSelectionFeedback(
+  feedback: ReturnType<typeof useVisualFeedback>,
+  message: string,
+) {
+  feedback.dismissKind("success");
+  feedback.success(message);
 }
 
 function ConceptPanelContent({

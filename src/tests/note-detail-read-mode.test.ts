@@ -8,6 +8,11 @@ import {
 import type { Context } from "@/domain/context/context";
 import type { NodeContextRelation } from "@/domain/context/node-context-relation";
 import type { Node } from "@/domain/node/node";
+import { VisualFeedbackProvider } from "@/features/feedback/visual-feedback-provider";
+import {
+  createVisualFeedbackService,
+  type VisualFeedbackService,
+} from "@/features/feedback/visual-feedback-service";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
   .IS_REACT_ACT_ENVIRONMENT = true;
@@ -151,6 +156,80 @@ describe("NoteDetailView read mode", () => {
     });
 
     expect(container.textContent).toContain("Trabajo · Vinema");
+  });
+
+  it("captures selected text in edit mode and associates it immediately", async () => {
+    const onResolveCaptureSelection = vi.fn(async () => ({
+      status: "EXACT" as const,
+      conceptId: "area-1",
+      concept: areaContext,
+      matchedText: "Trabajo",
+      canonicalLabel: "Trabajo",
+    }));
+    const onApplyCaptureSelection = vi.fn(async () => undefined);
+    const screen = await renderNoteDetail({
+      node: {
+        ...baseNode,
+        content: "Revisar Trabajo mañana",
+      },
+      contextOptions: [areaContext],
+      onResolveCaptureSelection,
+      onApplyCaptureSelection,
+    });
+
+    await click(getButton(screen, "Editar"));
+    await selectTextareaText(screen, "Trabajo");
+    await click(getButton(screen, "Capturar seleccion"));
+
+    expect(onResolveCaptureSelection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: "Trabajo",
+        normalizedText: "trabajo",
+      }),
+    );
+    expect(onApplyCaptureSelection).toHaveBeenCalledWith({
+      contextId: "area-1",
+      label: "Trabajo",
+    });
+  });
+
+  it("keeps a newly captured selection selected when finishing detail edit", async () => {
+    const feedbackService = createVisualFeedbackService();
+    const onSaveContextRelations = vi.fn(async () => undefined);
+    const onResolveCaptureSelection = vi.fn(async () => ({
+      status: "NEW" as const,
+      matchedText: "ESTADO DE PAGO",
+    }));
+    const onApplyCaptureSelection = vi.fn(async () => ({
+      contextId: "context-new",
+      label: "Estado de pago",
+    }));
+    const screen = await renderNoteDetail({
+      node: {
+        ...baseNode,
+        content: "Revisar ESTADO DE PAGO mañana",
+      },
+      feedbackService,
+      onSaveContextRelations,
+      onResolveCaptureSelection,
+      onApplyCaptureSelection,
+    });
+
+    await click(getButton(screen, "Editar"));
+    await selectTextareaText(screen, "ESTADO DE PAGO");
+    await click(getButton(screen, "Capturar seleccion"));
+    await click(getButton(screen, "Confirmar"));
+
+    expect(feedbackService.getState().current?.accessibleText).toBe(
+      "Concepto creado",
+    );
+
+    await click(getButton(screen, "Listo"));
+
+    expect(onApplyCaptureSelection).toHaveBeenCalledWith({
+      label: "ESTADO DE PAGO",
+    });
+    expect(onSaveContextRelations).toHaveBeenCalledWith(["context-new"]);
   });
 
   it("does not render an empty concepts hint when no relations exist", async () => {
@@ -638,6 +717,9 @@ async function renderNoteDetail({
   onArchive = vi.fn(async () => undefined),
   onRestore = vi.fn(async () => node),
   onBack = vi.fn(),
+  onResolveCaptureSelection,
+  onApplyCaptureSelection,
+  feedbackService,
 }: {
   node?: Node;
   relatedContexts?: Context[];
@@ -649,12 +731,14 @@ async function renderNoteDetail({
   onArchive?: () => Promise<void>;
   onRestore?: () => Promise<Node>;
   onBack?: () => void;
+  onResolveCaptureSelection?: Parameters<typeof NoteDetailView>[0]["onResolveCaptureSelection"];
+  onApplyCaptureSelection?: Parameters<typeof NoteDetailView>[0]["onApplyCaptureSelection"];
+  feedbackService?: VisualFeedbackService;
 } = {}) {
   const { container, root } = createContainer();
 
   await act(async () => {
-    root.render(
-      createElement(NoteDetailView, {
+    const detail = createElement(NoteDetailView, {
         node,
         relatedContexts,
         relatedRelations,
@@ -665,7 +749,14 @@ async function renderNoteDetail({
         onArchive,
         onRestore,
         onBack,
-      }),
+        onResolveCaptureSelection,
+        onApplyCaptureSelection,
+      });
+
+    root.render(
+      feedbackService
+        ? createElement(VisualFeedbackProvider, { service: feedbackService }, detail)
+        : detail,
     );
   });
 
@@ -802,4 +893,23 @@ function setNativeValue(
   const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
 
   setter?.call(element, value);
+}
+
+async function selectTextareaText(container: HTMLElement, selectionText: string) {
+  const textarea = container.querySelector("textarea");
+  if (!textarea) {
+    throw new Error("Expected textarea to exist.");
+  }
+
+  const start = textarea.value.indexOf(selectionText);
+  if (start === -1) {
+    throw new Error(`Selection text ${selectionText} not found.`);
+  }
+
+  await act(async () => {
+    textarea.focus();
+    textarea.setSelectionRange(start, start + selectionText.length);
+    textarea.dispatchEvent(new Event("select", { bubbles: true }));
+    textarea.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+  });
 }

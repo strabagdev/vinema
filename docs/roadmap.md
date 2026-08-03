@@ -15,6 +15,9 @@
 - VIN-014I Memory Orchestrator v1: API cognitiva pública que coordina perfiles,
   relaciones, patrones, significados, evolución y sugerencias en una respuesta
   única con summary y evidencia deduplicada.
+- VIN-UX-005 Captura de selección: el usuario puede convertir una frase
+  seleccionada en concepto asociado, reutilizando identidad canónica, aliases y
+  confirmación explícita para conceptos nuevos.
 
 ## Próximas iteraciones cognitivas
 

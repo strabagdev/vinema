@@ -11,6 +11,15 @@ import type { Context, ContextType } from "@/domain/context/context";
 import type { NodeContextRelation } from "@/domain/context/node-context-relation";
 import type { Node } from "@/domain/node/node";
 import { getCaptureTimestamps } from "@/features/capture/capture-timestamps";
+import {
+  readValidTextareaSelection,
+  resolveCapturedSelectionConcept,
+  type CapturedTextSelection,
+  type CaptureSelectionResolution,
+} from "@/features/capture/capture-selection";
+import { CaptureSelectionAction } from "@/features/capture/capture-selection-action";
+import { normalizeConceptDisplayLabel } from "@/features/concepts/concept-display-label";
+import { createContext } from "@/features/context/create-context";
 import { listContextsByType } from "@/features/context/list-contexts";
 import {
   attachNodeToContext,
@@ -268,6 +277,42 @@ function NoteDetailLoader({
 
         await loadNoteContexts(node.id, context.workspace.id);
       }}
+      onResolveCaptureSelection={async (selection) => {
+        const contexts = await localRepositories.contextRepository.list({
+          workspaceId: context.workspace.id,
+          includeArchived: false,
+        });
+        return resolveCapturedSelectionConcept(selection, contexts);
+      }}
+      onApplyCaptureSelection={async ({ contextId, label }) => {
+        const contextToAttach = contextId
+          ? await localRepositories.contextRepository.getById(contextId)
+          : await createContext(localRepositories.contextRepository, {
+              workspaceId: context.workspace.id,
+              type: "AREA",
+              name: normalizeConceptDisplayLabel(label),
+              description: "Concepto capturado desde una seleccion explicita.",
+            });
+
+        if (!contextToAttach) {
+          throw new Error("No se encontro el concepto.");
+        }
+
+        await attachNodeToContext(
+          {
+            contextRepository: localRepositories.contextRepository,
+            nodeContextRelationRepository:
+              localRepositories.nodeContextRelationRepository,
+            nodeRepository: localRepositories.nodeRepository,
+          },
+          { nodeId: node.id, contextId: contextToAttach.id },
+        );
+        await loadNoteContexts(node.id, context.workspace.id);
+        return {
+          contextId: contextToAttach.id,
+          label: contextToAttach.name,
+        };
+      }}
       onBack={() => {
         router.push(returnTo ?? "/memory");
       }}
@@ -283,6 +328,8 @@ export function NoteDetailView({
   contextError = null,
   onSave,
   onSaveContextRelations,
+  onResolveCaptureSelection,
+  onApplyCaptureSelection,
   onArchive,
   onRestore,
   onBack,
@@ -294,6 +341,13 @@ export function NoteDetailView({
   contextError?: string | null;
   onSave: (draft: Pick<Draft, "content">) => Promise<Node>;
   onSaveContextRelations?: (selectedContextIds: string[]) => Promise<void>;
+  onResolveCaptureSelection?: (
+    selection: CapturedTextSelection,
+  ) => Promise<CaptureSelectionResolution>;
+  onApplyCaptureSelection?: (input: {
+    contextId?: string;
+    label: string;
+  }) => Promise<{ contextId: string; label: string } | void>;
   onArchive: () => Promise<void>;
   onRestore?: () => Promise<Node>;
   onBack?: () => void;
@@ -308,10 +362,16 @@ export function NoteDetailView({
   const [formError, setFormError] = useState<string | null>(null);
   const [archiveConfirmationVisible, setArchiveConfirmationVisible] =
     useState(false);
+  const [capturedSelection, setCapturedSelection] =
+    useState<CapturedTextSelection | null>(null);
+  const [selectionResolution, setSelectionResolution] =
+    useState<CaptureSelectionResolution | null>(null);
+  const [selectionProcessing, setSelectionProcessing] = useState(false);
   const [selectedContextIds, setSelectedContextIds] = useState<string[]>(
     relatedContexts.map((context) => context.id),
   );
   const selectedContextIdsRef = useRef(selectedContextIds);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const persistedNodeRef = useRef(persistedNode);
   const modeRef = useRef(mode);
   const draftRef = useRef<Draft | null>(draft);
@@ -358,6 +418,27 @@ export function NoteDetailView({
     }
   }, [feedback, formError, saveStatus]);
 
+  useEffect(() => {
+    if (!capturedSelection) {
+      return;
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      event.preventDefault();
+      clearCapturedSelection();
+    }
+
+    window.addEventListener("keydown", handleEscape);
+
+    return () => {
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [capturedSelection]);
+
   function setPersisted(nextNode: Node) {
     persistedNodeRef.current = nextNode;
     lastSavedDraftRef.current = toDraft(nextNode);
@@ -377,6 +458,97 @@ export function NoteDetailView({
   function setSelectedContexts(nextContextIds: string[]) {
     selectedContextIdsRef.current = nextContextIds;
     setSelectedContextIds(nextContextIds);
+  }
+
+  function updateCapturedSelection() {
+    setCapturedSelection(readValidTextareaSelection(textareaRef.current));
+    setSelectionResolution(null);
+  }
+
+  function clearCapturedSelection() {
+    setCapturedSelection(null);
+    setSelectionResolution(null);
+  }
+
+  async function captureSelectedText() {
+    const selection = capturedSelection ?? readValidTextareaSelection(textareaRef.current);
+
+    if (!selection || selectionProcessing || !onResolveCaptureSelection) {
+      clearCapturedSelection();
+      return;
+    }
+
+    setCapturedSelection(selection);
+    setSelectionProcessing(true);
+    feedback.saving();
+
+    try {
+      const resolution = await onResolveCaptureSelection(selection);
+
+      if (resolution.status === "EXACT" || resolution.status === "ALIAS") {
+        if (selectedContextIdsRef.current.includes(resolution.conceptId)) {
+          clearCapturedSelection();
+          showSelectionFeedback(feedback, "Ya estaba asociado");
+          queueMicrotask(() => textareaRef.current?.focus());
+          return;
+        }
+
+        await applySelectionConcept({
+          contextId: resolution.conceptId,
+          label: resolution.canonicalLabel,
+        });
+        return;
+      }
+
+      setSelectionResolution(resolution);
+    } catch {
+      feedback.error("No se pudo capturar la seleccion.");
+      clearCapturedSelection();
+    } finally {
+      setSelectionProcessing(false);
+    }
+  }
+
+  async function applySelectionConcept(input: { contextId?: string; label: string }) {
+    if (!onApplyCaptureSelection) {
+      return;
+    }
+
+    if (input.contextId && selectedContextIdsRef.current.includes(input.contextId)) {
+      clearCapturedSelection();
+      showSelectionFeedback(feedback, "Ya estaba asociado");
+      queueMicrotask(() => textareaRef.current?.focus());
+      return;
+    }
+
+    setSelectionProcessing(true);
+    feedback.saving();
+    try {
+      const applied = await onApplyCaptureSelection(input);
+      const appliedContextId = applied?.contextId ?? input.contextId;
+
+      if (appliedContextId) {
+        setSelectedContexts(
+          selectedContextIdsRef.current.includes(appliedContextId)
+            ? selectedContextIdsRef.current
+            : [...selectedContextIdsRef.current, appliedContextId],
+        );
+      }
+      clearCapturedSelection();
+      showSelectionFeedback(
+        feedback,
+        input.contextId ? "Concepto asociado" : "Concepto creado",
+      );
+      queueMicrotask(() => textareaRef.current?.focus());
+    } catch (caughtError) {
+      feedback.error(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "No se pudo asociar el concepto.",
+      );
+    } finally {
+      setSelectionProcessing(false);
+    }
   }
 
   function clearAutosaveTimer() {
@@ -401,6 +573,7 @@ export function NoteDetailView({
   function cancelEdit() {
     clearAutosaveTimer();
     saveAgainAfterCurrentRef.current = false;
+    clearCapturedSelection();
     setDraftState(null);
     setSelectedContexts(relatedContexts.map((context) => context.id));
     setSaveStatus("idle");
@@ -409,6 +582,7 @@ export function NoteDetailView({
   }
 
   function updateDraft(nextDraft: Draft) {
+    clearCapturedSelection();
     setDraftState(nextDraft);
     setFormError(null);
 
@@ -534,6 +708,7 @@ export function NoteDetailView({
   }
 
   async function handleDone() {
+    clearCapturedSelection();
     const saved = await saveDraft({ exitEditMode: false });
 
     if (!saved) {
@@ -565,6 +740,7 @@ export function NoteDetailView({
   }
 
   async function handleBack() {
+    clearCapturedSelection();
     if (modeRef.current !== "edit") {
       onBack?.();
       return;
@@ -578,6 +754,7 @@ export function NoteDetailView({
   }
 
   async function handleArchive() {
+    clearCapturedSelection();
     if (savingRef.current || mode !== "read") {
       return;
     }
@@ -754,18 +931,44 @@ export function NoteDetailView({
         </div>
       ) : (
         <div className="space-y-4 rounded-lg border border-zinc-200 bg-white p-4">
-          <Textarea
-            value={content}
-            onChange={(event) => {
-              updateDraft({
-                nodeId: persistedNode.id,
-                content: event.target.value,
-              });
-            }}
-            placeholder="Contenido"
-            aria-label="Contenido"
-            className="min-h-[420px] resize-y text-base leading-7"
-          />
+          <div className="relative">
+            <Textarea
+              ref={textareaRef}
+              value={content}
+              onMouseUp={updateCapturedSelection}
+              onKeyUp={updateCapturedSelection}
+              onSelect={updateCapturedSelection}
+              onChange={(event) => {
+                updateDraft({
+                  nodeId: persistedNode.id,
+                  content: event.target.value,
+                });
+              }}
+              placeholder="Contenido"
+              aria-label="Contenido"
+              className="min-h-[420px] resize-y text-base leading-7"
+            />
+            <CaptureSelectionAction
+              selection={capturedSelection}
+              resolution={selectionResolution}
+              processing={selectionProcessing}
+              touch={!canUseSelectionPopover()}
+              onCapture={() => void captureSelectedText()}
+              onConfirmNew={() => {
+                if (capturedSelection) {
+                  void applySelectionConcept({ label: capturedSelection.text });
+                }
+              }}
+              onChoose={(contextId) => {
+                const context = relationOptions.find((item) => item.id === contextId);
+                void applySelectionConcept({
+                  contextId,
+                  label: context?.name ?? "Concepto",
+                });
+              }}
+              onCancel={clearCapturedSelection}
+            />
+          </div>
           <EditContextSection
             contexts={relationOptions}
             selectedContextIds={selectedContextIds}
@@ -891,6 +1094,26 @@ function groupContextsByType(contexts: Context[]) {
 
 function getContextTypes(): ContextType[] {
   return ["AREA", "PROJECT", "PERSON"];
+}
+
+function canUseSelectionPopover() {
+  if (typeof window === "undefined" || window.innerWidth < 768) {
+    return false;
+  }
+
+  if (typeof window.matchMedia !== "function") {
+    return true;
+  }
+
+  return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+}
+
+function showSelectionFeedback(
+  feedback: ReturnType<typeof useVisualFeedback>,
+  message: string,
+) {
+  feedback.dismissKind("success");
+  feedback.success(message);
 }
 
 export function NoteDetailMessage({

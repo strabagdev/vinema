@@ -430,6 +430,138 @@ describe("CaptureSurface", () => {
     expect(getTextarea(screen.container)?.value).toBe("");
   });
 
+  it("captures selected text as an existing concept without duplicating relations", async () => {
+    const nodeRepository = new InMemoryNodeRepository();
+    const feedbackService = createVisualFeedbackService();
+    const contextRepository = new InMemoryContextRepository([
+      createContext({
+        id: "mitcom",
+        name: "Mitcom",
+        aliases: ["Proveedor Mitcom"],
+      }),
+    ]);
+    const relationRepository = new InMemoryNodeContextRelationRepository();
+    const screen = await renderCaptureSurface({
+      nodeRepository,
+      contextRepository,
+      relationRepository,
+      feedbackService,
+    });
+
+    await changeTextarea(screen.container, "Revisar Proveedor Mitcom mañana");
+    await selectTextareaText(screen.container, "Proveedor Mitcom");
+    await click(getButton(screen.container, "Capturar seleccion"));
+    expect(feedbackService.getState().current?.accessibleText).toBe(
+      "Concepto asociado",
+    );
+
+    await selectTextareaText(screen.container, "Proveedor Mitcom");
+    await click(getButton(screen.container, "Capturar seleccion"));
+    expect(feedbackService.getState().current?.accessibleText).toBe(
+      "Ya estaba asociado",
+    );
+
+    await click(getButton(screen.container, "Capturar"));
+
+    const nodes = await nodeRepository.listByWorkspace(workspace.id);
+    const relations = await relationRepository.listByWorkspace(workspace.id);
+    expect(nodes).toHaveLength(1);
+    expect(relations).toHaveLength(1);
+    expect(relations[0]).toMatchObject({
+      nodeId: nodes[0]?.id,
+      contextId: "mitcom",
+      workspaceId: workspace.id,
+    });
+  });
+
+  it("keeps a new selection local until the capture is saved", async () => {
+    const nodeRepository = new InMemoryNodeRepository();
+    const contextRepository = new InMemoryContextRepository();
+    const relationRepository = new InMemoryNodeContextRelationRepository();
+    const feedbackService = createVisualFeedbackService();
+    const screen = await renderCaptureSurface({
+      nodeRepository,
+      contextRepository,
+      relationRepository,
+      feedbackService,
+    });
+
+    await changeTextarea(screen.container, "Revisar ESTADO DE PAGO mañana");
+    await selectTextareaText(screen.container, "ESTADO DE PAGO");
+    await click(getButton(screen.container, "Capturar seleccion"));
+
+    expect(screen.container.textContent).toContain("Nuevo concepto");
+    expect(screen.container.textContent).toContain("Estado de pago");
+    await expect(contextRepository.list({ workspaceId: workspace.id })).resolves.toHaveLength(0);
+
+    await click(getButton(screen.container, "Confirmar"));
+    expect(feedbackService.getState().current?.accessibleText).toBe(
+      "Concepto incorporado",
+    );
+    await expect(contextRepository.list({ workspaceId: workspace.id })).resolves.toHaveLength(0);
+
+    await openConceptPanel(screen.container);
+    expect(getButton(screen.container, "Estado de pago")).toBeDefined();
+
+    await click(getButton(screen.container, "Capturar"));
+
+    const contexts = await contextRepository.list({ workspaceId: workspace.id });
+    const relations = await relationRepository.listByWorkspace(workspace.id);
+    expect(contexts).toHaveLength(1);
+    expect(contexts[0]?.name).toBe("Estado de pago");
+    expect(relations).toHaveLength(1);
+    expect(relations[0]?.contextId).toBe(contexts[0]?.id);
+  });
+
+  it("lets ambiguous selected text choose an existing concept", async () => {
+    const nodeRepository = new InMemoryNodeRepository();
+    const feedbackService = createVisualFeedbackService();
+    const contextRepository = new InMemoryContextRepository([
+      createContext({ id: "core", name: "Operational Core", aliases: ["OC"] }),
+      createContext({ id: "office", name: "Oficina Central", aliases: ["OC"] }),
+    ]);
+    const relationRepository = new InMemoryNodeContextRelationRepository();
+    const screen = await renderCaptureSurface({
+      nodeRepository,
+      contextRepository,
+      relationRepository,
+      feedbackService,
+    });
+
+    await changeTextarea(screen.container, "Revisar OC mañana");
+    await selectTextareaText(screen.container, "OC");
+    await click(getButton(screen.container, "Capturar seleccion"));
+
+    expect(screen.container.textContent).toContain("Elegir concepto");
+    expect(feedbackService.getState().current?.accessibleText).not.toBe(
+      "Concepto asociado",
+    );
+    await click(getButton(screen.container, "Operational Core"));
+    expect(feedbackService.getState().current?.accessibleText).toBe(
+      "Concepto asociado",
+    );
+    await click(getButton(screen.container, "Capturar"));
+
+    await expect(relationRepository.listByWorkspace(workspace.id)).resolves.toMatchObject([
+      { contextId: "core" },
+    ]);
+  });
+
+  it("ignores invalid selections and closes the selection action with Escape", async () => {
+    const screen = await renderCaptureSurface();
+
+    await changeTextarea(screen.container, "Revisar Mitcom mañana");
+    await selectTextareaRange(screen.container, 7, 8);
+    expect(queryButton(screen.container, "Capturar seleccion")).toBeUndefined();
+
+    await selectTextareaText(screen.container, "Mitcom");
+    expect(queryButton(screen.container, "Capturar seleccion")).toBeDefined();
+
+    await keydownWindow({ key: "Escape" });
+
+    expect(queryButton(screen.container, "Capturar seleccion")).toBeUndefined();
+  });
+
   it("keeps Enter available for multiline writing", async () => {
     const nodeRepository = new InMemoryNodeRepository();
     const screen = await renderCaptureSurface({ nodeRepository });
@@ -1729,10 +1861,14 @@ function createContext({
   id,
   name,
   type = "AREA",
+  aliases = [],
+  normalizedAliases = [],
 }: {
   id: string;
   name: string;
   type?: Context["type"];
+  aliases?: string[];
+  normalizedAliases?: string[];
 }): Context {
   return {
     id,
@@ -1740,6 +1876,8 @@ function createContext({
     type,
     name,
     description: null,
+    aliases,
+    normalizedAliases,
     version: 1,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -1878,6 +2016,35 @@ async function changeTextarea(container: HTMLElement, value: string) {
   await act(async () => {
     setNativeValue(textarea, value);
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    await flushPromises();
+  });
+}
+
+async function selectTextareaText(container: HTMLElement, selectionText: string) {
+  const textarea = getTextarea(container);
+  if (!textarea) {
+    throw new Error("Textarea not found");
+  }
+
+  const start = textarea.value.indexOf(selectionText);
+  if (start === -1) {
+    throw new Error(`Selection text ${selectionText} not found.`);
+  }
+
+  await selectTextareaRange(container, start, start + selectionText.length);
+}
+
+async function selectTextareaRange(container: HTMLElement, start: number, end: number) {
+  const textarea = getTextarea(container);
+  if (!textarea) {
+    throw new Error("Textarea not found");
+  }
+
+  await act(async () => {
+    textarea.focus();
+    textarea.setSelectionRange(start, end);
+    textarea.dispatchEvent(new Event("select", { bubbles: true }));
+    textarea.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
     await flushPromises();
   });
 }
