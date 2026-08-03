@@ -3,6 +3,7 @@ import type { ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SearchRedirectClient } from "@/app/search/search-redirect-client";
+import { LegacyMemoryRouteRedirect } from "@/components/app-shell/legacy-memory-route-redirect";
 import { SidebarContent } from "@/components/app-shell/app-sidebar";
 
 const mocks = vi.hoisted(() => ({
@@ -28,10 +29,10 @@ describe("search route consolidation", () => {
     document.body.replaceChildren();
   });
 
-  it("redirects /search to the Knowledge Base", async () => {
+  it("redirects /search to Memoria", async () => {
     await render(createElement(SearchRedirectClient));
 
-    expect(mocks.replace).toHaveBeenCalledWith("/notes");
+    expect(mocks.replace).toHaveBeenCalledWith("/memory");
   });
 
   it("preserves historical q params and special characters", async () => {
@@ -39,7 +40,15 @@ describe("search route consolidation", () => {
 
     await render(createElement(SearchRedirectClient));
 
-    expect(mocks.replace).toHaveBeenCalledWith("/notes?q=mitcom%20(A)%20%2B");
+    expect(mocks.replace).toHaveBeenCalledWith("/memory?q=mitcom%20(A)%20%2B");
+  });
+
+  it("redirects legacy /notes routes to Memoria while preserving query params", async () => {
+    mocks.searchParams = new URLSearchParams("q=mitcom");
+
+    await render(createElement(LegacyMemoryRouteRedirect, { target: "/memory" }));
+
+    expect(mocks.replace).toHaveBeenCalledWith("/memory?q=mitcom");
   });
 
   it("does not expose separate search or global exploration entries in the sidebar", async () => {

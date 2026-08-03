@@ -331,10 +331,10 @@ describe("local recovery search", () => {
   });
 
   it("builds recovery navigation paths for source detail", () => {
-    expect(getRecoveryPath("pan humedo")).toBe("/notes?q=pan%20humedo");
+    expect(getRecoveryPath("pan humedo")).toBe("/memory?q=pan%20humedo");
     expect(
       getNodeDetailPath("node-1", { returnTo: getRecoveryPath("pan humedo") }),
-    ).toBe("/notes/detail?nodeId=node-1&returnTo=%2Fnotes%3Fq%3Dpan%2520humedo");
+    ).toBe("/memory/detail?nodeId=node-1&returnTo=%2Fmemory%3Fq%3Dpan%2520humedo");
   });
 
   it("builds context navigation paths from recovery results", () => {
@@ -343,7 +343,7 @@ describe("local recovery search", () => {
         returnTo: getRecoveryPath("pan humedo"),
       }),
     ).toBe(
-      "/contexts/detail?contextId=context%20with%20spaces&returnTo=%2Fnotes%3Fq%3Dpan%2520humedo",
+      "/contexts/detail?contextId=context%20with%20spaces&returnTo=%2Fmemory%3Fq%3Dpan%2520humedo",
     );
   });
 
@@ -355,9 +355,9 @@ describe("local recovery search", () => {
     ).toBe("/search?q=pan humedo");
     expect(
       getReturnToFromSearchParams(
-        new URLSearchParams("returnTo=/notes?q=pan%20humedo"),
+        new URLSearchParams("returnTo=/memory?q=pan%20humedo"),
       ),
-    ).toBe("/notes?q=pan humedo");
+    ).toBe("/memory?q=pan humedo");
     expect(
       getReturnToFromSearchParams(
         new URLSearchParams("returnTo=https%3A%2F%2Fevil.example"),

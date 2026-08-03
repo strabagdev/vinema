@@ -139,9 +139,126 @@ describe("CaptureSurface", () => {
 
     expect(getContextIndicator(screen.container, "conceptos sugeridos")).toBeDefined();
     expect(getContextIndicator(screen.container, "ideas relacionadas")).toBeUndefined();
-    expect(group?.className).toContain("justify-center");
+    expect(group?.className).toContain("justify-start");
     expect(group?.querySelectorAll("[data-context-indicator]")).toHaveLength(1);
     expect(group?.textContent).not.toContain("0");
+  });
+
+  it("shows cognitive indicators as colored icons without visible counters", async () => {
+    const nodeRepository = new InMemoryNodeRepository([
+      createStoredNode({
+        id: "mitcom",
+        content: "Proveedor Mitcom pendiente de seguimiento",
+        updatedAt: "2026-01-05T00:00:00.000Z",
+      }),
+    ]);
+    const screen = await renderCaptureSurface({ nodeRepository });
+
+    await changeTextarea(screen.container, "Revisar Mitcom");
+    await advanceTime(500);
+
+    const conceptIndicator = getContextIndicator(screen.container, "conceptos sugeridos");
+    const memoryIndicator = getContextIndicator(screen.container, "ideas relacionadas");
+
+    expect(conceptIndicator?.getAttribute("aria-label")).toBe(
+      "1 conceptos sugeridos",
+    );
+    expect(memoryIndicator?.getAttribute("aria-label")).toBe(
+      "1 ideas relacionadas",
+    );
+    expect(conceptIndicator?.className).toContain("text-indigo-300");
+    expect(conceptIndicator?.className).toContain("hover:text-indigo-500");
+    expect(memoryIndicator?.className).toContain("text-amber-300");
+    expect(memoryIndicator?.className).toContain("hover:text-amber-500");
+    expect(conceptIndicator?.querySelector("svg")?.className.baseVal).toContain(
+      "h-5",
+    );
+    expect(conceptIndicator?.querySelector("svg")?.className.baseVal).toContain(
+      "w-5",
+    );
+    expect(conceptIndicator?.querySelector("span")?.className).toContain(
+      "sr-only",
+    );
+    expect(memoryIndicator?.querySelector("span")?.className).toContain(
+      "sr-only",
+    );
+  });
+
+  it("uses the full indicator color while its panel is open and returns to base after close", async () => {
+    const screen = await renderCaptureSurface();
+
+    await changeTextarea(screen.container, "Revisar Railway");
+    await advanceTime(500);
+
+    const indicator = getContextIndicator(screen.container, "conceptos sugeridos");
+    expect(indicator?.className).toContain("text-indigo-300");
+
+    await openConceptPanel(screen.container);
+
+    expect(indicator?.className).toContain("text-indigo-600");
+    expect(indicator?.className).not.toContain("text-indigo-300");
+
+    await keydownWindow({ key: "Escape" });
+
+    expect(indicator?.className).toContain("text-indigo-300");
+  });
+
+  it("keeps contextual indicators and capture action in one stable row", async () => {
+    const nodeRepository = new InMemoryNodeRepository([
+      createStoredNode({
+        id: "mitcom",
+        content: "Proveedor Mitcom pendiente de seguimiento",
+        updatedAt: "2026-01-05T00:00:00.000Z",
+      }),
+    ]);
+    const screen = await renderCaptureSurface({ nodeRepository });
+
+    await changeTextarea(screen.container, "Revisar Mitcom");
+    await advanceTime(500);
+
+    const row = screen.container.querySelector("[data-capture-action-row]");
+    const tools = screen.container.querySelector("[data-capture-context-tools]");
+    const group = screen.container.querySelector("[data-context-indicator-group]");
+    const button = screen.container.querySelector("[data-capture-submit]");
+
+    expect(row).toBeDefined();
+    expect(row?.className).toContain("justify-between");
+    expect(row?.className).toContain("overflow-visible");
+    expect(tools).toBeDefined();
+    expect(group).toBeDefined();
+    expect(button).toBeDefined();
+    expect(button?.className).toContain("ml-auto");
+    expect(button?.className).toContain("h-10");
+    expect(button?.className).toContain("w-10");
+    expect(button?.className).toContain("rounded-full");
+    expect(button?.querySelector("svg")).toBeDefined();
+    expect(button?.querySelector(".sr-only")?.textContent).toBe("Capturar");
+    expect(row?.contains(group)).toBe(true);
+    expect(row?.contains(button)).toBe(true);
+    expect(row?.firstElementChild?.getAttribute("data-capture-context-tools")).toBe("");
+    expect(row?.lastElementChild?.getAttribute("data-capture-submit")).toBe("");
+  });
+
+  it("keeps the capture action on the right when there are no contextual indicators", async () => {
+    const screen = await renderCaptureSurface();
+
+    await changeTextarea(screen.container, "ok");
+    await advanceTime(500);
+
+    const row = screen.container.querySelector("[data-capture-action-row]");
+    const tools = screen.container.querySelector("[data-capture-context-tools]");
+    const group = screen.container.querySelector("[data-context-indicator-group]");
+    const button = screen.container.querySelector("[data-capture-submit]");
+
+    expect(row).toBeDefined();
+    expect(row?.className).toContain("justify-between");
+    expect(tools).toBeNull();
+    expect(group).toBeNull();
+    expect(button).toBeDefined();
+    expect(button?.className).toContain("ml-auto");
+    expect(button?.className).toContain("w-10");
+    expect(button?.querySelector("svg")).toBeDefined();
+    expect(button?.querySelector(".sr-only")?.textContent).toBe("Capturar");
   });
 
   it("does not show association suggestions before there is enough useful text", async () => {
@@ -455,7 +572,7 @@ describe("CaptureSurface", () => {
     expect(getDialog(screen.container, "Me recuerda a…")).toBeDefined();
   });
 
-  it("positions desktop panels above the centered indicator group", async () => {
+  it("positions desktop panels above the left contextual indicator group", async () => {
     setViewportSize({ width: 1366, height: 768 });
     const nodeRepository = new InMemoryNodeRepository([
       createStoredNode({
@@ -476,8 +593,8 @@ describe("CaptureSurface", () => {
 
     expect(panel.dataset.layout).toBe("desktop-popover");
     expect(root?.className).toContain("relative");
-    expect(root?.className).toContain("mx-auto");
-    expect(group?.className).toContain("justify-center");
+    expect(root?.getAttribute("data-capture-context-tools")).toBe("");
+    expect(group?.className).toContain("justify-start");
     expect(panel.className).toContain("absolute");
     expect(panel.className).toContain("bottom-[calc(100%+10px)]");
     expect(panel.className).toContain("left-1/2");
@@ -688,7 +805,7 @@ describe("CaptureSurface", () => {
     expect(memoryPanel.style.top).toBe("");
   });
 
-  it("keeps indicators as one centered group and marks the active icon", async () => {
+  it("keeps indicators as one grouped toolset and marks the active icon", async () => {
     setViewportSize({ width: 1366, height: 768 });
     const nodeRepository = new InMemoryNodeRepository([
       createStoredNode({
@@ -712,7 +829,7 @@ describe("CaptureSurface", () => {
     ) as HTMLElement;
     const group = screen.container.querySelector("[data-context-indicator-group]");
 
-    expect(group?.className).toContain("justify-center");
+    expect(group?.className).toContain("justify-start");
     expect(conceptPanel.className).toContain("bottom-[calc(100%+10px)]");
     expect(conceptPanel.className).toContain("left-1/2");
     expect(conceptIndicator.className).toContain("w-9");

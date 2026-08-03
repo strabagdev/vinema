@@ -176,19 +176,183 @@ describe("Knowledge Base", () => {
     expect(screen.textContent).toContain(
       `${KNOWLEDGE_BASE_BATCH_SIZE + 1} capturas activas.`,
     );
-    expect(screen.querySelectorAll("a[href^='/notes/detail']")).toHaveLength(
+    expect(screen.querySelectorAll("a[href^='/memory/detail']")).toHaveLength(
       KNOWLEDGE_BASE_BATCH_SIZE,
     );
 
     await click(getButton(screen, "Cargar mas"));
 
     const links = Array.from(
-      screen.querySelectorAll("a[href^='/notes/detail']"),
+      screen.querySelectorAll("a[href^='/memory/detail']"),
     ).map((link) => link.getAttribute("href"));
 
     expect(links).toHaveLength(KNOWLEDGE_BASE_BATCH_SIZE + 1);
     expect(new Set(links).size).toBe(KNOWLEDGE_BASE_BATCH_SIZE + 1);
-    expect(screen.textContent).toContain("Llegaste al final del Historial.");
+    expect(screen.textContent).toContain("Llegaste al final de la Memoria.");
+  });
+
+  it("starts in Hilos mode and groups captures with the same emergent identity", async () => {
+    setMockNodes([
+      createNode({
+        id: "thread-new",
+        content: "Coordinar recepcion del servidor",
+        updatedAt: "2026-01-03T00:00:00.000Z",
+      }),
+      createNode({
+        id: "thread-old",
+        content: "Revisar layout NTI",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }),
+      createNode({
+        id: "partial",
+        content: "Seguimiento Mitcom sin servidor",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+      }),
+    ]);
+    setMockContexts([
+      createContext({ id: "mitcom", name: "Mitcom" }),
+      createContext({ id: "tracking", name: "Tracking" }),
+      createContext({ id: "server", name: "Servidor" }),
+    ]);
+    setMockRelations([
+      createRelation({ nodeId: "thread-new", contextId: "server" }),
+      createRelation({ nodeId: "thread-new", contextId: "mitcom" }),
+      createRelation({ nodeId: "thread-new", contextId: "tracking" }),
+      createRelation({ nodeId: "thread-old", contextId: "tracking" }),
+      createRelation({ nodeId: "thread-old", contextId: "server" }),
+      createRelation({ nodeId: "thread-old", contextId: "mitcom" }),
+      createRelation({ nodeId: "partial", contextId: "mitcom" }),
+      createRelation({ nodeId: "partial", contextId: "tracking" }),
+    ]);
+
+    const screen = await renderKnowledgeBase();
+
+    expect(screen.textContent).toContain("Memoria");
+    expect(screen.querySelector("button[aria-pressed='true']")?.textContent).toBe(
+      "Hilos",
+    );
+    expect(screen.textContent).toContain("Mitcom · Servidor · Tracking");
+    expect(screen.textContent).toContain("2 capturas");
+    expect(screen.textContent).toContain("Seguimiento Mitcom sin servidor");
+  });
+
+  it("expands and collapses memory threads without navigating away", async () => {
+    setMockNodes([
+      createNode({
+        id: "one",
+        content: "Primera captura",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }),
+      createNode({
+        id: "two",
+        content: "Segunda captura",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+      }),
+      createNode({
+        id: "three",
+        content: "Tercera captura",
+        updatedAt: "2026-01-03T00:00:00.000Z",
+      }),
+    ]);
+    setMockContexts([createContext({ id: "mitcom", name: "Mitcom" })]);
+    setMockRelations([
+      createRelation({ nodeId: "one", contextId: "mitcom" }),
+      createRelation({ nodeId: "two", contextId: "mitcom" }),
+      createRelation({ nodeId: "three", contextId: "mitcom" }),
+    ]);
+
+    const screen = await renderKnowledgeBase();
+
+    expect(screen.textContent).not.toContain("Primera captura");
+
+    await click(getButtonContaining(screen, "Ver 3 capturas"));
+    expect(screen.textContent).toContain("Primera captura");
+
+    await click(getButton(screen, "Contraer"));
+    expect(screen.textContent).not.toContain("Primera captura");
+  });
+
+  it("switches to Tiempo mode and preserves chronological capture cards", async () => {
+    setMockNodes([
+      createNode({
+        id: "old",
+        content: "Captura antigua",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }),
+      createNode({
+        id: "new",
+        content: "Captura reciente",
+        updatedAt: "2026-01-03T00:00:00.000Z",
+      }),
+    ]);
+
+    const screen = await renderKnowledgeBase();
+    await click(getButton(screen, "Tiempo"));
+
+    const links = Array.from(screen.querySelectorAll("a[href^='/memory/detail']"));
+    expect(links.map((link) => link.textContent)).toEqual([
+      expect.stringContaining("Captura reciente"),
+      expect.stringContaining("Captura antigua"),
+    ]);
+  });
+
+  it("searches Hilos by emergent identity labels and aliases", async () => {
+    mocks.searchParams = new URLSearchParams("q=proveedor mitcom");
+    setMockNodes([
+      createNode({ id: "match-a", content: "Contenido A" }),
+      createNode({ id: "match-b", content: "Contenido B" }),
+      createNode({ id: "other", content: "Contenido C" }),
+    ]);
+    setMockContexts([
+      createContext({
+        id: "mitcom",
+        name: "Mitcom",
+        aliases: ["Proveedor Mitcom"],
+        normalizedAliases: ["proveedor mitcom"],
+      }),
+      createContext({ id: "railway", name: "Railway" }),
+    ]);
+    setMockRelations([
+      createRelation({ nodeId: "match-a", contextId: "mitcom" }),
+      createRelation({ nodeId: "match-b", contextId: "mitcom" }),
+      createRelation({ nodeId: "other", contextId: "railway" }),
+    ]);
+
+    const screen = await renderKnowledgeBase();
+
+    expect(screen.textContent).toContain("2 resultados para \"proveedor mitcom\".");
+    expect(screen.textContent).toContain("Mitcom");
+    expect(screen.textContent).toContain("Contenido A");
+    expect(screen.textContent).toContain("Contenido B");
+    expect(screen.textContent).not.toContain("Contenido C");
+  });
+
+  it("searches Tiempo by emergent identity aliases", async () => {
+    mocks.searchParams = new URLSearchParams("q=proveedor mitcom");
+    setMockNodes([
+      createNode({ id: "match", content: "Contenido sin el alias visible" }),
+      createNode({ id: "other", content: "Contenido externo" }),
+    ]);
+    setMockContexts([
+      createContext({
+        id: "mitcom",
+        name: "Mitcom",
+        aliases: ["Proveedor Mitcom"],
+        normalizedAliases: ["proveedor mitcom"],
+      }),
+      createContext({ id: "railway", name: "Railway" }),
+    ]);
+    setMockRelations([
+      createRelation({ nodeId: "match", contextId: "mitcom" }),
+      createRelation({ nodeId: "other", contextId: "railway" }),
+    ]);
+
+    const screen = await renderKnowledgeBase();
+    await click(getButton(screen, "Tiempo"));
+
+    expect(screen.textContent).toContain("1 resultados para \"proveedor mitcom\".");
+    expect(screen.textContent).toContain("Contenido sin el alias visible");
+    expect(screen.textContent).not.toContain("Contenido externo");
   });
 
   it("shows accepted concepts as emergent identity without duplicating the body", async () => {
@@ -329,11 +493,12 @@ describe("Knowledge Base", () => {
     ]);
 
     const screen = await renderKnowledgeBase();
+    await click(getButton(screen, "Tiempo"));
 
     expect(screen.textContent).toContain('1 resultados para "Mitcom (A)".');
     expect(screen.querySelectorAll("mark")).toHaveLength(2);
     expect(getFirstDetailLink(screen)?.getAttribute("href")).toBe(
-      "/notes/detail?nodeId=match&returnTo=%2Fnotes%3Fq%3DMitcom%2520(A)",
+      "/memory/detail?nodeId=match&returnTo=%2Fmemory%3Fq%3DMitcom%2520(A)",
     );
     expect(screen.textContent).not.toContain("archivado");
   });
@@ -352,7 +517,7 @@ describe("Knowledge Base", () => {
 
     await click(getButton(screen, "Limpiar busqueda"));
 
-    expect(mocks.replace).toHaveBeenCalledWith("/notes", { scroll: false });
+    expect(mocks.replace).toHaveBeenCalledWith("/memory", { scroll: false });
   });
 });
 
@@ -468,8 +633,20 @@ function getButton(container: HTMLElement, name: string) {
   return button as HTMLButtonElement;
 }
 
+function getButtonContaining(container: HTMLElement, text: string) {
+  const button = Array.from(container.querySelectorAll("button")).find(
+    (item) => item.textContent?.includes(text),
+  );
+
+  if (!button) {
+    throw new Error(`Button not found: ${text}`);
+  }
+
+  return button as HTMLButtonElement;
+}
+
 function getFirstDetailLink(container: HTMLElement) {
-  return container.querySelector("a[href^='/notes/detail']");
+  return container.querySelector("a[href^='/memory/detail']");
 }
 
 async function click(element: HTMLElement) {

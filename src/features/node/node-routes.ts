@@ -8,7 +8,7 @@ export function getNodeDetailPath(
     searchParams.push(`returnTo=${encodeURIComponent(options.returnTo)}`);
   }
 
-  return `/notes/detail?${searchParams.join("&")}`;
+  return `/memory/detail?${searchParams.join("&")}`;
 }
 
 export function getNodeIdFromSearchParams(

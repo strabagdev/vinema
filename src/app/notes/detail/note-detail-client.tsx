@@ -223,7 +223,7 @@ function NoteDetailLoader({
       }}
       onArchive={async () => {
         await archiveNode(localRepositories.nodeRepository, node.id, context.device);
-        router.push(returnTo ?? "/notes");
+        router.push(returnTo ?? "/memory");
       }}
       onRestore={async () => {
         const restored = await restoreNode(
@@ -269,7 +269,7 @@ function NoteDetailLoader({
         await loadNoteContexts(node.id, context.workspace.id);
       }}
       onBack={() => {
-        router.push(returnTo ?? "/notes");
+        router.push(returnTo ?? "/memory");
       }}
     />
   );
@@ -906,7 +906,7 @@ export function NoteDetailMessage({
       <h1 className="text-3xl font-semibold text-zinc-950">{heading}</h1>
       <p className="text-sm text-zinc-600">{message}</p>
       <Button asChild className="w-fit">
-        <Link href="/notes">Volver a Base de Conocimiento</Link>
+        <Link href="/memory">Volver a Memoria</Link>
       </Button>
     </section>
   );

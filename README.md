@@ -61,8 +61,8 @@ Tauri consume el servidor local en desarrollo y empaqueta `out/` en build.
 
 ## Alcance actual
 
-- Shell responsive con sidebar, header y navegacion movil.
-- Superficie unica de escritura en `/` e Historial en `/notes`.
+- Shell responsive con header minimo y navegacion compacta.
+- Superficie unica de escritura en `/` y Memoria en `/memory`.
 - Dispositivo persistente con `getOrCreateDevice()`.
 - `StorageAdapter`, `IndexedDbAdapter` y `LocalStorageAdapter`.
 - PWA con manifest, icono temporal y service worker.
@@ -77,7 +77,7 @@ Tauri consume el servidor local en desarrollo y empaqueta `out/` en build.
 - Normalizacion historica de conceptos equivalentes o invertidos preservando
   relaciones.
 - Gestion minima de areas, proyectos y personas como contextos relacionales.
-- Busqueda textual local integrada en la Base de Conocimiento.
+- Busqueda textual local integrada en Memoria.
 - Persistencia local mediante IndexedDB.
 - Autenticacion con ciclo de vida consolidado: restore, renovacion silenciosa,
   logout y dispose coordinados mediante refresh token persistido en IndexedDB.
@@ -172,14 +172,15 @@ migraciones.
 ## Rutas funcionales
 
 - `/`: Inicio, superficie unica de escritura con borrador local.
-- `/notes`: Historial con busqueda textual.
-- `/notes?q=<consulta>`: busqueda dentro del Historial.
-- `/notes/archive`: Archivo de capturas restaurables.
-- `/notes/archive?q=<consulta>`: busqueda dentro del Archivo.
-- `/search`: compatibilidad; redirige a `/notes`.
+- `/memory`: Memoria con modos Hilos y Tiempo.
+- `/memory?q=<consulta>`: busqueda dentro de Memoria.
+- `/memory/archive`: Archivo de capturas restaurables.
+- `/memory/archive?q=<consulta>`: busqueda dentro del Archivo.
+- `/search`: compatibilidad; redirige a `/memory`.
+- `/notes`: compatibilidad; redirige a `/memory`.
 - `/inbox`: compatibilidad; redirige a la captura principal.
 - `/notes/new`: compatibilidad; redirige a la captura principal.
-- `/notes/detail?nodeId=<id>`: detalle y edicion de captura.
+- `/memory/detail?nodeId=<id>`: detalle y edicion de captura.
 - `/contexts/areas`: listado y creacion de areas.
 - `/contexts/projects`: listado y creacion de proyectos contextuales.
 - `/contexts/people`: listado y creacion de personas.
@@ -208,7 +209,7 @@ Base `vinema`, version 7:
   indices `by-workspace` y `by-device`.
 
 Los recursos locales creados en IndexedDB se abren con rutas estaticas y query
-params. Las notas usan `/notes/detail?nodeId=<id>` en lugar de segmentos
+params. Las capturas usan `/memory/detail?nodeId=<id>` en lugar de segmentos
 dinamicos de Next.js.
 
 Las capturas historicas que todavia incluyan `title` se leen por compatibilidad.

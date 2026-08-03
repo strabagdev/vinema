@@ -6,20 +6,20 @@ export function getKnowledgeBasePath(query = "") {
   const normalizedQuery = query.trim();
 
   if (!normalizedQuery) {
-    return "/notes";
+    return "/memory";
   }
 
-  return `/notes?q=${encodeURIComponent(normalizedQuery)}`;
+  return `/memory?q=${encodeURIComponent(normalizedQuery)}`;
 }
 
 export function getArchivePath(query = "") {
   const normalizedQuery = query.trim();
 
   if (!normalizedQuery) {
-    return "/notes/archive";
+    return "/memory/archive";
   }
 
-  return `/notes/archive?q=${encodeURIComponent(normalizedQuery)}`;
+  return `/memory/archive?q=${encodeURIComponent(normalizedQuery)}`;
 }
 
 export function getReturnToFromSearchParams(

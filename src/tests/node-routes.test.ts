@@ -27,7 +27,7 @@ const note: Node = {
 describe("node routes", () => {
   it("builds an export-safe detail path with an encoded nodeId", () => {
     expect(getNodeDetailPath(note.id)).toBe(
-      "/notes/detail?nodeId=nota%20con%20espacios%2Fand%2Fsymbols%3F",
+      "/memory/detail?nodeId=nota%20con%20espacios%2Fand%2Fsymbols%3F",
     );
   });
 

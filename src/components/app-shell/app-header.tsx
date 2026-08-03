@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Archive, MoreHorizontal, SquarePen } from "lucide-react";
+import { Brain, MoreHorizontal, SquarePen } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -80,13 +80,23 @@ export function AppHeader({ pathname, onFocusWriting }: AppHeaderProps) {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem disabled>{identity}</DropdownMenuItem>
+            <DropdownMenuItem disabled>Conocimiento</DropdownMenuItem>
+            <div className="my-1 h-px bg-zinc-100" role="separator" />
             <DropdownMenuItem asChild>
-              <Link href="/notes/archive">
-                <Archive className="mr-2 h-4 w-4" aria-hidden="true" />
-                Archivo
+              <Link href="/memory">
+                <Brain className="mr-2 h-4 w-4" aria-hidden="true" />
+                Memoria
               </Link>
             </DropdownMenuItem>
-            <KnowledgeManagementCenterMenuItem />
+            <DropdownMenuItem asChild>
+              <Link href="/concepts">
+                <Brain className="mr-2 h-4 w-4" aria-hidden="true" />
+                Conceptos
+              </Link>
+            </DropdownMenuItem>
+            <div className="my-1 h-px bg-zinc-100" role="separator" />
+            <KnowledgeManagementCenterMenuItem label="Administrar" />
+            <div className="my-1 h-px bg-zinc-100" role="separator" />
             <DropdownMenuItem disabled={loggingOut} onClick={handleLogout}>
               Cerrar sesion
             </DropdownMenuItem>

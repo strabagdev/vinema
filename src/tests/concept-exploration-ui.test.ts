@@ -329,7 +329,7 @@ describe("ConceptExplorationClient", () => {
     expect(screen.textContent).not.toContain("USES");
     expect(
       Array.from(screen.querySelectorAll("a")).some((link) =>
-        link.getAttribute("href")?.startsWith("/notes/detail?nodeId=meaning"),
+        link.getAttribute("href")?.startsWith("/memory/detail?nodeId=meaning"),
       ),
     ).toBeTruthy();
 
@@ -399,7 +399,7 @@ describe("ConceptExplorationClient", () => {
     expect(screen.textContent).toContain("Ha ganado actividad");
     expect(
       Array.from(screen.querySelectorAll("a")).some((link) =>
-        link.getAttribute("href")?.startsWith("/notes/detail?nodeId=evolution-recent"),
+        link.getAttribute("href")?.startsWith("/memory/detail?nodeId=evolution-recent"),
       ),
     ).toBeTruthy();
   });

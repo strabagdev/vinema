@@ -199,7 +199,7 @@ export function ArchiveClient() {
         nodeId,
         vinemaContext.device,
       );
-      setFeedback("Captura restaurada. Ya vuelve a estar en la Base de Conocimiento.");
+      setFeedback("Captura restaurada. Ya vuelve a estar en Memoria.");
       await loadArchive();
     } catch {
       setError("No se pudo restaurar la captura.");
@@ -210,7 +210,7 @@ export function ArchiveClient() {
 
   function clearSearch() {
     setDraftQuery("");
-    router.replace("/notes/archive", { scroll: false });
+    router.replace("/memory/archive", { scroll: false });
   }
 
   function handleSubmit(event: React.FormEvent) {
@@ -232,7 +232,7 @@ export function ArchiveClient() {
           </p>
         </div>
         <Button asChild variant="outline">
-          <Link href="/notes">Volver a Base de Conocimiento</Link>
+          <Link href="/memory">Volver a Memoria</Link>
         </Button>
       </div>
 
@@ -277,7 +277,7 @@ export function ArchiveClient() {
         <p className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-600" aria-live="polite">
           {feedback}{" "}
           <Link href={getKnowledgeBasePath()} className="font-medium underline">
-            Ver en Base de Conocimiento
+            Ver en Memoria
           </Link>
         </p>
       ) : null}
@@ -327,7 +327,7 @@ export function ArchiveClient() {
               : archivedCaptures.map((node) => (
                   <ArchiveResultItem
                     key={node.id}
-                    href={getNodeDetailPath(node.id, { returnTo: "/notes/archive" })}
+                    href={getNodeDetailPath(node.id, { returnTo: "/memory/archive" })}
                     preview={getCapturePreview(node.content, { maxLength: 180 })}
                     excerpt={getContentExcerpt(node.content) || "Sin contenido"}
                     identity={captureIdentities.get(node.id) ?? null}

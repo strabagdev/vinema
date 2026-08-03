@@ -6,6 +6,8 @@ export interface CaptureIdentityConcept {
   id: string;
   label: string;
   normalizedLabel: string;
+  aliases: string[];
+  normalizedAliases: string[];
 }
 
 export interface CaptureEmergentIdentity {
@@ -60,6 +62,8 @@ export function deriveCaptureEmergentIdentity({
       id: context.id,
       label: context.name,
       normalizedLabel,
+      aliases: context.aliases ?? [],
+      normalizedAliases: context.normalizedAliases ?? [],
     });
   }
 

@@ -1,11 +1,9 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
-import { useRouter } from "next/navigation";
 import {
   Brain,
   Download,
-  Network,
   RotateCcw,
   Trash2,
   Upload,
@@ -59,8 +57,11 @@ const emptySummary: KnowledgeResetCounts = {
   relations: 0,
 };
 
-export function KnowledgeManagementCenterMenuItem() {
-  const router = useRouter();
+export function KnowledgeManagementCenterMenuItem({
+  label = "Conocimiento",
+}: {
+  label?: string;
+}) {
   const auth = useAuth();
   const vinemaContext = useVinemaContext();
   const feedback = useVisualFeedback();
@@ -274,12 +275,6 @@ export function KnowledgeManagementCenterMenuItem() {
     }
   }
 
-  function handleExplore() {
-    setOpen(false);
-    resetCenterState();
-    router.push("/concepts");
-  }
-
   return (
     <Dialog.Root open={open} onOpenChange={handleOpenChange}>
       <Dialog.Trigger asChild>
@@ -292,7 +287,7 @@ export function KnowledgeManagementCenterMenuItem() {
           }}
         >
           <Brain className="mr-2 h-4 w-4" aria-hidden="true" />
-          Conocimiento
+          {label}
         </DropdownMenuItem>
       </Dialog.Trigger>
       <Dialog.Portal>
@@ -329,7 +324,7 @@ export function KnowledgeManagementCenterMenuItem() {
                     id="knowledge-center-description"
                     className="mt-1 text-sm leading-6 text-zinc-600"
                   >
-                    Tu memoria puede respaldarse, restaurarse o comenzar nuevamente.
+                    Acciones administrativas de tu memoria local.
                   </Dialog.Description>
                 </div>
                 <Dialog.Close asChild>
@@ -348,14 +343,12 @@ export function KnowledgeManagementCenterMenuItem() {
             <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
               {view === "overview" ? (
                 <KnowledgeOverview
-                  summary={summary}
                   ready={ready}
                   processing={processing}
                   localError={localError}
                   onBackup={handleBackup}
                   onRestore={handleRestoreSelect}
                   onReset={prepareReset}
-                  onExplore={handleExplore}
                 />
               ) : null}
               {view === "restore-confirmation" && restorePreview ? (
@@ -417,32 +410,27 @@ export function KnowledgeManagementCenterMenuItem() {
 }
 
 function KnowledgeOverview({
-  summary,
   ready,
   processing,
   localError,
   onBackup,
   onRestore,
   onReset,
-  onExplore,
 }: {
-  summary: KnowledgeResetCounts;
   ready: boolean;
   processing: "backup" | "restore" | "reset" | null;
   localError: string | null;
   onBackup(): void;
   onRestore(): void;
   onReset(): void;
-  onExplore(): void;
 }) {
   return (
     <div className="space-y-5">
-      <KnowledgeSummary summary={summary} />
       {localError ? <LocalError message={localError} /> : null}
       <div className="space-y-2">
         <KnowledgeAction
           icon={<Download className="h-5 w-5" aria-hidden="true" />}
-          title="Respaldar memoria"
+          title="Exportar memoria"
           description="Guarda una copia completa de tu memoria."
           disabled={!ready || Boolean(processing)}
           busy={processing === "backup"}
@@ -450,7 +438,7 @@ function KnowledgeOverview({
         />
         <KnowledgeAction
           icon={<Upload className="h-5 w-5" aria-hidden="true" />}
-          title="Restaurar memoria"
+          title="Importar memoria"
           description="Recupera un respaldo guardado anteriormente."
           disabled={!ready || Boolean(processing)}
           busy={processing === "restore"}
@@ -464,14 +452,6 @@ function KnowledgeOverview({
           disabled={!ready || Boolean(processing)}
           busy={processing === "reset"}
           onClick={onReset}
-        />
-        <KnowledgeAction
-          icon={<Network className="h-5 w-5" aria-hidden="true" />}
-          title="Explorar"
-          description="Recorre tus conceptos, recuerdos y conexiones."
-          disabled={!ready || Boolean(processing)}
-          busy={false}
-          onClick={onExplore}
         />
       </div>
     </div>
@@ -497,7 +477,7 @@ function RestoreConfirmation({
     <div className="space-y-5">
       <ViewHeading
         icon={<Upload className="h-5 w-5" aria-hidden="true" />}
-        title="Restaurar memoria"
+        title="Importar memoria"
         description="Vinema agregara solo conocimiento nuevo. Si detecta conflictos, no aplicara cambios parciales."
       />
       <div className="rounded-lg border border-zinc-200 p-4 text-sm text-zinc-600">

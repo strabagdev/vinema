@@ -192,13 +192,13 @@ describe("Archive", () => {
     expect(screen.textContent).toContain(
       `${KNOWLEDGE_BASE_BATCH_SIZE + 1} capturas archivadas.`,
     );
-    expect(screen.querySelectorAll("a[href^='/notes/detail']")).toHaveLength(
+    expect(screen.querySelectorAll("a[href^='/memory/detail']")).toHaveLength(
       KNOWLEDGE_BASE_BATCH_SIZE,
     );
 
     await click(getButton(screen, "Cargar mas"));
 
-    const links = Array.from(screen.querySelectorAll("a[href^='/notes/detail']"));
+    const links = Array.from(screen.querySelectorAll("a[href^='/memory/detail']"));
     expect(links).toHaveLength(KNOWLEDGE_BASE_BATCH_SIZE + 1);
     expect(new Set(links.map((link) => link.getAttribute("href"))).size).toBe(
       KNOWLEDGE_BASE_BATCH_SIZE + 1,
@@ -258,8 +258,8 @@ describe("Archive", () => {
       '1 resultados archivados para "Mitcom (A)".',
     );
     expect(screen.querySelectorAll("mark")).toHaveLength(2);
-    expect(screen.querySelector("a[href^='/notes/detail']")?.getAttribute("href")).toBe(
-      "/notes/detail?nodeId=archived-match&returnTo=%2Fnotes%2Farchive%3Fq%3DMitcom%2520(A)",
+    expect(screen.querySelector("a[href^='/memory/detail']")?.getAttribute("href")).toBe(
+      "/memory/detail?nodeId=archived-match&returnTo=%2Fmemory%2Farchive%3Fq%3DMitcom%2520(A)",
     );
 
     await expect(
@@ -313,7 +313,7 @@ describe("Archive", () => {
       'No encontramos capturas archivadas para "nada".',
     );
     await click(getButton(noResults, "Limpiar busqueda"));
-    expect(mocks.replace).toHaveBeenCalledWith("/notes/archive", {
+    expect(mocks.replace).toHaveBeenCalledWith("/memory/archive", {
       scroll: false,
     });
   });

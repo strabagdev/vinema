@@ -14,9 +14,9 @@ describe("contextual concept exploration", () => {
       "/concepts/detail?contextId=railway%2Fsync%3F",
     );
     expect(
-      getConceptExplorationPath("workspace", { returnTo: "/notes/detail?nodeId=a" }),
+      getConceptExplorationPath("workspace", { returnTo: "/memory/detail?nodeId=a" }),
     ).toBe(
-      "/concepts/detail?contextId=workspace&returnTo=%2Fnotes%2Fdetail%3FnodeId%3Da",
+      "/concepts/detail?contextId=workspace&returnTo=%2Fmemory%2Fdetail%3FnodeId%3Da",
     );
     expect(
       getConceptExplorationPath("workspace", { returnTo: "/", from: "panel" }),

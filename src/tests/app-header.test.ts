@@ -155,7 +155,7 @@ describe("AppHeader", () => {
     document.body.replaceChildren();
   });
 
-  it("keeps the session menu minimal and opens Conocimiento from it", async () => {
+  it("separates knowledge navigation from administration in the session menu", async () => {
     const screen = await renderHeader();
     const header = screen.querySelector("header");
     const wordmarkLink = screen.querySelector("a[aria-label='Ir a Inicio']");
@@ -173,48 +173,52 @@ describe("AppHeader", () => {
 
     await click(screen.querySelector("button[aria-label='Abrir menu']"));
 
-    expect(document.body.querySelector("a[href='/notes/archive']")).toBeTruthy();
     expect(document.body.textContent).toContain("Conocimiento");
+    expect(document.body.querySelector("a[href='/memory']")).toBeTruthy();
+    expect(document.body.querySelector("a[href='/concepts']")).toBeTruthy();
+    expect(document.body.textContent).toContain("Memoria");
+    expect(document.body.textContent).toContain("Conceptos");
+    expect(document.body.textContent).toContain("Administrar");
     expect(document.body.textContent).not.toContain("Mi conocimiento");
     expect(document.body.textContent).toContain("Cerrar sesion");
+    expect(document.body.querySelector("a[href='/notes']")).toBeNull();
+    expect(document.body.querySelector("a[href='/notes/archive']")).toBeNull();
     expect(document.body.textContent).not.toContain("Explorar");
-    expect(document.body.textContent).not.toContain("Respaldar memoria");
-    expect(document.body.textContent).not.toContain("Restaurar memoria");
+    expect(document.body.textContent).not.toContain("Exportar memoria");
+    expect(document.body.textContent).not.toContain("Importar memoria");
     expect(document.body.textContent).not.toContain("Vaciar memoria");
     expect(document.body.textContent).not.toContain("Sincronizacion futura");
 
-    await click(getByText("Conocimiento"));
+    await click(getByText("Administrar"));
 
     expect(getDialog()).toBeTruthy();
     expect(document.body.textContent).toContain("Conocimiento");
-    expect(document.body.textContent).toContain("22 capturas · 6 conceptos · 15 relaciones");
-    expect(document.body.textContent).toContain("Respaldar memoria");
-    expect(document.body.textContent).toContain("Restaurar memoria");
+    expect(document.body.textContent).toContain("Exportar memoria");
+    expect(document.body.textContent).toContain("Importar memoria");
     expect(document.body.textContent).toContain("Vaciar memoria");
-    expect(document.body.textContent).toContain("Explorar");
-    expect(document.body.textContent).toContain(
-      "Recorre tus conceptos, recuerdos y conexiones.",
-    );
+    expect(document.body.textContent).not.toContain("22 capturas · 6 conceptos · 15 relaciones");
+    expect(document.body.textContent).not.toContain("Explorar");
     expect(document.body.textContent).not.toContain("workspace");
   });
 
-  it("opens Explore from Conocimiento and closes the center", async () => {
+  it("navigates directly to Memoria and Conceptos from the knowledge menu", async () => {
     const screen = await renderHeader();
 
     await click(screen.querySelector("button[aria-label='Abrir menu']"));
-    await click(getByText("Conocimiento"));
-    await click(getByText("Explorar"));
 
-    expect(knowledgeMocks.push).toHaveBeenCalledWith("/concepts");
-    expect(document.body.querySelector("[role='dialog']")).toBeNull();
-    expect(document.body.textContent).not.toContain("Respaldar memoria");
+    expect(document.body.querySelector("a[href='/memory']")?.textContent).toContain(
+      "Memoria",
+    );
+    expect(document.body.querySelector("a[href='/concepts']")?.textContent).toContain(
+      "Conceptos",
+    );
   });
 
   it("renders the center as a responsive portal with internal scrolling", async () => {
     const screen = await renderHeader();
 
     await click(screen.querySelector("button[aria-label='Abrir menu']"));
-    await click(getByText("Conocimiento"));
+    await click(getByText("Administrar"));
 
     const dialog = getDialog();
     expect(document.body.contains(dialog)).toBe(true);
@@ -224,12 +228,12 @@ describe("AppHeader", () => {
     expect(dialog.querySelector(".overflow-y-auto")).toBeTruthy();
   });
 
-  it("keeps backup in the center and reuses the existing download flow", async () => {
+  it("keeps export in the center and reuses the existing download flow", async () => {
     const screen = await renderHeader();
 
     await click(screen.querySelector("button[aria-label='Abrir menu']"));
-    await click(getByText("Conocimiento"));
-    await click(getByText("Respaldar memoria"));
+    await click(getByText("Administrar"));
+    await click(getByText("Exportar memoria"));
 
     expect(knowledgeMocks.exportKnowledgeBackup).toHaveBeenCalledTimes(1);
     expect(knowledgeMocks.downloadKnowledgeBackup).toHaveBeenCalledWith(
@@ -242,8 +246,8 @@ describe("AppHeader", () => {
     const screen = await renderHeader();
 
     await click(screen.querySelector("button[aria-label='Abrir menu']"));
-    await click(getByText("Conocimiento"));
-    await click(getByText("Restaurar memoria"));
+    await click(getByText("Administrar"));
+    await click(getByText("Importar memoria"));
     await changeFileInput(new File(["{}"], "vinema-knowledge.json", {
       type: "application/json",
     }));
@@ -258,7 +262,7 @@ describe("AppHeader", () => {
     const screen = await renderHeader();
 
     await click(screen.querySelector("button[aria-label='Abrir menu']"));
-    await click(getByText("Conocimiento"));
+    await click(getByText("Administrar"));
     await click(getByText("Vaciar memoria"));
 
     expect(document.body.textContent).toContain(
@@ -278,7 +282,7 @@ describe("AppHeader", () => {
     const screen = await renderHeader();
 
     await click(screen.querySelector("button[aria-label='Abrir menu']"));
-    await click(getByText("Conocimiento"));
+    await click(getByText("Administrar"));
     await click(getByText("Vaciar memoria"));
     await inputText(getConfirmationInput(), "VACIAR");
     await click(document.body.querySelector("button[aria-label='Cerrar Conocimiento']"));
@@ -289,7 +293,7 @@ describe("AppHeader", () => {
     if (!document.body.textContent?.includes("Conocimiento")) {
       await click(screen.querySelector("button[aria-label='Abrir menu']"));
     }
-    await click(getByText("Conocimiento"));
+    await click(getByText("Administrar"));
     await click(getByText("Vaciar memoria"));
 
     expect(getConfirmationInput().value).toBe("");

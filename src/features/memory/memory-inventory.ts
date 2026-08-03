@@ -106,7 +106,7 @@ export const MEMORY_INVENTORY: MemoryInventoryItem[] = [
     export: false,
     reset: false,
     restore: false,
-    notes: "Historial tecnico de sync; conserva marcador de reset.",
+    notes: "Registro tecnico de sync; conserva marcador de reset.",
   },
   {
     data: "ProcessedMutation",

@@ -8,7 +8,7 @@ import { AppShell } from "@/components/app-shell/app-shell";
   .IS_REACT_ACT_ENVIRONMENT = true;
 
 const mocks = vi.hoisted(() => ({
-  pathname: "/notes",
+  pathname: "/memory",
   push: vi.fn(),
   replace: vi.fn(),
   logout: vi.fn(async (): Promise<void> => undefined),
@@ -59,7 +59,7 @@ let currentRoot: Root | null = null;
 
 describe("Global writing entry", () => {
   beforeEach(() => {
-    mocks.pathname = "/notes";
+    mocks.pathname = "/memory";
     mocks.push.mockClear();
     mocks.replace.mockClear();
     mocks.logout.mockReset();

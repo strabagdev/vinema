@@ -621,7 +621,9 @@ describe("NoteDetailView read mode", () => {
     const screen = await renderMessage();
 
     expect(screen.textContent).toContain("Captura no encontrada");
-    expect(getLink(screen, "Volver a Base de Conocimiento")?.getAttribute("href")).toBe("/notes");
+    expect(getLink(screen, "Volver a Memoria")?.getAttribute("href")).toBe(
+      "/memory",
+    );
   });
 });
 
