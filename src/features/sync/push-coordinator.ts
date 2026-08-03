@@ -7,6 +7,11 @@ import {
   SYNC_OUTBOX_MAX_LIST_LIMIT,
   type SyncMutationOutboxRecord,
 } from "@/features/sync/sync-outbox-repository";
+import {
+  IndexedDbSyncEntityAcknowledgementRepository,
+  createAcknowledgementFromAcceptedMutation,
+} from "@/features/sync/sync-entity-acknowledgement-repository";
+import { appendMemorySyncEvent } from "@/features/sync/observability/sync-event-buffer";
 
 export const DEFAULT_STALE_PROCESSING_MS = 5 * 60 * 1000;
 export const DEFAULT_MAX_ATTEMPTS_PER_RUN = 2;
@@ -94,6 +99,12 @@ export type PushCoordinatorMetadataRepository = {
   clearFailure(workspaceId: string, deviceId: string): Promise<unknown>;
 };
 
+export type PushCoordinatorAcknowledgementRepository = {
+  recordMany(
+    records: Parameters<IndexedDbSyncEntityAcknowledgementRepository["recordMany"]>[0],
+  ): Promise<unknown>;
+};
+
 export type PushCoordinatorRunRegistry = {
   acquire(workspaceId: string): boolean;
   release(workspaceId: string): void;
@@ -113,6 +124,7 @@ export type CreatePushCoordinatorInput = {
   syncClient: Pick<SyncClient, "push">;
   outboxRepository: PushCoordinatorOutboxRepository;
   metadataRepository: PushCoordinatorMetadataRepository;
+  acknowledgementRepository?: PushCoordinatorAcknowledgementRepository;
   config?: PushCoordinatorConfig;
   clock?: () => string;
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
@@ -138,6 +150,7 @@ export function createPushCoordinator({
   syncClient,
   outboxRepository,
   metadataRepository,
+  acknowledgementRepository = new IndexedDbSyncEntityAcknowledgementRepository(),
   config = {},
   clock = () => new Date().toISOString(),
   sleep = sleepWithAbort,
@@ -178,6 +191,7 @@ export function createPushCoordinator({
           syncClient,
           outboxRepository,
           metadataRepository,
+          acknowledgementRepository,
           config: normalizedConfig,
           clock,
           sleep,
@@ -308,6 +322,7 @@ async function processPendingBatches(input: {
   syncClient: Pick<SyncClient, "push">;
   outboxRepository: PushCoordinatorOutboxRepository;
   metadataRepository: PushCoordinatorMetadataRepository;
+  acknowledgementRepository: PushCoordinatorAcknowledgementRepository;
   config: NormalizedConfig;
   clock: () => string;
   sleep: (ms: number, signal: AbortSignal) => Promise<void>;
@@ -373,12 +388,16 @@ async function processPendingBatches(input: {
 async function applyPushResponse(
   input: {
     outboxRepository: PushCoordinatorOutboxRepository;
+    acknowledgementRepository: PushCoordinatorAcknowledgementRepository;
     state: RunState;
   },
   batch: SyncMutationOutboxRecord[],
   response: PushResponse,
 ) {
   const acceptedIds = new Set(response.accepted.map((entry) => entry.mutationId));
+  const acceptedVersions = new Map(
+    response.accepted.map((entry) => [entry.mutationId, entry.version]),
+  );
   const conflictIds = new Set(response.conflicts.map((entry) => entry.mutationId));
   const duplicateRejected = response.rejected.filter((entry) =>
     isDuplicateRejection(entry.code),
@@ -391,13 +410,42 @@ async function applyPushResponse(
   const removableIds = [...acceptedIds, ...duplicateIds];
 
   if (removableIds.length > 0) {
+    const acceptedRecords = batch.filter((record) => acceptedIds.has(record.mutationId));
+    await input.acknowledgementRepository.recordMany(
+      acceptedRecords.map((record) =>
+        createAcknowledgementFromAcceptedMutation({
+          record,
+          remoteVersion: acceptedVersions.get(record.mutationId) ?? 1,
+          acknowledgedAt: new Date().toISOString(),
+          generation: response.serverCursor,
+        }),
+      ),
+    );
     await input.outboxRepository.remove(removableIds);
     input.state.result.removedFromOutbox += removableIds.length;
     input.state.result.pushed += acceptedIds.size;
+    appendMemorySyncEvent({
+      type: "PUSH_SUCCEEDED",
+      workspaceId: batch[0]?.workspaceId,
+      deviceId: batch[0]?.deviceId,
+      count: acceptedIds.size,
+      status: "ACCEPTED",
+    });
   }
 
   for (const conflict of response.conflicts) {
     await input.outboxRepository.markConflict(conflict.mutationId, conflict);
+    const record = batch.find((item) => item.mutationId === conflict.mutationId);
+    appendMemorySyncEvent({
+      type: "CONFLICT_DETECTED",
+      workspaceId: record?.workspaceId,
+      deviceId: record?.deviceId,
+      entityType: conflict.entityType,
+      entityId: conflict.entityId,
+      mutationId: conflict.mutationId,
+      status: "CONFLICT",
+      code: "VERSION_CONFLICT",
+    });
     input.state.result.conflicts += 1;
     input.state.result.errors.push({
       code: "VERSION_CONFLICT",
@@ -472,6 +520,13 @@ async function handlePushError(
 
   if (code === "NETWORK_ERROR" || code === "TIMEOUT") {
     await input.outboxRepository.markPending(ids);
+    appendMemorySyncEvent({
+      type: "OFFLINE_ENTERED",
+      workspaceId: batch[0]?.workspaceId,
+      deviceId: batch[0]?.deviceId,
+      status: "OFFLINE",
+      code,
+    });
     input.state.result.deferred += ids.length;
     input.state.result.errors.push({ code, message: errorMessage(error) });
     input.state.processingIds = [];
@@ -480,6 +535,14 @@ async function handlePushError(
 
   if (code === "AUTH_ERROR") {
     await input.outboxRepository.markPending(ids);
+    appendMemorySyncEvent({
+      type: "PUSH_FAILED",
+      workspaceId: batch[0]?.workspaceId,
+      deviceId: batch[0]?.deviceId,
+      status: "AUTH_ERROR",
+      code,
+      count: ids.length,
+    });
     input.state.result.deferred += ids.length;
     input.state.result.errors.push({ code, message: errorMessage(error) });
     input.state.processingIds = [];
@@ -506,6 +569,16 @@ async function handlePushError(
         message: errorMessage(error),
         nextAttemptAt,
       });
+      appendMemorySyncEvent({
+        type: "PUSH_FAILED",
+        workspaceId: record.workspaceId,
+        deviceId: record.deviceId,
+        entityType: record.mutation.entityType,
+        entityId: record.mutation.entityId,
+        mutationId: record.mutationId,
+        status: "FAILED",
+        code,
+      });
       input.state.result.failed += 1;
     }
     input.state.result.errors.push({ code, message: errorMessage(error) });
@@ -517,6 +590,16 @@ async function handlePushError(
     await input.outboxRepository.markFailed(record.mutationId, {
       code,
       message: errorMessage(error),
+    });
+    appendMemorySyncEvent({
+      type: "PUSH_FAILED",
+      workspaceId: record.workspaceId,
+      deviceId: record.deviceId,
+      entityType: record.mutation.entityType,
+      entityId: record.mutation.entityId,
+      mutationId: record.mutationId,
+      status: "FAILED",
+      code,
     });
     input.state.result.failed += 1;
   }

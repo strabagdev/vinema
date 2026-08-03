@@ -14,6 +14,7 @@ import {
   CONTEXTS_STORE,
   NODE_CONTEXT_RELATIONS_STORE,
   NODES_STORE,
+  SYNC_ENTITY_ACKS_STORE,
   SYNC_MUTATIONS_STORE,
 } from "@/infrastructure/storage/vinema-db";
 import {
@@ -21,6 +22,9 @@ import {
   mapRemoteCaptureToLocalNode,
   mapRemoteConceptToLocalContext,
 } from "@/features/sync/sync-mappers";
+import type {
+  SyncEntityAcknowledgementRecord,
+} from "@/features/sync/sync-entity-acknowledgement-repository";
 import type {
   SyncMutationOutboxRecord,
   SyncMutationOutboxStatus,
@@ -54,6 +58,9 @@ export type RemoteChangeApplierTransaction = {
     name: typeof NODE_CONTEXT_RELATIONS_STORE,
   ): RemoteObjectStore<NodeContextRelation>;
   objectStore(
+    name: typeof SYNC_ENTITY_ACKS_STORE,
+  ): RemoteObjectStore<SyncEntityAcknowledgementRecord>;
+  objectStore(
     name: typeof SYNC_MUTATIONS_STORE,
   ): RemoteObjectStore<SyncMutationOutboxRecord>;
 };
@@ -62,7 +69,7 @@ type RemoteObjectStore<T> = {
   get(key: string): Promise<T | undefined>;
   getAll(): Promise<T[]>;
   put(value: T): Promise<unknown>;
-  delete(key: string): Promise<unknown>;
+  delete(key: IDBValidKey): Promise<unknown>;
 };
 
 type ApplyRemoteChangesInput = {
@@ -119,8 +126,8 @@ export async function applyRemoteChanges({
       transaction,
       change,
       workspaceId,
-      result,
-    });
+    result,
+  });
   }
 
   for (const change of entityChanges) {
@@ -220,11 +227,12 @@ async function applyWorkspaceKnowledgeReset(input: {
     );
   }
 
-  const [relations, nodes, contexts, mutations] = await Promise.all([
+  const [relations, nodes, contexts, mutations, acknowledgements] = await Promise.all([
     input.transaction.objectStore(NODE_CONTEXT_RELATIONS_STORE).getAll(),
     input.transaction.objectStore(NODES_STORE).getAll(),
     input.transaction.objectStore(CONTEXTS_STORE).getAll(),
     input.transaction.objectStore(SYNC_MUTATIONS_STORE).getAll(),
+    input.transaction.objectStore(SYNC_ENTITY_ACKS_STORE).getAll(),
   ]);
   let deleted = 0;
 
@@ -251,6 +259,15 @@ async function applyWorkspaceKnowledgeReset(input: {
       await input.transaction.objectStore(SYNC_MUTATIONS_STORE).delete(mutation.mutationId);
     }
   }
+  for (const acknowledgement of acknowledgements) {
+    if (acknowledgement.workspaceId === input.workspaceId) {
+      await input.transaction.objectStore(SYNC_ENTITY_ACKS_STORE).delete([
+        acknowledgement.workspaceId,
+        acknowledgement.entityType,
+        acknowledgement.entityId,
+      ]);
+    }
+  }
 
   if (deleted > 0) {
     input.result.applied += 1;
@@ -262,6 +279,7 @@ async function applyWorkspaceKnowledgeReset(input: {
 
 async function applyCapture({
   transaction,
+  change,
   entity,
   deviceId,
   result,
@@ -282,16 +300,19 @@ async function applyCapture({
   }
 
   if (decision === "IDEMPOTENT") {
+    await recordRemoteAcknowledgement(transaction, change, entity.version, entity.updatedAt);
     result.idempotent += 1;
     return;
   }
 
   await store.put(mapRemoteCaptureToLocalNode(entity, deviceId));
+  await recordRemoteAcknowledgement(transaction, change, entity.version, entity.updatedAt);
   result.applied += 1;
 }
 
 async function applyConcept({
   transaction,
+  change,
   entity,
   result,
 }: {
@@ -310,11 +331,13 @@ async function applyConcept({
   }
 
   if (decision === "IDEMPOTENT") {
+    await recordRemoteAcknowledgement(transaction, change, entity.version, entity.updatedAt);
     result.idempotent += 1;
     return;
   }
 
   await store.put(mapRemoteConceptToLocalContext(entity));
+  await recordRemoteAcknowledgement(transaction, change, entity.version, entity.updatedAt);
   result.applied += 1;
 }
 
@@ -343,22 +366,50 @@ async function applyCaptureConcept({
   if (entity.archivedAt !== null || change.operation === "archive") {
     if (existing) {
       await store.delete(entity.id);
+      await recordRemoteAcknowledgement(
+        transaction,
+        change,
+        entity.version,
+        entity.updatedAt,
+      );
       result.applied += 1;
       return;
     }
 
+    await recordRemoteAcknowledgement(transaction, change, entity.version, entity.updatedAt);
     result.idempotent += 1;
     return;
   }
 
   if (decision === "IDEMPOTENT") {
+    await recordRemoteAcknowledgement(transaction, change, entity.version, entity.updatedAt);
     result.idempotent += 1;
     return;
   }
 
   await assertRelationDependencies(transaction, change);
   await store.put(mapRemoteCaptureConceptToLocalRelation(entity));
+  await recordRemoteAcknowledgement(transaction, change, entity.version, entity.updatedAt);
   result.applied += 1;
+}
+
+async function recordRemoteAcknowledgement(
+  transaction: RemoteChangeApplierTransaction,
+  change: RemoteEntitySyncChange,
+  localVersion: number,
+  localUpdatedAt: string,
+) {
+  await transaction.objectStore(SYNC_ENTITY_ACKS_STORE).put({
+    workspaceId: change.entity.workspaceId,
+    entityType: change.entityType,
+    entityId: change.entity.id,
+    acknowledgedRemoteVersion: change.entity.version,
+    acknowledgedLocalVersion: localVersion,
+    acknowledgedLocalUpdatedAt: localUpdatedAt,
+    acknowledgedAt: localUpdatedAt,
+    generation: change.sequence,
+    lastChangeId: change.sequence,
+  });
 }
 
 async function assertRelationDependencies(

@@ -5,6 +5,7 @@ import {
   CONTEXTS_STORE,
   NODE_CONTEXT_RELATIONS_STORE,
   NODES_STORE,
+  SYNC_ENTITY_ACKS_STORE,
   SYNC_METADATA_STORE,
   SYNC_MUTATIONS_STORE,
   getVinemaDb,
@@ -125,6 +126,7 @@ export async function clearLocalKnowledge({
       NODE_CONTEXT_RELATIONS_STORE,
       NODES_STORE,
       CONTEXTS_STORE,
+      SYNC_ENTITY_ACKS_STORE,
       SYNC_MUTATIONS_STORE,
       SYNC_METADATA_STORE,
     ],
@@ -149,6 +151,10 @@ export async function clearLocalKnowledge({
       .objectStore(SYNC_MUTATIONS_STORE)
       .index("by-workspace")
       .getAll(workspaceId);
+    const acknowledgements = await transaction
+      .objectStore(SYNC_ENTITY_ACKS_STORE)
+      .index("by-workspace")
+      .getAll(workspaceId);
     const metadata = await transaction
       .objectStore(SYNC_METADATA_STORE)
       .index("by-workspace")
@@ -165,6 +171,13 @@ export async function clearLocalKnowledge({
     }
     for (const mutation of mutations) {
       await transaction.objectStore(SYNC_MUTATIONS_STORE).delete(mutation.mutationId);
+    }
+    for (const acknowledgement of acknowledgements) {
+      await transaction.objectStore(SYNC_ENTITY_ACKS_STORE).delete([
+        acknowledgement.workspaceId,
+        acknowledgement.entityType,
+        acknowledgement.entityId,
+      ]);
     }
     for (const record of metadata) {
       await transaction.objectStore(SYNC_METADATA_STORE).put({

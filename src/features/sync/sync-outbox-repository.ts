@@ -21,6 +21,7 @@ export type SyncMutationOutboxRecord = {
   workspaceId: string;
   deviceId: string;
   mutation: SyncMutation;
+  localVersion?: number;
   status: SyncMutationOutboxStatus;
   attemptCount: number;
   createdAt: string;
@@ -36,6 +37,7 @@ export type SyncMutationEnqueueInput = {
   workspaceId: string;
   deviceId: string;
   mutation: SyncMutation;
+  localVersion?: number;
   createdAt?: string;
 };
 
@@ -152,6 +154,36 @@ export class IndexedDbSyncOutboxRepository {
 
   async listConflicts(workspaceId: string, limit: number): Promise<SyncMutationOutboxRecord[]> {
     return this.listByStatus(workspaceId, "CONFLICT", limit);
+  }
+
+  async listByWorkspace(
+    workspaceId: string,
+    limit = SYNC_OUTBOX_MAX_LIST_LIMIT,
+  ): Promise<SyncMutationOutboxRecord[]> {
+    assertNonEmpty("workspaceId", workspaceId);
+    assertLimit(limit);
+    const db = await getVinemaDb();
+    const records = await db.getAllFromIndex(
+      SYNC_MUTATIONS_STORE,
+      "by-workspace",
+      workspaceId,
+    );
+    return sortOutboxRecords(records).slice(0, limit);
+  }
+
+  async listByEntity(input: {
+    workspaceId: string;
+    entityId: string;
+    limit?: number;
+  }): Promise<SyncMutationOutboxRecord[]> {
+    assertNonEmpty("workspaceId", input.workspaceId);
+    assertNonEmpty("entityId", input.entityId);
+    const records = await this.listByWorkspace(
+      input.workspaceId,
+      input.limit ?? SYNC_OUTBOX_MAX_LIST_LIMIT,
+    );
+
+    return records.filter((record) => record.mutation.entityId === input.entityId);
   }
 
   async markProcessing(mutationIds: string[]): Promise<SyncMutationOutboxRecord[]> {
@@ -486,6 +518,7 @@ export function createSyncMutationOutboxRecord(
     workspaceId: input.workspaceId,
     deviceId: input.deviceId,
     mutation: parsed.data,
+    localVersion: input.localVersion,
     status: "PENDING",
     attemptCount: 0,
     createdAt: now,

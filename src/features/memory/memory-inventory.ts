@@ -229,6 +229,16 @@ export const MEMORY_INVENTORY: MemoryInventoryItem[] = [
     notes: "Cursores y errores; el cursor avanza al resetVersion.",
   },
   {
+    data: "sync_entity_acknowledgements",
+    location: "IndexedDB",
+    category: "SYNC_INFRASTRUCTURE",
+    isMemory: false,
+    export: false,
+    reset: true,
+    restore: false,
+    notes: "Ledger local de versiones reconocidas; se limpia en reset para no mezclar generaciones.",
+  },
+  {
     data: "association suggestions",
     location: "Runtime",
     category: "DERIVED_PERSISTENT_MEMORY",

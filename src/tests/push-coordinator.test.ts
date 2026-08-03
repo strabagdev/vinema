@@ -57,6 +57,15 @@ describe("push coordinator", () => {
         signal: expect.any(AbortSignal),
       }),
     );
+    expect(setup.acknowledgementRepository.recordMany).toHaveBeenCalledWith([
+      expect.objectContaining({
+        workspaceId,
+        entityType: "capture",
+        entityId: mutation.entityId,
+        acknowledgedRemoteVersion: 1,
+        generation: "1",
+      }),
+    ]);
   });
 
   it("processes multiple batches", async () => {
@@ -414,6 +423,9 @@ function createSetup(input: {
 } = {}) {
   const outbox = new FakeOutboxRepository(input.records ?? []);
   const metadata = new FakeMetadataRepository();
+  const acknowledgementRepository = {
+    recordMany: vi.fn(async () => undefined),
+  };
   const responses = [...(input.responses ?? [])];
   const push =
     input.push ??
@@ -436,9 +448,10 @@ function createSetup(input: {
     sleep: input.sleep ?? (async () => undefined),
     logger: input.logger,
     runRegistry: input.registry ?? createPushCoordinatorRunRegistry(),
+    acknowledgementRepository,
   });
 
-  return { coordinator, outbox, metadata, client };
+  return { coordinator, outbox, metadata, client, acknowledgementRepository };
 }
 
 class FakeOutboxRepository implements PushCoordinatorOutboxRepository {

@@ -12,6 +12,7 @@ import {
   CONTEXTS_STORE,
   NODE_CONTEXT_RELATIONS_STORE,
   NODES_STORE,
+  SYNC_ENTITY_ACKS_STORE,
   SYNC_METADATA_STORE,
   SYNC_MUTATIONS_STORE,
   getVinemaDb,
@@ -21,6 +22,7 @@ import {
   emitSyncDataChanged,
   type SyncDataEntityType,
 } from "@/features/sync/sync-data-events";
+import { appendMemorySyncEvent } from "@/features/sync/observability/sync-event-buffer";
 
 export const DEFAULT_PULL_BATCH_SIZE = 100;
 export const DEFAULT_MAX_PULL_BATCHES_PER_RUN = 10;
@@ -246,6 +248,15 @@ async function processPullBatches(input: {
       nextCursor: response.nextCursor,
       changes: response.changes.length,
     });
+    if (response.changes.length > 0) {
+      appendMemorySyncEvent({
+        type: "PULL_SUCCEEDED",
+        workspaceId: input.workspaceId,
+        deviceId: input.deviceId,
+        count: response.changes.length,
+        status: "RECEIVED",
+      });
+    }
 
     const applied = await applyBatchAtomically({
       workspaceId: input.workspaceId,
@@ -255,10 +266,24 @@ async function processPullBatches(input: {
       remoteChangeApplier: input.remoteChangeApplier,
     });
     if (applied.applied > 0) {
+      appendMemorySyncEvent({
+        type: "CHANGE_APPLIED",
+        workspaceId: input.workspaceId,
+        deviceId: input.deviceId,
+        count: applied.applied,
+        status: "APPLIED",
+      });
       emitSyncDataChanged({
         workspaceId: input.workspaceId,
         entityTypes: collectChangedEntityTypes(response),
         changedAt: input.clock(),
+      });
+      appendMemorySyncEvent({
+        type: "UI_INVALIDATED",
+        workspaceId: input.workspaceId,
+        deviceId: input.deviceId,
+        count: applied.applied,
+        status: "INVALIDATED",
       });
     }
     accumulate(input.state.result, response, applied);
@@ -306,6 +331,7 @@ async function applyBatchAtomically({
       NODES_STORE,
       CONTEXTS_STORE,
       NODE_CONTEXT_RELATIONS_STORE,
+      SYNC_ENTITY_ACKS_STORE,
       SYNC_MUTATIONS_STORE,
       SYNC_METADATA_STORE,
     ],

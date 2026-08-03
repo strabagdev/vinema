@@ -96,9 +96,11 @@ describe("Global writing entry", () => {
     expect(header?.className).not.toContain("border-b");
     expect(container.querySelector("aside")).toBeNull();
     expect(nav).toBeNull();
-    expect(container.querySelector("a[aria-label='Ir a Inicio']")?.textContent).toContain(
-      "VN",
+    const memoryStatusTrigger = container.querySelector(
+      "button[aria-label='Abrir Estado de la memoria']",
     );
+    expect(memoryStatusTrigger?.getAttribute("data-memory-sync-trigger")).toBe("");
+    expect(memoryStatusTrigger?.textContent).toContain("VN");
     expect(container.querySelector("a[aria-label='Explorar']")).toBeNull();
   });
 

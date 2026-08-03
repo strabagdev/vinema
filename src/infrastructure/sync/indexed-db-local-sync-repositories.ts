@@ -32,6 +32,7 @@ import {
   isSameEnqueuedMutation,
   type SyncMutationOutboxRecord,
 } from "@/features/sync/sync-outbox-repository";
+import { appendMemorySyncEvent } from "@/features/sync/observability/sync-event-buffer";
 import { normalizeContextAliases } from "@/features/concepts/concept-identity";
 
 export type MutationOrigin = "LOCAL" | "REMOTE" | "SYSTEM";
@@ -125,6 +126,7 @@ export class IndexedDbLocalSyncNodeRepository implements NodeRepository {
         syncContext: this.options.syncContext,
         origin: this.origin,
         at: node.createdAt,
+        localVersion: node.version,
         mutation: mapLocalNodeToCaptureMutation({
           mutationId: this.mutationIdFactory(),
           node,
@@ -159,6 +161,7 @@ export class IndexedDbLocalSyncNodeRepository implements NodeRepository {
         syncContext: this.options.syncContext,
         origin: this.origin,
         at: node.updatedAt,
+        localVersion: node.version,
         mutation: mapLocalNodeToCaptureMutation({
           mutationId: this.mutationIdFactory(),
           node,
@@ -227,6 +230,7 @@ export class IndexedDbLocalSyncContextRepository implements ContextRepository {
         syncContext: this.options.syncContext,
         origin: this.origin,
         at: storedContext.updatedAt,
+        localVersion: storedContext.version,
         mutation: mapLocalContextToConceptMutation({
           mutationId: this.mutationIdFactory(),
           context: storedContext,
@@ -300,6 +304,7 @@ export class IndexedDbLocalSyncNodeContextRelationRepository
         syncContext: this.options.syncContext,
         origin: this.origin,
         at: storedRelation.createdAt,
+        localVersion: storedRelation.version,
         mutation: mapLocalRelationToCaptureConceptMutation({
           mutationId: this.mutationIdFactory(),
           relation: storedRelation,
@@ -335,6 +340,7 @@ export class IndexedDbLocalSyncNodeContextRelationRepository
         syncContext: this.options.syncContext,
         origin: this.origin,
         at: archivedAt,
+        localVersion: existing.version,
         mutation: mapLocalRelationToCaptureConceptMutation({
           mutationId: this.mutationIdFactory(),
           relation: existing,
@@ -364,12 +370,14 @@ async function enqueueLocalMutation({
   syncContext,
   origin,
   at,
+  localVersion,
   mutation,
 }: {
   outboxStore: OutboxStore;
   syncContext: LocalSyncContext;
   origin: MutationOrigin;
   at: string;
+  localVersion: number;
   mutation: Parameters<typeof createSyncMutationOutboxRecord>[0]["mutation"];
 }) {
   if (origin !== "LOCAL") {
@@ -382,6 +390,7 @@ async function enqueueLocalMutation({
         workspaceId: syncContext.workspaceId,
         deviceId: syncContext.deviceId,
         mutation,
+        localVersion,
         createdAt: at,
       },
       at,
@@ -401,6 +410,26 @@ async function enqueueLocalMutation({
     }
 
     await outboxStore.put(record);
+    appendMemorySyncEvent({
+      type: "LOCAL_WRITE_CREATED",
+      timestamp: at,
+      workspaceId: syncContext.workspaceId,
+      deviceId: syncContext.deviceId,
+      entityType: mutation.entityType,
+      entityId: mutation.entityId,
+      mutationId: record.mutationId,
+      status: "LOCAL",
+    });
+    appendMemorySyncEvent({
+      type: "OUTBOX_ENQUEUED",
+      timestamp: at,
+      workspaceId: syncContext.workspaceId,
+      deviceId: syncContext.deviceId,
+      entityType: mutation.entityType,
+      entityId: mutation.entityId,
+      mutationId: record.mutationId,
+      status: record.status,
+    });
     return record;
   } catch (error) {
     if (error instanceof LocalSyncWriteError) {

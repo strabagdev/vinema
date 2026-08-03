@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/features/auth/auth-provider";
-import { VisualFeedbackWordmark } from "@/features/feedback/visual-feedback-provider";
+import { MemorySyncStatusPanel } from "@/features/sync/observability/memory-sync-status-panel";
 import {
   Tooltip,
   TooltipContent,
@@ -46,14 +46,7 @@ export function AppHeader({ pathname, onFocusWriting }: AppHeaderProps) {
     <header className="sticky top-0 z-30 grid min-h-14 grid-cols-[1fr_auto_1fr] items-center gap-3 bg-zinc-50/80 px-3 backdrop-blur sm:px-5">
       <div aria-hidden="true" />
       <div className="flex justify-center">
-        <Link
-          href="/"
-          className="flex h-10 items-center rounded-md px-2 outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
-          aria-label="Ir a Inicio"
-          data-wordmark-anchor=""
-        >
-          <VisualFeedbackWordmark />
-        </Link>
+        <MemorySyncStatusPanel />
       </div>
       <div className="flex items-center justify-end gap-2">
         {!onHome ? (
@@ -82,6 +75,9 @@ export function AppHeader({ pathname, onFocusWriting }: AppHeaderProps) {
             <DropdownMenuItem disabled>{identity}</DropdownMenuItem>
             <DropdownMenuItem disabled>Conocimiento</DropdownMenuItem>
             <div className="my-1 h-px bg-zinc-100" role="separator" />
+            <DropdownMenuItem asChild>
+              <Link href="/">Inicio</Link>
+            </DropdownMenuItem>
             <DropdownMenuItem asChild>
               <Link href="/memory">
                 <Brain className="mr-2 h-4 w-4" aria-hidden="true" />

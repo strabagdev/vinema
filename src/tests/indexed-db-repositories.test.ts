@@ -110,7 +110,7 @@ describe("IndexedDB repositories", () => {
     await deleteDB(VINEMA_DB_NAME);
   });
 
-  it("creates a clean version 7 database with the expected keyPath schema", async () => {
+  it("creates a clean version 8 database with the expected keyPath schema", async () => {
     const db = await getVinemaDb();
     const authSessionStore = db
       .transaction(AUTH_SESSION_STORE)
@@ -128,6 +128,9 @@ describe("IndexedDB repositories", () => {
     const syncMetadataStore = db
       .transaction(SYNC_METADATA_STORE)
       .objectStore(SYNC_METADATA_STORE);
+    const syncEntityAcknowledgementsStore = db
+      .transaction("sync_entity_acknowledgements")
+      .objectStore("sync_entity_acknowledgements");
 
     expect(db.version).toBe(VINEMA_DB_VERSION);
     expect(authSessionStore.keyPath).toBeNull();
@@ -155,6 +158,14 @@ describe("IndexedDB repositories", () => {
     expect(syncMetadataStore.keyPath).toEqual(["workspaceId", "deviceId"]);
     expect(syncMetadataStore.indexNames.contains("by-workspace")).toBe(true);
     expect(syncMetadataStore.indexNames.contains("by-device")).toBe(true);
+    expect(syncEntityAcknowledgementsStore.keyPath).toEqual([
+      "workspaceId",
+      "entityType",
+      "entityId",
+    ]);
+    expect(
+      syncEntityAcknowledgementsStore.indexNames.contains("by-workspace"),
+    ).toBe(true);
     expect(
       db.transaction(WORKSPACES_STORE).objectStore(WORKSPACES_STORE).keyPath,
     ).toBe("id");

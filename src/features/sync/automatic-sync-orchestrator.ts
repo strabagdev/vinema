@@ -11,6 +11,7 @@ import {
   type SyncScheduler,
   type SyncSchedulerHandle,
 } from "@/features/sync/sync-scheduler";
+import { appendMemorySyncEvent } from "@/features/sync/observability/sync-event-buffer";
 
 export const DEFAULT_AUTOMATIC_SYNC_INTERVAL_MS = 30_000;
 export const DEFAULT_INITIAL_SYNC_DELAY_MS = 0;
@@ -316,6 +317,11 @@ export function createAutomaticSyncOrchestrator({
         lastError: null,
         lastResult: result,
       });
+      appendMemorySyncEvent({
+        type: "ONLINE_RESTORED",
+        timestamp: finishedAt,
+        status: "ONLINE",
+      });
       log("info", "sync_cycle_succeeded", {
         startedAt,
         finishedAt,
@@ -439,6 +445,12 @@ export function createAutomaticSyncOrchestrator({
       lastRunFinishedAt: finishedAt,
       lastError: null,
       lastResult: result,
+    });
+    appendMemorySyncEvent({
+      type: "OFFLINE_ENTERED",
+      timestamp: finishedAt,
+      status: "OFFLINE",
+      code: "OFFLINE",
     });
     log("info", "sync_cycle_offline", {
       durationMs: durationMs(startedAt, finishedAt),

@@ -23,6 +23,7 @@ const expectedData = [
   "workspaces",
   "sync_mutations",
   "sync_metadata",
+  "sync_entity_acknowledgements",
   "association suggestions",
   "emergent identity",
 ];

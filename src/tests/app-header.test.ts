@@ -27,6 +27,21 @@ vi.mock("@/features/auth/auth-provider", () => ({
     workspaceId: "workspace-1",
     deviceId: "device-1",
     accessToken: "access-token",
+    syncState: {
+      lifecycle: "STARTED",
+      phase: "IDLE",
+      connectivity: "ONLINE",
+      authentication: "AUTHENTICATED",
+      pendingMutations: 0,
+      processingMutations: 0,
+      failedMutations: 0,
+      conflictCount: 0,
+      lastRunStartedAt: null,
+      lastRunFinishedAt: null,
+      lastSuccessfulSyncAt: null,
+      nextRunAt: null,
+      lastError: null,
+    },
     syncNow: vi.fn(),
     logout: vi.fn(),
   }),
@@ -158,14 +173,15 @@ describe("AppHeader", () => {
   it("separates knowledge navigation from administration in the session menu", async () => {
     const screen = await renderHeader();
     const header = screen.querySelector("header");
-    const wordmarkLink = screen.querySelector("a[aria-label='Ir a Inicio']");
+    const wordmarkTrigger = screen.querySelector(
+      "button[aria-label='Abrir Estado de la memoria']",
+    );
 
     expect(header?.className).toContain("grid-cols-[1fr_auto_1fr]");
-    expect(wordmarkLink?.getAttribute("href")).toBe("/");
-    expect(wordmarkLink?.getAttribute("data-wordmark-anchor")).toBe("");
-    expect(wordmarkLink?.textContent).toBe("VN");
-    expect(wordmarkLink?.textContent).not.toBe("V");
-    expect(wordmarkLink?.textContent).not.toContain("VA");
+    expect(wordmarkTrigger?.getAttribute("data-memory-sync-trigger")).toBe("");
+    expect(wordmarkTrigger?.textContent).toBe("VN");
+    expect(wordmarkTrigger?.textContent).not.toBe("V");
+    expect(wordmarkTrigger?.textContent).not.toContain("VA");
     expect(screen.querySelector("nav[aria-label='Navegacion principal']")).toBeNull();
     expect(screen.querySelector("a[aria-label='Explorar']")).toBeNull();
     expect(screen.textContent).not.toContain("Explorar");
@@ -174,6 +190,7 @@ describe("AppHeader", () => {
     await click(screen.querySelector("button[aria-label='Abrir menu']"));
 
     expect(document.body.textContent).toContain("Conocimiento");
+    expect(document.body.querySelector("a[href='/']")).toBeTruthy();
     expect(document.body.querySelector("a[href='/memory']")).toBeTruthy();
     expect(document.body.querySelector("a[href='/concepts']")).toBeTruthy();
     expect(document.body.textContent).toContain("Memoria");
