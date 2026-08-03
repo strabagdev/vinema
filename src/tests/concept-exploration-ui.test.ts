@@ -222,6 +222,187 @@ describe("ConceptExplorationClient", () => {
     expect(screen.textContent).not.toContain("últimos 7 días");
     expect(screen.textContent).not.toContain("Aún sin recuerdos");
   });
+
+  it("hides observed patterns when evidence is insufficient", async () => {
+    mocks.nodes.clear();
+    mocks.relations.clear();
+    mocks.nodes.set(
+      "single",
+      node({ id: "single", content: "Railway despliega Vinema API" }),
+    );
+    mocks.relations.set(
+      "single-railway",
+      relation({ id: "single-railway", nodeId: "single", contextId: "railway" }),
+    );
+
+    const screen = await renderConceptExploration();
+
+    expect(screen.textContent).not.toContain("Patrones observados");
+  });
+
+  it("shows observed behavioral patterns in the concept profile", async () => {
+    mocks.nodes.clear();
+    mocks.relations.clear();
+
+    [
+      node({
+        id: "pattern-a",
+        content: "Railway y Sync en despliegue",
+        updatedAt: "2026-04-01T10:00:00.000Z",
+      }),
+      node({
+        id: "pattern-b",
+        content: "Railway y Sync en produccion",
+        updatedAt: "2026-06-01T10:00:00.000Z",
+      }),
+      node({
+        id: "pattern-c",
+        content: "Railway y Sync en pruebas",
+        updatedAt: "2026-07-20T10:00:00.000Z",
+      }),
+    ].forEach((item) => mocks.nodes.set(item.id, item));
+
+    for (const memoryId of ["pattern-a", "pattern-b", "pattern-c"]) {
+      mocks.relations.set(
+        `${memoryId}-railway`,
+        relation({ id: `${memoryId}-railway`, nodeId: memoryId, contextId: "railway" }),
+      );
+      mocks.relations.set(
+        `${memoryId}-sync`,
+        relation({ id: `${memoryId}-sync`, nodeId: memoryId, contextId: "sync" }),
+      );
+    }
+
+    const screen = await renderConceptExploration();
+
+    expect(screen.textContent).toContain("Patrones observados");
+    expect(screen.textContent).toContain("Aparece frecuentemente junto a Sync.");
+  });
+
+  it("hides observed meanings when no explicit semantic statement exists", async () => {
+    mocks.nodes.clear();
+    mocks.relations.clear();
+    mocks.nodes.set(
+      "contextual",
+      node({ id: "contextual", content: "Estoy pensando en Railway y Sync." }),
+    );
+    mocks.relations.set(
+      "contextual-railway",
+      relation({
+        id: "contextual-railway",
+        nodeId: "contextual",
+        contextId: "railway",
+      }),
+    );
+    mocks.relations.set(
+      "contextual-sync",
+      relation({ id: "contextual-sync", nodeId: "contextual", contextId: "sync" }),
+    );
+
+    const screen = await renderConceptExploration();
+
+    expect(screen.textContent).not.toContain("Significados observados");
+  });
+
+  it("shows explicit semantic meanings with human labels and evidence links", async () => {
+    mocks.nodes.clear();
+    mocks.relations.clear();
+    mocks.nodes.set(
+      "meaning",
+      node({ id: "meaning", content: "Railway usa Sync." }),
+    );
+    mocks.relations.set(
+      "meaning-railway",
+      relation({ id: "meaning-railway", nodeId: "meaning", contextId: "railway" }),
+    );
+    mocks.relations.set(
+      "meaning-sync",
+      relation({ id: "meaning-sync", nodeId: "meaning", contextId: "sync" }),
+    );
+
+    const screen = await renderConceptExploration();
+
+    expect(screen.textContent).toContain("Significados observados");
+    expect(screen.textContent).toContain("Railway");
+    expect(screen.textContent).toContain("usa");
+    expect(screen.textContent).toContain("Sync");
+    expect(screen.textContent).not.toContain("USES");
+    expect(
+      Array.from(screen.querySelectorAll("a")).some((link) =>
+        link.getAttribute("href")?.startsWith("/notes/detail?nodeId=meaning"),
+      ),
+    ).toBeTruthy();
+
+    await click(getButton(screen, "Sync"));
+
+    expect(mocks.push).toHaveBeenCalledWith("/concepts/detail?contextId=sync");
+  });
+
+  it("does not show evolution for weak one-memory signals", async () => {
+    mocks.nodes.clear();
+    mocks.relations.clear();
+    mocks.nodes.set(
+      "single",
+      node({
+        id: "single",
+        content: "Railway aparece una vez",
+        updatedAt: "2026-07-20T10:00:00.000Z",
+      }),
+    );
+    mocks.relations.set(
+      "single-railway",
+      relation({ id: "single-railway", nodeId: "single", contextId: "railway" }),
+    );
+
+    const screen = await renderConceptExploration();
+
+    expect(screen.textContent).not.toContain("Ha ganado actividad");
+    expect(screen.textContent).not.toContain("Concepto reciente");
+  });
+
+  it("shows memory evolution signals with human labels and evidence links", async () => {
+    mocks.nodes.clear();
+    mocks.relations.clear();
+
+    [
+      node({
+        id: "evolution-previous",
+        content: "Railway en despliegue previo",
+        updatedAt: "2026-06-15T10:00:00.000Z",
+      }),
+      node({
+        id: "evolution-recent-a",
+        content: "Railway gana actividad con Sync",
+        updatedAt: "2026-07-15T10:00:00.000Z",
+      }),
+      node({
+        id: "evolution-recent-b",
+        content: "Railway vuelve a aparecer en producción",
+        updatedAt: "2026-07-20T10:00:00.000Z",
+      }),
+    ].forEach((item) => mocks.nodes.set(item.id, item));
+
+    for (const memoryId of [
+      "evolution-previous",
+      "evolution-recent-a",
+      "evolution-recent-b",
+    ]) {
+      mocks.relations.set(
+        `${memoryId}-railway`,
+        relation({ id: `${memoryId}-railway`, nodeId: memoryId, contextId: "railway" }),
+      );
+    }
+
+    const screen = await renderConceptExploration();
+
+    expect(screen.textContent).toContain("Evolución");
+    expect(screen.textContent).toContain("Ha ganado actividad");
+    expect(
+      Array.from(screen.querySelectorAll("a")).some((link) =>
+        link.getAttribute("href")?.startsWith("/notes/detail?nodeId=evolution-recent"),
+      ),
+    ).toBeTruthy();
+  });
 });
 
 async function renderConceptExploration() {

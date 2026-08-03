@@ -35,6 +35,8 @@ export type ExistingConceptSuggestion = {
   evidenceCaptureIds: string[];
   matchedTerms: string[];
   matchedAlias?: string;
+  knowledgeSuggestionKind?: "RELATED_NOW" | "MISSING_CONTEXT" | "REVISIT";
+  knowledgeSuggestionReasons?: string[];
 };
 
 export type EmergingConceptSuggestion = {

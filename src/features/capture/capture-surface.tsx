@@ -25,6 +25,10 @@ import {
   CAPTURE_DRAFT_DEBOUNCE_MS,
   commitCaptureText,
 } from "@/features/capture/capture-flow";
+import {
+  KNOWLEDGE_SUGGESTION_LABELS,
+  type KnowledgeSuggestionKind,
+} from "@/features/cognition/knowledge-suggestions";
 import type { CaptureEmergentIdentity } from "@/features/identity/capture-emergent-identity";
 import { CaptureEmergentIdentityLabel } from "@/features/identity/capture-emergent-identity-view";
 import { loadCaptureEmergentIdentities } from "@/features/identity/load-capture-emergent-identities";
@@ -890,75 +894,133 @@ function ConceptPanelContent({
     return <p className="text-sm text-zinc-500">No hay conceptos detectados.</p>;
   }
 
-  return (
-    <div className="space-y-2">
-      {suggestions.slice(0, 5).map((suggestion) => {
-        const selected =
-          suggestion.kind === "existing"
-            ? selectedContextIds.includes(suggestion.conceptId)
-            : selectedEmergingCandidateIds.includes(suggestion.candidateId);
-        const label =
-          suggestion.kind === "existing"
-            ? suggestion.label
-            : suggestion.suggestedLabel;
-        const id =
-          suggestion.kind === "existing"
-            ? suggestion.conceptId
-            : suggestion.candidateId;
+  const groupedSuggestions = groupConceptSuggestions(suggestions);
 
-        return (
-          <div
-            key={`${suggestion.kind}-${id}`}
-            className={cn(
-              "flex items-center gap-2 rounded-md transition-colors motion-reduce:transition-none",
-              selected ? "bg-zinc-950 text-white" : "text-zinc-700 hover:bg-zinc-50",
-            )}
-          >
-            <button
-              type="button"
-              aria-pressed={selected}
-              className="flex min-w-0 flex-1 items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
-              onClick={() =>
-                suggestion.kind === "existing"
-                  ? onToggleExisting(suggestion.conceptId)
-                  : onToggleEmerging(suggestion.candidateId)
-              }
-            >
-              <span className="min-w-0">
-                <span className="block truncate">{label}</span>
-                {suggestion.kind === "existing" && suggestion.matchedAlias ? (
-                  <span
-                    className={cn(
-                      "block truncate text-xs",
-                      selected ? "text-zinc-300" : "text-zinc-500",
-                    )}
-                  >
-                    Detectado como {suggestion.matchedAlias}
-                  </span>
-                ) : null}
-              </span>
-              {selected ? (
-                <Check className="h-4 w-4 shrink-0 text-zinc-200" aria-hidden="true" />
-              ) : null}
-            </button>
-            {suggestion.kind === "existing" ? (
-              <Link
-                href={getConceptExplorationPath(suggestion.conceptId)}
-                className={cn(
-                  "mr-1 rounded-sm px-2 py-1 text-xs outline-none focus-visible:ring-2 focus-visible:ring-zinc-400",
-                  selected
-                    ? "text-zinc-200 hover:text-white"
-                    : "text-zinc-500 hover:text-zinc-950",
-                )}
-              >
-                Abrir
-              </Link>
-            ) : null}
+  return (
+    <div className="space-y-3">
+      {groupedSuggestions.map(({ kind, items }) => (
+        <section key={kind} className="space-y-1.5">
+          <h3 className="px-1 text-xs font-medium text-zinc-500">
+            {KNOWLEDGE_SUGGESTION_LABELS[kind]}
+          </h3>
+          <div className="space-y-2">
+            {items.map((suggestion) => (
+              <ConceptSuggestionRow
+                key={`${suggestion.kind}-${getConceptSuggestionId(suggestion)}`}
+                suggestion={suggestion}
+                selectedContextIds={selectedContextIds}
+                selectedEmergingCandidateIds={selectedEmergingCandidateIds}
+                onToggleExisting={onToggleExisting}
+                onToggleEmerging={onToggleEmerging}
+              />
+            ))}
           </div>
-        );
-      })}
+        </section>
+      ))}
     </div>
   );
+}
+
+function ConceptSuggestionRow({
+  suggestion,
+  selectedContextIds,
+  selectedEmergingCandidateIds,
+  onToggleExisting,
+  onToggleEmerging,
+}: {
+  suggestion: ConceptSuggestion;
+  selectedContextIds: string[];
+  selectedEmergingCandidateIds: string[];
+  onToggleExisting: (contextId: string) => void;
+  onToggleEmerging: (candidateId: string) => void;
+}) {
+  const selected =
+    suggestion.kind === "existing"
+      ? selectedContextIds.includes(suggestion.conceptId)
+      : selectedEmergingCandidateIds.includes(suggestion.candidateId);
+  const label =
+    suggestion.kind === "existing"
+      ? suggestion.label
+      : suggestion.suggestedLabel;
+
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-2 rounded-md transition-colors motion-reduce:transition-none",
+        selected ? "bg-zinc-950 text-white" : "text-zinc-700 hover:bg-zinc-50",
+      )}
+    >
+      <button
+        type="button"
+        aria-pressed={selected}
+        className="flex min-w-0 flex-1 items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+        onClick={() =>
+          suggestion.kind === "existing"
+            ? onToggleExisting(suggestion.conceptId)
+            : onToggleEmerging(suggestion.candidateId)
+        }
+      >
+        <span className="min-w-0">
+          <span className="block truncate">{label}</span>
+          {suggestion.kind === "existing" && suggestion.matchedAlias ? (
+            <span
+              className={cn(
+                "block truncate text-xs",
+                selected ? "text-zinc-300" : "text-zinc-500",
+              )}
+            >
+              Detectado como {suggestion.matchedAlias}
+            </span>
+          ) : null}
+        </span>
+        {selected ? (
+          <Check className="h-4 w-4 shrink-0 text-zinc-200" aria-hidden="true" />
+        ) : null}
+      </button>
+      {suggestion.kind === "existing" ? (
+        <Link
+          href={getConceptExplorationPath(suggestion.conceptId)}
+          className={cn(
+            "mr-1 rounded-sm px-2 py-1 text-xs outline-none focus-visible:ring-2 focus-visible:ring-zinc-400",
+            selected
+              ? "text-zinc-200 hover:text-white"
+              : "text-zinc-500 hover:text-zinc-950",
+          )}
+        >
+          Abrir
+        </Link>
+      ) : null}
+    </div>
+  );
+}
+
+function groupConceptSuggestions(suggestions: ConceptSuggestion[]) {
+  const groups: { kind: KnowledgeSuggestionKind; items: ConceptSuggestion[] }[] = [
+    { kind: "RELATED_NOW", items: [] },
+    { kind: "MISSING_CONTEXT", items: [] },
+    { kind: "REVISIT", items: [] },
+  ];
+  const fallback = groups[0];
+
+  for (const suggestion of suggestions.slice(0, 5)) {
+    if (suggestion.kind === "emerging") {
+      fallback.items.push(suggestion);
+      continue;
+    }
+
+    const group =
+      groups.find((item) => item.kind === suggestion.knowledgeSuggestionKind) ??
+      fallback;
+    group.items.push(suggestion);
+  }
+
+  return groups.filter((group) => group.items.length > 0);
+}
+
+function getConceptSuggestionId(suggestion: ConceptSuggestion) {
+  return suggestion.kind === "existing"
+    ? suggestion.conceptId
+    : suggestion.candidateId;
 }
 
 function MemoryPanelContent({

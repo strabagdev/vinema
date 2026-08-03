@@ -10,6 +10,7 @@ import {
   diagnoseConceptSuggestions,
   suggestConcepts,
 } from "@/features/associations/concept-suggestions";
+import { deriveKnowledgeSuggestions } from "@/features/cognition/knowledge-suggestions";
 import { normalizeAssociationText } from "@/features/associations/normalize-text";
 import {
   tokenizeAssociationText,
@@ -144,6 +145,57 @@ export function evaluateCaptureInput({
     relations,
     selectedContextIds,
   });
+  const knowledgeSuggestions = deriveKnowledgeSuggestions({
+    inputConceptIds: getPresentConceptIds({
+      conceptTraces,
+      selectedContextIds,
+    }),
+    contexts,
+    nodes,
+    relations,
+  });
+  const knowledgeConcepts = knowledgeSuggestions
+    .filter((suggestion) => suggestion.confidence !== "LOW")
+    .map((suggestion): Extract<ConceptSuggestion, { kind: "existing" }> | null => {
+      const context = contexts.find((item) => item.id === suggestion.conceptId);
+
+      if (!context || context.archivedAt !== null) {
+        return null;
+      }
+
+      return {
+        kind: "existing",
+        context,
+        conceptId: suggestion.conceptId,
+        label: suggestion.canonicalLabel,
+        score: suggestion.confidence === "HIGH" ? 1 : 0.7,
+        evidenceCaptureIds: suggestion.evidenceNodeIds,
+        matchedTerms: [],
+        knowledgeSuggestionKind: suggestion.kind,
+        knowledgeSuggestionReasons: suggestion.reasons,
+      };
+    })
+    .filter(
+      (suggestion): suggestion is Extract<ConceptSuggestion, { kind: "existing" }> =>
+        suggestion !== null,
+    );
+  const directConcepts = existingConcepts
+    .filter(
+      (suggestion): suggestion is Extract<ConceptSuggestion, { kind: "existing" }> =>
+        suggestion.kind === "existing",
+    )
+    .map((suggestion) => ({
+      ...suggestion,
+      knowledgeSuggestionKind: suggestion.knowledgeSuggestionKind ?? "RELATED_NOW",
+      knowledgeSuggestionReasons: suggestion.knowledgeSuggestionReasons ?? [
+        suggestion.matchedAlias
+          ? "Alias detectado en el texto"
+          : "Concepto detectado en el texto",
+      ],
+    }));
+  const selectedConcepts = directConcepts.filter((suggestion) =>
+    selectedContextIds.includes(suggestion.conceptId),
+  );
   const clusterStartedAt = performance.now();
   const emergingConcepts = detectEmergingConcepts({
     text,
@@ -154,7 +206,9 @@ export function evaluateCaptureInput({
   const clusterDetectionMs = Math.round(performance.now() - clusterStartedAt);
   const deduplicationStartedAt = performance.now();
   const conceptSuggestions = dedupeConceptSuggestions([
-    ...existingConcepts,
+    ...directConcepts,
+    ...selectedConcepts,
+    ...knowledgeConcepts,
     ...emergingConcepts,
   ]);
   const deduplicationMs = Math.round(performance.now() - deduplicationStartedAt);
@@ -584,6 +638,23 @@ function dedupeConceptSuggestions(suggestions: ConceptSuggestion[]) {
   });
 }
 
+function getPresentConceptIds({
+  conceptTraces,
+  selectedContextIds,
+}: {
+  conceptTraces: SuggestionDiagnostics["conceptTraces"];
+  selectedContextIds: string[];
+}) {
+  return Array.from(
+    new Set([
+      ...selectedContextIds,
+      ...conceptTraces
+        .filter((trace) => trace.directMatches > 0)
+        .map((trace) => trace.context.id),
+    ]),
+  ).sort();
+}
+
 function shouldReplaceSuggestion(
   current: ConceptSuggestion,
   candidate: ConceptSuggestion,
@@ -592,7 +663,35 @@ function shouldReplaceSuggestion(
     return candidate.kind === "existing";
   }
 
+  if (current.kind === "existing" && candidate.kind === "existing") {
+    const currentHasKnowledgeKind = Boolean(current.knowledgeSuggestionKind);
+    const candidateHasKnowledgeKind = Boolean(candidate.knowledgeSuggestionKind);
+
+    if (currentHasKnowledgeKind !== candidateHasKnowledgeKind) {
+      return candidateHasKnowledgeKind;
+    }
+
+    if (
+      current.knowledgeSuggestionKind &&
+      candidate.knowledgeSuggestionKind &&
+      current.knowledgeSuggestionKind !== candidate.knowledgeSuggestionKind
+    ) {
+      return (
+        getKnowledgeSuggestionKindPriority(candidate.knowledgeSuggestionKind) <
+        getKnowledgeSuggestionKindPriority(current.knowledgeSuggestionKind)
+      );
+    }
+  }
+
   return candidate.score > current.score;
+}
+
+function getKnowledgeSuggestionKindPriority(
+  kind: NonNullable<
+    Extract<ConceptSuggestion, { kind: "existing" }>["knowledgeSuggestionKind"]
+  >,
+) {
+  return kind === "REVISIT" ? 1 : kind === "MISSING_CONTEXT" ? 2 : 3;
 }
 
 function hasEquivalentExistingConcept(label: string, suggestions: ConceptSuggestion[]) {

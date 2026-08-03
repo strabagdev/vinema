@@ -993,6 +993,119 @@ describe("CaptureSurface", () => {
     });
   });
 
+  it("groups knowledge suggestions as related now and missing context", async () => {
+    const nodeRepository = new InMemoryNodeRepository([
+      createStoredNode({
+        id: "memory-1",
+        content: "Mitcom, Servidor y Sponsor revisan la continuidad operativa.",
+        updatedAt: "2026-03-01T00:00:00.000Z",
+      }),
+      createStoredNode({
+        id: "memory-2",
+        content: "Mitcom, Servidor y Sponsor definen el plan de soporte.",
+        updatedAt: "2026-05-01T00:00:00.000Z",
+      }),
+      createStoredNode({
+        id: "memory-3",
+        content: "Mitcom, Servidor y Sponsor cierran seguimiento técnico.",
+        updatedAt: "2026-07-20T00:00:00.000Z",
+      }),
+    ]);
+    const contextRepository = new InMemoryContextRepository([
+      createContext({ id: "mitcom", name: "Mitcom" }),
+      createContext({ id: "servidor", name: "Servidor" }),
+      createContext({ id: "sponsor", name: "Sponsor" }),
+    ]);
+    const relationRepository = new InMemoryNodeContextRelationRepository([
+      ...createRelationsFor("memory-1", ["mitcom", "servidor", "sponsor"]),
+      ...createRelationsFor("memory-2", ["mitcom", "servidor", "sponsor"]),
+      ...createRelationsFor("memory-3", ["mitcom", "servidor", "sponsor"]),
+    ]);
+    const screen = await renderCaptureSurface({
+      nodeRepository,
+      contextRepository,
+      relationRepository,
+    });
+
+    await changeTextarea(screen.container, "Mitcom y Servidor revisan pendientes");
+    await advanceTime(500);
+    await openConceptPanel(screen.container);
+
+    expect(screen.container.textContent).toContain("Relacionado ahora");
+    expect(screen.container.textContent).toContain("Podría faltar");
+    expect(screen.container.textContent).toContain("Sponsor");
+  });
+
+  it("groups dormant relevant knowledge as revisit", async () => {
+    const nodeRepository = new InMemoryNodeRepository([
+      createStoredNode({
+        id: "old-1",
+        content: "Mitcom y Contratos tuvieron una revisión pendiente.",
+        updatedAt: "2026-01-10T00:00:00.000Z",
+      }),
+      createStoredNode({
+        id: "old-2",
+        content: "Mitcom y Contratos definieron condiciones comerciales.",
+        updatedAt: "2026-02-10T00:00:00.000Z",
+      }),
+      createStoredNode({
+        id: "old-3",
+        content: "Mitcom y Contratos quedaron para seguimiento.",
+        updatedAt: "2026-03-10T00:00:00.000Z",
+      }),
+    ]);
+    const contextRepository = new InMemoryContextRepository([
+      createContext({ id: "mitcom", name: "Mitcom" }),
+      createContext({ id: "contratos", name: "Contratos" }),
+    ]);
+    const relationRepository = new InMemoryNodeContextRelationRepository([
+      ...createRelationsFor("old-1", ["mitcom", "contratos"]),
+      ...createRelationsFor("old-2", ["mitcom", "contratos"]),
+      ...createRelationsFor("old-3", ["mitcom", "contratos"]),
+    ]);
+    const screen = await renderCaptureSurface({
+      nodeRepository,
+      contextRepository,
+      relationRepository,
+    });
+
+    await changeTextarea(screen.container, "Mitcom requiere seguimiento");
+    await advanceTime(500);
+    await openConceptPanel(screen.container);
+
+    expect(screen.container.textContent).toContain("Retomar");
+    expect(screen.container.textContent).toContain("Contratos");
+  });
+
+  it("does not render low-confidence knowledge suggestions", async () => {
+    const nodeRepository = new InMemoryNodeRepository([
+      createStoredNode({
+        id: "weak",
+        content: "Mitcom y Tracking aparecieron juntos una vez.",
+        updatedAt: "2026-07-20T00:00:00.000Z",
+      }),
+    ]);
+    const contextRepository = new InMemoryContextRepository([
+      createContext({ id: "mitcom", name: "Mitcom" }),
+      createContext({ id: "tracking", name: "Tracking" }),
+    ]);
+    const relationRepository = new InMemoryNodeContextRelationRepository([
+      ...createRelationsFor("weak", ["mitcom", "tracking"]),
+    ]);
+    const screen = await renderCaptureSurface({
+      nodeRepository,
+      contextRepository,
+      relationRepository,
+    });
+
+    await changeTextarea(screen.container, "Mitcom requiere seguimiento");
+    await advanceTime(500);
+    await openConceptPanel(screen.container);
+
+    expect(screen.container.textContent).toContain("Mitcom");
+    expect(screen.container.textContent).not.toContain("Tracking");
+  });
+
   it("expands remembered captures through their emergent identity", async () => {
     const storage = new MemoryStorageAdapter();
     const nodeRepository = new InMemoryNodeRepository([
@@ -1493,6 +1606,27 @@ function createContext({
     updatedAt: "2026-01-01T00:00:00.000Z",
     archivedAt: null,
   };
+}
+
+function createRelationsFor(
+  nodeId: string,
+  contextIds: string[],
+): Array<{
+  id: string;
+  workspaceId: string;
+  nodeId: string;
+  contextId: string;
+  version: number;
+  createdAt: string;
+}> {
+  return contextIds.map((contextId) => ({
+    id: `${nodeId}-${contextId}`,
+    workspaceId: workspace.id,
+    nodeId,
+    contextId,
+    version: 1,
+    createdAt: "2026-01-01T00:00:00.000Z",
+  }));
 }
 
 function getTextarea(container: HTMLElement) {

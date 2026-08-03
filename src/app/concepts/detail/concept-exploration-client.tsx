@@ -11,11 +11,15 @@ import type { Node } from "@/domain/node/node";
 import { Button } from "@/components/ui/button";
 import { formatShortDate } from "@/components/app-shell/note-list-item";
 import { getContentTimestamp } from "@/features/capture/capture-timestamps";
-import { deriveConceptNeighborhood } from "@/features/exploration/concept-neighborhood";
+import type { BehavioralPattern } from "@/features/cognition/behavioral-engine/behavioral-engine";
+import { deriveMemoryResponse } from "@/features/cognition/orchestrator";
+import type { MemoryEvolutionSignal } from "@/features/cognition/memory-evolution";
 import {
-  deriveConceptProfile,
-  type ConceptProfile,
-} from "@/features/exploration/concept-profile";
+  getSemanticRelationHumanLabel,
+  type SemanticStatement,
+} from "@/features/cognition/semantic-understanding";
+import { deriveConceptNeighborhood } from "@/features/exploration/concept-neighborhood";
+import type { ConceptProfile } from "@/features/exploration/concept-profile";
 import {
   deriveConceptGraphNeighborhood,
   type ConceptGraphNeighborhood,
@@ -80,18 +84,63 @@ export function ConceptExplorationClient() {
       nodes: memories,
     });
   }, [contextId, contexts, memories, relations]);
-  const profile = useMemo(() => {
+  const memoryResponse = useMemo(() => {
     if (!contextId) {
       return null;
     }
 
-    return deriveConceptProfile({
-      currentContextId: contextId,
+    return deriveMemoryResponse({
+      query: {
+        text: center?.name ?? "",
+        detectedConceptIds: [contextId],
+        selectedConceptIds: [],
+        now: new Date(),
+      },
       contexts,
       relations,
       nodes: workspaceNodes,
     });
-  }, [contextId, contexts, relations, workspaceNodes]);
+  }, [center?.name, contextId, contexts, relations, workspaceNodes]);
+  const profile = useMemo(() => {
+    if (!contextId || !memoryResponse) {
+      return null;
+    }
+
+    return memoryResponse.profiles.find((item) => item.concept.id === contextId) ?? null;
+  }, [contextId, memoryResponse]);
+  const behavioralPatterns = useMemo(() => {
+    if (!contextId || !memoryResponse) {
+      return [];
+    }
+
+    return memoryResponse.behavioralPatterns.filter((pattern) =>
+      pattern.conceptIds.includes(contextId),
+    );
+  }, [contextId, memoryResponse]);
+  const evolutionSignals = useMemo(() => {
+    if (!contextId || !memoryResponse) {
+      return [];
+    }
+
+    return memoryResponse.evolutionSignals.filter(
+      (signal) =>
+        signal.conceptId === contextId &&
+        (signal.strength === "MEDIUM" || signal.strength === "STRONG"),
+    );
+  }, [contextId, memoryResponse]);
+  const semanticStatements = useMemo(() => {
+    if (!contextId || !memoryResponse) {
+      return [];
+    }
+
+    return memoryResponse.semanticStatements.filter(
+      (statement) =>
+        !statement.hasContradictoryEvidence &&
+        statement.confidence !== "LOW" &&
+        (statement.sourceConceptId === contextId ||
+          statement.targetConceptId === contextId),
+    );
+  }, [contextId, memoryResponse]);
   const graphNeighborhood = useMemo(() => {
     if (!contextId) {
       return null;
@@ -312,6 +361,11 @@ export function ConceptExplorationClient() {
       {profile && profile.memoryCount > 0 ? (
         <ConceptProfileSummary
           profile={profile}
+          behavioralPatterns={behavioralPatterns}
+          evolutionSignals={evolutionSignals}
+          semanticStatements={semanticStatements}
+          conceptsById={new Map(contexts.map((context) => [context.id, context]))}
+          nodesById={new Map(workspaceNodes.map((node) => [node.id, node]))}
           returnTo={getConceptExplorationPath(center.id, { returnTo })}
           onNavigateToConcept={navigateToConcept}
         />
@@ -347,16 +401,30 @@ export function ConceptExplorationClient() {
 
 function ConceptProfileSummary({
   profile,
+  behavioralPatterns,
+  evolutionSignals,
+  semanticStatements,
+  conceptsById,
+  nodesById,
   returnTo,
   onNavigateToConcept,
 }: {
   profile: ConceptProfile;
+  behavioralPatterns: BehavioralPattern[];
+  evolutionSignals: MemoryEvolutionSignal[];
+  semanticStatements: SemanticStatement[];
+  conceptsById: Map<string, Context>;
+  nodesById: Map<string, Node>;
   returnTo: string;
   onNavigateToConcept: (contextId: string) => void;
 }) {
   const hasTemporalProfile = profile.memoryCount > 1;
   const hasSecondaryProfile =
-    profile.relatedConcepts.length > 0 || hasTemporalProfile;
+    profile.relatedConcepts.length > 0 ||
+    hasTemporalProfile ||
+    behavioralPatterns.length > 0 ||
+    evolutionSignals.length > 0 ||
+    semanticStatements.length > 0;
 
   return (
     <section
@@ -474,10 +542,213 @@ function ConceptProfileSummary({
               <p>{profile.activity.last30Days} en los últimos 30 días</p>
             </div>
           ) : null}
+
+          {evolutionSignals.length > 0 ? (
+            <ObservedEvolution
+              signals={evolutionSignals.slice(0, 4)}
+              nodesById={nodesById}
+              returnTo={returnTo}
+            />
+          ) : null}
+
+          {semanticStatements.length > 0 ? (
+            <ObservedMeanings
+              statements={semanticStatements.slice(0, 5)}
+              returnTo={returnTo}
+              onNavigateToConcept={onNavigateToConcept}
+            />
+          ) : null}
+
+          {behavioralPatterns.length > 0 ? (
+            <ObservedPatterns
+              patterns={behavioralPatterns.slice(0, 5)}
+              currentConceptId={profile.concept.id}
+              conceptsById={conceptsById}
+            />
+          ) : null}
         </aside>
       ) : null}
     </section>
   );
+}
+
+function ObservedEvolution({
+  signals,
+  nodesById,
+  returnTo,
+}: {
+  signals: MemoryEvolutionSignal[];
+  nodesById: Map<string, Node>;
+  returnTo: string;
+}) {
+  return (
+    <div className="space-y-2">
+      <h2 className="text-sm font-medium text-zinc-700">Evolución</h2>
+      <div className="space-y-2">
+        {signals.map((signal) => (
+          <div
+            key={signal.id}
+            className="rounded-lg bg-white/70 px-3 py-2 text-xs leading-5 text-zinc-600"
+          >
+            <p className="font-medium text-zinc-800">
+              {formatEvolutionSignal(signal)}
+            </p>
+            <div className="mt-1 space-y-1">
+              {signal.evidenceNodeIds.slice(0, 3).map((nodeId) => {
+                const node = nodesById.get(nodeId);
+
+                if (!node) {
+                  return null;
+                }
+
+                return (
+                  <Link
+                    key={`${signal.id}-${nodeId}`}
+                    href={getNodeDetailPath(nodeId, { returnTo })}
+                    className="block border-l-2 border-zinc-200 pl-2 outline-none hover:text-zinc-800 focus-visible:ring-2 focus-visible:ring-zinc-400"
+                  >
+                    <span className="block">{getCapturePreview(node.content, { maxLength: 120 })}</span>
+                    <time className="block text-[11px] text-zinc-400">
+                      {formatShortDate(getContentTimestamp(node))}
+                    </time>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function formatEvolutionSignal(signal: MemoryEvolutionSignal) {
+  switch (signal.kind) {
+    case "NEW_CONCEPT":
+      return "Concepto reciente";
+    case "GROWING_CONCEPT":
+      return "Ha ganado actividad";
+    case "STABLE_CONCEPT":
+      return "Se mantiene estable";
+    case "DECLINING_CONCEPT":
+      return "Su actividad ha disminuido";
+    case "DORMANT_CONCEPT":
+      return "Lleva tiempo sin aparecer";
+    case "REVIVED_CONCEPT":
+      return "Ha vuelto a aparecer";
+    case "SHIFTING_CONTEXT":
+      return "Sus conexiones recientes han cambiado";
+  }
+}
+
+function ObservedMeanings({
+  statements,
+  returnTo,
+  onNavigateToConcept,
+}: {
+  statements: SemanticStatement[];
+  returnTo: string;
+  onNavigateToConcept: (contextId: string) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <h2 className="text-sm font-medium text-zinc-700">Significados observados</h2>
+      <div className="space-y-3">
+        {statements.map((statement) => (
+          <div key={statement.id} className="rounded-lg bg-white/70 px-3 py-2">
+            <div className="grid gap-1 text-sm text-zinc-800">
+              <button
+                type="button"
+                className="w-fit text-left font-medium outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
+                onClick={() => onNavigateToConcept(statement.sourceConceptId)}
+              >
+                {statement.sourceLabel}
+              </button>
+              <span className="text-xs text-zinc-500">
+                {getSemanticRelationHumanLabel(statement.relation)}
+              </span>
+              <button
+                type="button"
+                className="w-fit text-left font-medium outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
+                onClick={() => onNavigateToConcept(statement.targetConceptId)}
+              >
+                {statement.targetLabel}
+              </button>
+            </div>
+            <div className="mt-2 space-y-1">
+              {statement.evidence.slice(0, 3).map((evidence) => (
+                <Link
+                  key={`${statement.id}-${evidence.nodeId}`}
+                  href={getNodeDetailPath(evidence.nodeId, { returnTo })}
+                  className="block rounded-md border-l-2 border-zinc-200 pl-2 text-xs leading-5 text-zinc-500 outline-none hover:text-zinc-800 focus-visible:ring-2 focus-visible:ring-zinc-400"
+                >
+                  <span className="block">{evidence.excerpt}</span>
+                  <time className="block text-[11px] text-zinc-400">
+                    {formatShortDate(evidence.createdAt.toISOString())}
+                  </time>
+                </Link>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ObservedPatterns({
+  patterns,
+  currentConceptId,
+  conceptsById,
+}: {
+  patterns: BehavioralPattern[];
+  currentConceptId: string;
+  conceptsById: Map<string, Context>;
+}) {
+  return (
+    <div className="space-y-2">
+      <h2 className="text-sm font-medium text-zinc-700">Patrones observados</h2>
+      <div className="space-y-2">
+        {patterns.map((pattern) => (
+          <div
+            key={pattern.id}
+            className="rounded-lg bg-white/70 px-3 py-2 text-xs leading-5 text-zinc-600"
+          >
+            {formatBehavioralPattern(pattern, currentConceptId, conceptsById)}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function formatBehavioralPattern(
+  pattern: BehavioralPattern,
+  currentConceptId: string,
+  conceptsById: Map<string, Context>,
+) {
+  const relatedLabels = pattern.conceptIds
+    .filter((conceptId) => conceptId !== currentConceptId)
+    .map((conceptId) => conceptsById.get(conceptId)?.name ?? conceptId)
+    .join(" + ");
+  const labels =
+    relatedLabels ||
+    pattern.conceptIds
+      .map((conceptId) => conceptsById.get(conceptId)?.name ?? conceptId)
+      .join(" + ");
+
+  switch (pattern.kind) {
+    case "RECURRENT_PAIR":
+      return `Aparece frecuentemente junto a ${labels}.`;
+    case "EMERGING_RELATIONSHIP":
+      return "La relación ha aumentado recientemente.";
+    case "DECLINING_RELATIONSHIP":
+      return "La actividad compartida ha disminuido.";
+    case "STABLE_RELATIONSHIP":
+      return "La relación se mantiene estable.";
+    case "RECURRING_CLUSTER":
+      return `Grupo recurrente observado: ${labels}.`;
+  }
 }
 
 function ProfileMetric({ label, value }: { label: string; value: string }) {
