@@ -254,11 +254,19 @@ export function createPushCoordinator({
           firstError(failed),
           finishedAt,
         );
-        logger?.error?.("push coordinator failed", {
-          workspaceId,
-          status: failed.status,
-          errorCode: errorCode(error),
-        });
+        if (failed.status === "OFFLINE") {
+          logger?.info?.("push coordinator offline", {
+            workspaceId,
+            status: failed.status,
+            errorCode: errorCode(error),
+          });
+        } else {
+          logger?.error?.("push coordinator failed", {
+            workspaceId,
+            status: failed.status,
+            errorCode: errorCode(error),
+          });
+        }
         return failed;
       } finally {
         state = null;

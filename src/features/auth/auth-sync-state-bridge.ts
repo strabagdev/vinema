@@ -9,6 +9,14 @@ export function createAuthSyncStateBridge({
   syncStateEngine: Pick<SyncStateEngine, "dispatch">;
 }) {
   const publish = (status: ReturnType<typeof authStateEngine.getState>["status"]) => {
+    if (status === "AUTHENTICATED_ONLINE" || status === "AUTHENTICATED_OFFLINE") {
+      syncStateEngine.dispatch({
+        type: "AUTHENTICATION_CHANGED",
+        authentication: status,
+      });
+      return;
+    }
+
     if (status === "AUTHENTICATED") {
       syncStateEngine.dispatch({
         type: "AUTHENTICATION_CHANGED",

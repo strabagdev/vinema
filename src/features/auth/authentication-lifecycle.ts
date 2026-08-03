@@ -119,7 +119,11 @@ export function createAuthenticationLifecycle({
       return;
     }
 
-    if (state.status === "AUTHENTICATED" && state.accessTokenExpiresAt) {
+    if (
+      (state.status === "AUTHENTICATED_ONLINE" ||
+        state.status === "AUTHENTICATED") &&
+      state.accessTokenExpiresAt
+    ) {
       try {
         refreshCoordinator.schedule(state.accessTokenExpiresAt);
       } catch {

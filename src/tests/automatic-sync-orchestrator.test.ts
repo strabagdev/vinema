@@ -147,6 +147,38 @@ describe("automatic sync orchestrator", () => {
     expect(setup.scheduler.activeCount()).toBe(1);
   });
 
+  it("treats offline push as a recoverable idle cycle without running pull", async () => {
+    const setup = createSetup({
+      pushResults: [
+        {
+          ...pushSuccess,
+          status: "OFFLINE",
+          pushed: 0,
+          failed: 0,
+          conflicts: 0,
+          deferred: 1,
+          removedFromOutbox: 0,
+          errors: [{ code: "NETWORK_ERROR", message: "Offline" }],
+        },
+      ],
+    });
+
+    const result = await setup.orchestrator.syncNow();
+
+    expect(result).toMatchObject({ status: "OFFLINE" });
+    expect(setup.order).toEqual(["push"]);
+    expect(setup.pull.run).not.toHaveBeenCalled();
+    expect(setup.orchestrator.getState()).toMatchObject({
+      running: false,
+      phase: "IDLE",
+      lastError: null,
+      lastResult: { status: "OFFLINE" },
+    });
+    expect(setup.logs).toContainEqual(
+      expect.objectContaining({ level: "info", message: "sync_cycle_offline" }),
+    );
+  });
+
   it("continueAfterError false stops future scheduling after a failed cycle", async () => {
     const setup = createSetup({
       config: { continueAfterError: false },

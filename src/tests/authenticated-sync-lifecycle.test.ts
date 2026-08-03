@@ -28,10 +28,24 @@ describe("authenticated sync lifecycle", () => {
     const lifecycle = createAuthenticatedSyncLifecycle({ createRuntime });
 
     lifecycle.handleAuthState({ ...authenticatedState(), status: "RESTORING" });
+    lifecycle.handleAuthState({ ...authenticatedState(), status: "AUTHENTICATED_OFFLINE" });
     lifecycle.handleAuthState({ ...authenticatedState(), workspaceId: null });
     lifecycle.handleAuthState({ ...authenticatedState(), deviceId: null });
 
     expect(createRuntime).not.toHaveBeenCalled();
+  });
+
+  it("stops active sync when authentication falls back to offline", () => {
+    const runtime = createRuntimeMock();
+    const lifecycle = createAuthenticatedSyncLifecycle({
+      createRuntime: vi.fn(() => runtime),
+    });
+
+    lifecycle.handleAuthState(authenticatedState());
+    lifecycle.handleAuthState({ ...authenticatedState(), status: "AUTHENTICATED_OFFLINE" });
+
+    expect(runtime.orchestrator.stop).toHaveBeenCalledTimes(1);
+    expect(runtime.orchestrator.cancelCurrentRun).toHaveBeenCalledTimes(1);
   });
 
   it("stops and cancels current runs on logout-like states and dispose", () => {
@@ -111,7 +125,7 @@ describe("authenticated sync lifecycle", () => {
 
 function authenticatedState(): AuthState {
   return {
-    status: "AUTHENTICATED",
+    status: "AUTHENTICATED_ONLINE",
     user: {
       id: "11111111-1111-4111-8111-111111111111",
       email: "user@example.test",

@@ -12,6 +12,8 @@ export type SyncPhase =
 export type SyncConnectivity = "UNKNOWN" | "ONLINE" | "OFFLINE";
 export type SyncAuthentication =
   | "UNKNOWN"
+  | "AUTHENTICATED_ONLINE"
+  | "AUTHENTICATED_OFFLINE"
   | "AUTHENTICATED"
   | "UNAUTHENTICATED";
 export type SyncErrorSource =
@@ -177,6 +179,16 @@ export function reduceSyncState(
         return state;
       }
 
+      if (event.status === "OFFLINE") {
+        return {
+          ...state,
+          phase: "IDLE",
+          connectivity: "OFFLINE",
+          lastRunFinishedAt: event.at,
+          lastError: null,
+        };
+      }
+
       return {
         ...state,
         phase: "ERROR",
@@ -215,6 +227,16 @@ export function reduceSyncState(
         lastError: null,
       };
     case "SYNC_FAILED":
+      if (event.code === "OFFLINE" || event.code === "NETWORK_ERROR" || event.code === "TIMEOUT") {
+        return {
+          ...state,
+          phase: "IDLE",
+          connectivity: "OFFLINE",
+          lastRunFinishedAt: event.at,
+          lastError: null,
+        };
+      }
+
       return {
         ...state,
         phase: "ERROR",

@@ -188,6 +188,13 @@ async function request({
   signal?: AbortSignal;
   init?: RequestOptions;
 }) {
+  if (typeof fetchFn !== "function") {
+    throw new SyncClientError({
+      code: "NETWORK_ERROR",
+      message: "Fetch no esta disponible para sincronizar.",
+    });
+  }
+
   const controller = new AbortController();
   let timedOut = false;
   let externallyAborted = false;

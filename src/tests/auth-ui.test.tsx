@@ -126,7 +126,7 @@ describe("minimal authentication UI", () => {
     expect(text("[data-testid='status']")).toBe("UNAUTHENTICATED");
 
     await click("button");
-    expect(text("[data-testid='status']")).toBe("AUTHENTICATED");
+    expect(text("[data-testid='status']")).toBe("AUTHENTICATED_ONLINE");
     expect(text("[data-testid='token']")).toBe("access-token");
 
     await click("button:nth-of-type(2)");
@@ -177,7 +177,7 @@ describe("minimal authentication UI", () => {
     );
     await flush();
     await click("button");
-    expect(text("[data-testid='status']")).toBe("AUTHENTICATED");
+    expect(text("[data-testid='status']")).toBe("AUTHENTICATED_ONLINE");
     await click("button:nth-of-type(2)");
     expect(text("[data-testid='status']")).toBe("ERROR");
     expect(text("[data-testid='error']")).toBe("INVALID_CREDENTIALS");
@@ -397,7 +397,7 @@ describe("minimal authentication UI", () => {
     );
     await flush();
 
-    expect(text("[data-testid='status']")).toBe("AUTHENTICATED");
+    expect(text("[data-testid='status']")).toBe("AUTHENTICATED_ONLINE");
     expect(text("[data-testid='token']")).toBe("restored-access-token");
     expect(storage.loadCalls).toBe(1);
     expect(storage.snapshot()).toMatchObject({
@@ -444,7 +444,7 @@ describe("minimal authentication UI", () => {
     );
     await flush();
 
-    expect(text("[data-testid='status']")).toBe("AUTHENTICATED");
+    expect(text("[data-testid='status']")).toBe("AUTHENTICATED_ONLINE");
     expect(text("[data-testid='token']")).toBe("strict-restored-access-token");
     expect(storage.loadCalls).toBe(1);
     expect((globalThis.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(1);
@@ -507,39 +507,63 @@ describe("minimal authentication UI", () => {
     expect(storage.snapshot()).toBeNull();
   });
 
-  it("AuthProvider preserves persisted sessions on restore network failure and allows later login", async () => {
+  it("AuthProvider restores a previously validated session offline and revalidates when online", async () => {
     const storage = new TrackingAuthSessionStorage();
     await storage.save({
       refreshToken: "stored-refresh-token",
       sessionId,
       deviceId,
       storedAt: "2026-07-30T12:00:00.000Z",
+      user,
+      workspaceId,
+      accessTokenExpiresAt,
+      refreshTokenExpiresAt,
     });
     globalThis.fetch = vi
       .fn()
       .mockRejectedValueOnce(new TypeError("offline"))
-      .mockResolvedValueOnce(jsonResponse(session));
-    pathname = "/login";
+      .mockResolvedValueOnce(jsonResponse({
+        ...session,
+        accessToken: "online-again-access-token",
+        refreshToken: "online-again-refresh-token",
+      }));
+
+    function Probe() {
+      const auth = useAuth();
+      return (
+        <div>
+          <p data-testid="status">{auth.state.status}</p>
+          <p data-testid="authenticated">{auth.isAuthenticated ? "yes" : "no"}</p>
+          <p data-testid="workspace">{auth.workspaceId ?? "none"}</p>
+          <p data-testid="token">{auth.accessToken ?? "none"}</p>
+        </div>
+      );
+    }
 
     await render(
       <AuthProvider authSessionStorage={storage}>
-        <LoginClient />
+        <AuthGuard>
+          <Probe />
+        </AuthGuard>
       </AuthProvider>,
     );
     await flush();
 
-    expect(container.textContent).toContain(
-      "No fue posible restaurar la sesion. Puedes iniciar sesion nuevamente.",
-    );
+    expect(text("[data-testid='status']")).toBe("AUTHENTICATED_OFFLINE");
+    expect(text("[data-testid='authenticated']")).toBe("yes");
+    expect(text("[data-testid='workspace']")).toBe(workspaceId);
+    expect(text("[data-testid='token']")).toBe("none");
     expect(storage.snapshot()?.refreshToken).toBe("stored-refresh-token");
+    expect(routerReplace).not.toHaveBeenCalledWith("/login");
 
-    await setInput("#login-email", user.email);
-    await setInput("#login-password", "password-123");
-    await submit("form");
+    await act(async () => {
+      window.dispatchEvent(new Event("online"));
+    });
     await flush();
 
-    expect(routerReplace).toHaveBeenCalledWith("/");
-    expect(storage.snapshot()?.refreshToken).toBe("refresh-token");
+    expect(text("[data-testid='status']")).toBe("AUTHENTICATED_ONLINE");
+    expect(text("[data-testid='token']")).toBe("online-again-access-token");
+    expect(storage.snapshot()?.refreshToken).toBe("online-again-refresh-token");
   });
 
   it("AuthProvider silently refreshes an active session without leaving the authenticated UI", async () => {
@@ -591,7 +615,7 @@ describe("minimal authentication UI", () => {
     await flush();
 
     await click("button");
-    expect(text("[data-testid='status']")).toBe("AUTHENTICATED");
+    expect(text("[data-testid='status']")).toBe("AUTHENTICATED_ONLINE");
     expect(text("[data-testid='token']")).toBe("login-access-token");
 
     await act(async () => {
@@ -599,7 +623,7 @@ describe("minimal authentication UI", () => {
     });
     await flush();
 
-    expect(text("[data-testid='status']")).toBe("AUTHENTICATED");
+    expect(text("[data-testid='status']")).toBe("AUTHENTICATED_ONLINE");
     expect(text("[data-testid='token']")).toBe("silent-access-token");
     expect(storage.snapshot()).toMatchObject({
       refreshToken: "silent-refresh-token",
@@ -651,7 +675,7 @@ describe("minimal authentication UI", () => {
     await flush();
 
     await click("button");
-    expect(text("[data-testid='status']")).toBe("AUTHENTICATED");
+    expect(text("[data-testid='status']")).toBe("AUTHENTICATED_ONLINE");
     await click("button:nth-of-type(2)");
     expect(text("[data-testid='status']")).toBe("UNAUTHENTICATED");
 

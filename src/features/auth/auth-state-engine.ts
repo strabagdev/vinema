@@ -3,10 +3,13 @@ import type { AuthenticatedUser } from "@vinema/sync-contracts";
 export type AuthStatus =
   | "BOOT"
   | "RESTORING"
+  | "AUTH_UNKNOWN"
   | "UNKNOWN"
   | "AUTHENTICATING"
   | "REFRESHING"
   | "LOGGING_OUT"
+  | "AUTHENTICATED_ONLINE"
+  | "AUTHENTICATED_OFFLINE"
   | "AUTHENTICATED"
   | "UNAUTHENTICATED"
   | "DISPOSING"
@@ -41,6 +44,17 @@ export type AuthEvent =
       sessionId: string;
       accessTokenExpiresAt: string;
       refreshTokenExpiresAt: string;
+    }
+  | {
+      type: "AUTH_OFFLINE_RESTORED";
+      at: string;
+      user: AuthenticatedUser;
+      workspaceId: string;
+      deviceId: string;
+      sessionId: string;
+      accessTokenExpiresAt: string;
+      refreshTokenExpiresAt: string;
+      message: string;
     }
   | { type: "REFRESH_STARTED"; at: string }
   | {
@@ -112,7 +126,7 @@ export function reduceAuthState(state: AuthState, event: AuthEvent): AuthState {
     case "AUTH_SUCCEEDED":
     case "REFRESH_SUCCEEDED":
       return {
-        status: "AUTHENTICATED",
+        status: "AUTHENTICATED_ONLINE",
         user: { ...event.user },
         workspaceId: event.workspaceId,
         deviceId: event.deviceId,
@@ -121,6 +135,22 @@ export function reduceAuthState(state: AuthState, event: AuthEvent): AuthState {
         refreshTokenExpiresAt: event.refreshTokenExpiresAt,
         lastAuthenticatedAt: event.at,
         error: null,
+      };
+    case "AUTH_OFFLINE_RESTORED":
+      return {
+        status: "AUTHENTICATED_OFFLINE",
+        user: { ...event.user },
+        workspaceId: event.workspaceId,
+        deviceId: event.deviceId,
+        sessionId: event.sessionId,
+        accessTokenExpiresAt: event.accessTokenExpiresAt,
+        refreshTokenExpiresAt: event.refreshTokenExpiresAt,
+        lastAuthenticatedAt: state.lastAuthenticatedAt ?? event.at,
+        error: {
+          code: "NETWORK_ERROR",
+          message: event.message,
+          occurredAt: event.at,
+        },
       };
     case "REFRESH_FAILED":
     case "AUTH_FAILED":

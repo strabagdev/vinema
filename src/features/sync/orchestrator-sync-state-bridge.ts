@@ -157,6 +157,17 @@ function resultEvents(state: AutomaticSyncState, at: string): SyncEvent[] {
     ];
   }
 
+  if (result.status === "OFFLINE") {
+    return [
+      {
+        type: "PUSH_FINISHED",
+        at,
+        status: result.pushResult?.status ?? "OFFLINE",
+        error: result.error,
+      },
+    ];
+  }
+
   if (result.status === "PULL_FAILED") {
     return [
       { type: "PUSH_FINISHED", at, status: result.pushResult?.status ?? "SUCCESS" },

@@ -145,6 +145,9 @@ export function createAuthService({
         if (authError.code === "TOKEN_INVALID" || authError.code === "TOKEN_EXPIRED") {
           accessToken = undefined;
           authStateEngine.dispatch({ type: "AUTH_CLEARED", at: clock() });
+        } else if (isTemporaryRefreshError(authError)) {
+          logger?.warn?.("auth session validation failed temporarily", { code: authError.code });
+          restoreCurrentStateOffline("Sesion local disponible sin conexion.");
         } else {
           logger?.warn?.("auth session refresh failed", { code: authError.code });
           authStateEngine.dispatch({
@@ -194,8 +197,14 @@ export function createAuthService({
         if (!isCurrentOperation(generation)) {
           throw error;
         }
-        if (options.silent && isTemporaryRefreshError(authError)) {
-          logger?.warn?.("silent auth refresh failed temporarily", { code: authError.code });
+        if (isTemporaryRefreshError(authError)) {
+          logger?.warn?.(
+            options.silent
+              ? "silent auth refresh failed temporarily"
+              : "auth refresh failed temporarily",
+            { code: authError.code },
+          );
+          restoreCurrentStateOffline("Sesion local disponible sin conexion.");
           throw error;
         }
         accessToken = undefined;
@@ -233,7 +242,13 @@ export function createAuthService({
       }
     },
     isAuthenticated() {
-      return Boolean(accessToken) && authStateEngine.getState().status === "AUTHENTICATED";
+      const status = authStateEngine.getState().status;
+
+      return (
+        status === "AUTHENTICATED_ONLINE" ||
+        status === "AUTHENTICATED_OFFLINE" ||
+        (Boolean(accessToken) && status === "AUTHENTICATED")
+      );
     },
     clearLocalSession() {
       if (disposed) {
@@ -285,6 +300,10 @@ export function createAuthService({
         sessionId: session.sessionId,
         deviceId: session.deviceId,
         storedAt: clock(),
+        user: session.user,
+        workspaceId: session.workspaceId,
+        accessTokenExpiresAt: session.accessTokenExpiresAt,
+        refreshTokenExpiresAt: session.refreshTokenExpiresAt,
       });
     } catch (error) {
       logger?.warn?.("auth session persistence failed");
@@ -300,10 +319,11 @@ export function createAuthService({
 
   async function restorePersistedSession(): Promise<AuthenticatedSession | null> {
     const generation = nextOperationGeneration();
+    let storedSession: Awaited<ReturnType<AuthSessionStorage["load"]>> = null;
     authStateEngine.dispatch({ type: "RESTORE_STARTED", at: clock() });
 
     try {
-      const storedSession = await authSessionStorage.load();
+      storedSession = await authSessionStorage.load();
       if (!storedSession) {
         if (isCurrentOperation(generation)) {
           authStateEngine.dispatch({ type: "AUTH_CLEARED", at: clock() });
@@ -339,19 +359,32 @@ export function createAuthService({
         return null;
       }
 
-      accessToken = undefined;
-      refreshToken = undefined;
-
       if (authError.code === "NETWORK_ERROR") {
-        authStateEngine.dispatch({
-          type: "RESTORE_FAILED",
-          at: clock(),
-          code: authError.code,
-          message: "No fue posible restaurar la sesion. Puedes iniciar sesion nuevamente.",
-        });
+        if (canRestoreOffline(storedSession)) {
+          accessToken = undefined;
+          refreshToken = storedSession.refreshToken;
+          authStateEngine.dispatch({
+            type: "AUTH_OFFLINE_RESTORED",
+            at: clock(),
+            user: storedSession.user,
+            workspaceId: storedSession.workspaceId,
+            deviceId: storedSession.deviceId,
+            sessionId: storedSession.sessionId,
+            accessTokenExpiresAt: storedSession.accessTokenExpiresAt,
+            refreshTokenExpiresAt: storedSession.refreshTokenExpiresAt,
+            message: "Sesion local disponible sin conexion.",
+          });
+          return null;
+        }
+
+        accessToken = undefined;
+        refreshToken = undefined;
+        authStateEngine.dispatch({ type: "AUTH_CLEARED", at: clock() });
         return null;
       }
 
+      accessToken = undefined;
+      refreshToken = undefined;
       authStateEngine.dispatch({ type: "AUTH_CLEARED", at: clock() });
       return null;
     }
@@ -419,9 +452,34 @@ export function createAuthService({
     });
   }
 
+  function restoreCurrentStateOffline(message: string) {
+    const current = authStateEngine.getState();
+    if (!canUseCurrentStateOffline(current) || !refreshToken) {
+      return false;
+    }
+
+    accessToken = undefined;
+    authStateEngine.dispatch({
+      type: "AUTH_OFFLINE_RESTORED",
+      at: clock(),
+      user: current.user,
+      workspaceId: current.workspaceId,
+      deviceId: current.deviceId,
+      sessionId: current.sessionId,
+      accessTokenExpiresAt: current.accessTokenExpiresAt,
+      refreshTokenExpiresAt: current.refreshTokenExpiresAt,
+      message,
+    });
+    return true;
+  }
+
   function assertRefreshSessionConsistency(session: AuthenticatedSession) {
     const current = authStateEngine.getState();
-    if (current.status !== "AUTHENTICATED") {
+    if (
+      current.status !== "AUTHENTICATED" &&
+      current.status !== "AUTHENTICATED_ONLINE" &&
+      current.status !== "AUTHENTICATED_OFFLINE"
+    ) {
       return;
     }
 
@@ -436,6 +494,44 @@ export function createAuthService({
       );
     }
   }
+}
+
+function canUseCurrentStateOffline(state: AuthState): state is AuthState & {
+  user: NonNullable<AuthState["user"]>;
+  workspaceId: string;
+  deviceId: string;
+  sessionId: string;
+  accessTokenExpiresAt: string;
+  refreshTokenExpiresAt: string;
+} {
+  return Boolean(
+    state.user &&
+      state.workspaceId &&
+      state.deviceId &&
+      state.sessionId &&
+      state.accessTokenExpiresAt &&
+      state.refreshTokenExpiresAt &&
+      (state.status === "AUTHENTICATED" ||
+        state.status === "AUTHENTICATED_ONLINE" ||
+        state.status === "AUTHENTICATED_OFFLINE" ||
+        state.status === "REFRESHING"),
+  );
+}
+
+function canRestoreOffline(
+  session: Awaited<ReturnType<AuthSessionStorage["load"]>>,
+): session is NonNullable<Awaited<ReturnType<AuthSessionStorage["load"]>>> & {
+  user: NonNullable<NonNullable<Awaited<ReturnType<AuthSessionStorage["load"]>>>["user"]>;
+  workspaceId: string;
+  accessTokenExpiresAt: string;
+  refreshTokenExpiresAt: string;
+} {
+  return Boolean(
+    session?.user &&
+      session.workspaceId &&
+      session.accessTokenExpiresAt &&
+      session.refreshTokenExpiresAt,
+  );
 }
 
 function toAuthError(error: unknown) {

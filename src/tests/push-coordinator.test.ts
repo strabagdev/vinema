@@ -149,6 +149,36 @@ describe("push coordinator", () => {
     expect(timeoutSetup.outbox.records[0]?.status).toBe("PENDING");
   });
 
+  it("reports offline push failures as expected operational state instead of critical errors", async () => {
+    const mutation = makeMutation("33333333-3333-4333-8333-333333333333");
+    const logger = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+    const setup = createSetup({
+      records: [makeRecord(mutation)],
+      responses: [new SyncClientError({ code: "NETWORK_ERROR", message: "Offline" })],
+      logger,
+    });
+
+    await expect(setup.coordinator.run()).resolves.toMatchObject({
+      status: "OFFLINE",
+      deferred: 1,
+    });
+
+    expect(logger.info).toHaveBeenCalledWith(
+      "push coordinator offline",
+      expect.objectContaining({ status: "OFFLINE", errorCode: "NETWORK_ERROR" }),
+    );
+    expect(logger.error).not.toHaveBeenCalledWith(
+      "push coordinator failed",
+      expect.anything(),
+    );
+    expect(setup.outbox.records).toMatchObject([{ status: "PENDING" }]);
+  });
+
   it("stops on auth errors without deleting mutations", async () => {
     const mutation = makeMutation("33333333-3333-4333-8333-333333333333");
     const setup = createSetup({

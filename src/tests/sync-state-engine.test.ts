@@ -211,6 +211,24 @@ describe("sync state engine", () => {
     });
   });
 
+  it("classifies offline push failures as connectivity without keeping a critical error", () => {
+    const engine = createSyncStateEngine();
+    engine.dispatch({ type: "PUSH_STARTED", at: now });
+    engine.dispatch({
+      type: "PUSH_FINISHED",
+      at: later,
+      status: "OFFLINE",
+    });
+
+    expect(engine.getState()).toMatchObject({
+      phase: "IDLE",
+      connectivity: "OFFLINE",
+      lastRunFinishedAt: later,
+      lastError: null,
+    });
+    expect(selectSyncHealth(engine.getState())).toBe("OFFLINE");
+  });
+
   it("reset returns to initial state", () => {
     const engine = createSyncStateEngine();
     engine.dispatch({ type: "ORCHESTRATOR_STARTED", at: now });
@@ -285,7 +303,7 @@ describe("sync state engine", () => {
     expect(selectSyncHealth(offlineConflict)).toBe("OFFLINE");
   });
 
-  it("bridge translates orchestrator PUSHING, PULLING, SUCCESS and ERROR states", () => {
+  it("bridge translates orchestrator PUSHING, PULLING, SUCCESS, OFFLINE and ERROR states", () => {
     const events = collectBridgeEvents([
       automaticState({ started: true, phase: "PUSHING", lastRunStartedAt: now }),
       automaticState({ started: true, phase: "PULLING", lastRunStartedAt: now }),
@@ -310,6 +328,29 @@ describe("sync state engine", () => {
           error: { stage: "PULL", code: "NETWORK_ERROR", message: "Offline" },
         },
       }),
+      automaticState({
+        started: true,
+        phase: "IDLE",
+        lastRunStartedAt: now,
+        lastRunFinishedAt: later,
+        lastError: null,
+        lastResult: {
+          status: "OFFLINE",
+          startedAt: now,
+          finishedAt: later,
+          pushResult: {
+            status: "OFFLINE",
+            pushed: 0,
+            failed: 0,
+            conflicts: 0,
+            deferred: 1,
+            removedFromOutbox: 0,
+            startedAt: now,
+            finishedAt: later,
+            errors: [{ code: "NETWORK_ERROR", message: "Offline" }],
+          },
+        },
+      }),
     ]);
 
     expect(events.map((event) => event.type)).toEqual(
@@ -318,7 +359,14 @@ describe("sync state engine", () => {
         "PULL_STARTED",
         "SYNC_SUCCEEDED",
         "SYNC_FAILED",
+        "PUSH_FINISHED",
       ]),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "PUSH_FINISHED",
+        status: "OFFLINE",
+      }),
     );
   });
 

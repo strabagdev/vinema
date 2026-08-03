@@ -34,6 +34,7 @@ export type AutomaticSyncError = {
 
 export type SyncCycleStatus =
   | "SUCCESS"
+  | "OFFLINE"
   | "PUSH_FAILED"
   | "PULL_FAILED"
   | "CANCELLED"
@@ -269,6 +270,10 @@ export function createAutomaticSyncOrchestrator({
         return finishCancelled("PUSH", startedAt, { pushResult });
       }
 
+      if (pushResult.status === "OFFLINE") {
+        return finishOffline(startedAt, { pushResult });
+      }
+
       if (!isSuccessfulPush(pushResult)) {
         return finishFailure("PUSH_FAILED", "PUSH", startedAt, { pushResult });
       }
@@ -414,6 +419,30 @@ export function createAutomaticSyncOrchestrator({
       updateState({ started: false, nextRunAt: null });
     }
 
+    return result;
+  }
+
+  function finishOffline(
+    startedAt: string,
+    partial: Pick<SyncCycleResult, "pushResult">,
+  ) {
+    const finishedAt = clock();
+    const result: SyncCycleResult = {
+      status: "OFFLINE",
+      startedAt,
+      finishedAt,
+      ...partial,
+    };
+    updateState({
+      running: false,
+      phase: "IDLE",
+      lastRunFinishedAt: finishedAt,
+      lastError: null,
+      lastResult: result,
+    });
+    log("info", "sync_cycle_offline", {
+      durationMs: durationMs(startedAt, finishedAt),
+    });
     return result;
   }
 

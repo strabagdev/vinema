@@ -106,6 +106,26 @@ export function AuthProvider({
   useEffect(() => runtime.syncStateEngine.subscribe(setSyncState), [runtime]);
 
   useEffect(() => {
+    function handleOnline() {
+      if (runtime.lifecycle.getState().status !== "AUTHENTICATED_OFFLINE") {
+        return;
+      }
+
+      runtime.lifecycle.refresh()
+        .then(() => {
+          setAccessToken(runtime.lifecycle.getAccessToken());
+        })
+        .catch(() => undefined);
+    }
+
+    window.addEventListener("online", handleOnline);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+    };
+  }, [runtime]);
+
+  useEffect(() => {
     let mounted = true;
     disposeGenerationRef.current += 1;
 
@@ -166,11 +186,15 @@ export function AuthProvider({
     deviceId: state.deviceId,
     accessToken,
     syncState,
-    isAuthenticated: Boolean(accessToken) && state.status === "AUTHENTICATED",
+    isAuthenticated:
+      state.status === "AUTHENTICATED_ONLINE" ||
+      state.status === "AUTHENTICATED_OFFLINE" ||
+      (Boolean(accessToken) && state.status === "AUTHENTICATED"),
     isLoading:
       state.status === "BOOT" ||
       state.status === "RESTORING" ||
       state.status === "UNKNOWN" ||
+      state.status === "AUTH_UNKNOWN" ||
       state.status === "AUTHENTICATING" ||
       state.status === "REFRESHING" ||
       state.status === "LOGGING_OUT" ||
@@ -280,6 +304,14 @@ function createAuthRuntime(authSessionStorage?: AuthSessionStorage): AuthRuntime
     refresh: () => service.refresh({ silent: true }),
     visibilityDocument: typeof document === "undefined" ? undefined : document,
     onRefreshFailed(error, { tokenExpired }) {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        String(error.code) === "NETWORK_ERROR"
+      ) {
+        return;
+      }
+
       if (!tokenExpired) {
         return;
       }

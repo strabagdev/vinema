@@ -90,12 +90,12 @@ describe("AuthenticationLifecycle", () => {
     expect(coordinator.schedule).toHaveBeenCalledWith(accessTokenExpiresAt);
     expect(authenticatedSync.handleAuthState).toHaveBeenCalledWith(
       expect.objectContaining({
-        status: "AUTHENTICATED",
+        status: "AUTHENTICATED_ONLINE",
         workspaceId,
         deviceId,
       }),
     );
-    expect(lifecycle.getState().status).toBe("AUTHENTICATED");
+    expect(lifecycle.getState().status).toBe("AUTHENTICATED_ONLINE");
   });
 
   it("delegates login, register, refresh and logout through one lifecycle authority", async () => {
@@ -122,7 +122,7 @@ describe("AuthenticationLifecycle", () => {
     expect(client.register).toHaveBeenCalledTimes(1);
     expect(coordinator.schedule).toHaveBeenCalledWith(accessTokenExpiresAt);
     expect(authenticatedSync.handleAuthState).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "AUTHENTICATED" }),
+      expect.objectContaining({ status: "AUTHENTICATED_ONLINE" }),
     );
 
     await lifecycle.login({ email: user.email, password: "password-123" });
@@ -226,7 +226,7 @@ describe("AuthenticationLifecycle", () => {
     expect(syncStateEngine.getState().authentication).toBe("UNKNOWN");
 
     await lifecycle.login({ email: user.email, password: "password-123" });
-    expect(syncStateEngine.getState().authentication).toBe("AUTHENTICATED");
+    expect(syncStateEngine.getState().authentication).toBe("AUTHENTICATED_ONLINE");
 
     await lifecycle.logout();
     expect(syncStateEngine.getState().authentication).toBe("UNAUTHENTICATED");
@@ -235,7 +235,7 @@ describe("AuthenticationLifecycle", () => {
   it("ignores invalid state transitions after disposing", () => {
     const disposing = reduceAuthState(
       {
-        status: "AUTHENTICATED",
+        status: "AUTHENTICATED_ONLINE",
         user,
         workspaceId,
         deviceId,

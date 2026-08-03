@@ -157,6 +157,16 @@ describe("sync client", () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
+  it("classifies missing fetch as a network error without issuing a request", async () => {
+    const client = createSyncClient({
+      baseUrl,
+      accessToken,
+      fetchFn: undefined as unknown as typeof fetch,
+    });
+
+    await expect(client.health()).rejects.toMatchObject({ code: "NETWORK_ERROR" });
+  });
+
   it("maps 401 and 403 to auth errors", async () => {
     const client401 = createSyncClient({
       baseUrl,
