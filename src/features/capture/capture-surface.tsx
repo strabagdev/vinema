@@ -58,6 +58,7 @@ export type CaptureSurfaceProps = {
   workspace: Workspace;
   storage: StorageAdapter;
   repositories: SearchNodesRepositories;
+  onCaptureCommitted?: () => void | Promise<void>;
 };
 
 export function CaptureSurface({
@@ -65,6 +66,7 @@ export function CaptureSurface({
   workspace,
   storage,
   repositories,
+  onCaptureCommitted,
 }: CaptureSurfaceProps) {
   const feedback = useVisualFeedback();
   const [content, setContent] = useState("");
@@ -406,6 +408,7 @@ export function CaptureSurface({
       setInteractionSource(null);
       setDraftStatus("idle");
       feedback.capture();
+      void onCaptureCommitted?.();
       if (result.relationError) {
         feedback.error("Algunas asociaciones no pudieron persistirse.");
       }

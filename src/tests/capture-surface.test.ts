@@ -256,6 +256,25 @@ describe("CaptureSurface", () => {
     expect(feedbackService.getState().current?.kind).toBe("capture");
   });
 
+  it("requests synchronization immediately after the local capture is committed", async () => {
+    const storage = new MemoryStorageAdapter();
+    const nodeRepository = new InMemoryNodeRepository();
+    const onCaptureCommitted = vi.fn(async () => {
+      await expect(nodeRepository.listByWorkspace(workspace.id)).resolves.toHaveLength(1);
+    });
+    const screen = await renderCaptureSurface({
+      storage,
+      nodeRepository,
+      onCaptureCommitted,
+    });
+
+    await changeTextarea(screen.container, "Captura local que debe propagarse");
+    await advanceTime(500);
+    await click(getButton(screen.container, "Capturar"));
+
+    expect(onCaptureCommitted).toHaveBeenCalledTimes(1);
+  });
+
   it("captures from an open panel and clears panels and indicators", async () => {
     const nodeRepository = new InMemoryNodeRepository();
     const screen = await renderCaptureSurface({ nodeRepository });
@@ -1521,12 +1540,14 @@ async function renderCaptureSurface({
   contextRepository = new InMemoryContextRepository(),
   relationRepository = new InMemoryNodeContextRelationRepository(),
   feedbackService,
+  onCaptureCommitted,
 }: {
   storage?: MemoryStorageAdapter;
   nodeRepository?: InMemoryNodeRepository;
   contextRepository?: InMemoryContextRepository;
   relationRepository?: InMemoryNodeContextRelationRepository;
   feedbackService?: VisualFeedbackService;
+  onCaptureCommitted?: () => void | Promise<void>;
 } = {}) {
   const container = document.createElement("div");
   document.body.replaceChildren(container);
@@ -1543,6 +1564,7 @@ async function renderCaptureSurface({
       workspace,
       storage,
       repositories,
+      onCaptureCommitted,
     });
 
     root.render(

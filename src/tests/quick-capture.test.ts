@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   push: vi.fn(),
   replace: vi.fn(),
   logout: vi.fn(async (): Promise<void> => undefined),
+  syncConnectivity: "ONLINE",
 }));
 
 vi.mock("next/navigation", () => ({
@@ -32,7 +33,7 @@ vi.mock("@/features/auth/auth-provider", () => ({
     syncState: {
       lifecycle: "STARTED",
       phase: "IDLE",
-      connectivity: "ONLINE",
+      connectivity: mocks.syncConnectivity,
       authentication: "AUTHENTICATED",
       pendingMutations: 0,
       processingMutations: 0,
@@ -63,6 +64,7 @@ describe("Global writing entry", () => {
     mocks.replace.mockClear();
     mocks.logout.mockReset();
     mocks.logout.mockResolvedValue(undefined);
+    mocks.syncConnectivity = "ONLINE";
     setNavigatorOnline(true);
   });
 
@@ -139,6 +141,7 @@ describe("Global writing entry", () => {
   });
 
   it("shows a quiet local-mode signal when the browser is offline", async () => {
+    mocks.syncConnectivity = "OFFLINE";
     setNavigatorOnline(false);
 
     const { container } = await renderAppShell();

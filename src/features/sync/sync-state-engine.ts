@@ -222,6 +222,7 @@ export function reduceSyncState(
       return {
         ...state,
         phase: "SUCCESS",
+        connectivity: "ONLINE",
         lastRunFinishedAt: event.at,
         lastSuccessfulSyncAt: event.at,
         lastError: null,
@@ -272,7 +273,14 @@ export function reduceSyncState(
     case "CONNECTIVITY_CHANGED":
       return { ...state, connectivity: event.connectivity };
     case "AUTHENTICATION_CHANGED":
-      return { ...state, authentication: event.authentication };
+      return {
+        ...state,
+        authentication: event.authentication,
+        connectivity:
+          event.authentication === "AUTHENTICATED_ONLINE"
+            ? "ONLINE"
+            : state.connectivity,
+      };
     case "ERROR_CLEARED":
       return { ...state, lastError: null };
     case "STATE_RESET":

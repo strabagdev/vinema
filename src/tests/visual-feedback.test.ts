@@ -94,6 +94,12 @@ describe("VisualFeedbackService", () => {
 
     service.offline();
     service.offline();
+    expect(
+      [service.getState().current, ...service.getState().queue].filter(
+        (event) => event?.kind === "offline",
+      ),
+    ).toHaveLength(1);
+
     service.syncing();
     service.syncing();
 
@@ -101,12 +107,35 @@ describe("VisualFeedbackService", () => {
       [service.getState().current, ...service.getState().queue].filter(
         (event) => event?.kind === "offline",
       ),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
     expect(
       [service.getState().current, ...service.getState().queue].filter(
         (event) => event?.kind === "syncing",
       ),
     ).toHaveLength(1);
+  });
+
+  it("removes stale offline entries when synchronization resumes", () => {
+    const service = createVisualFeedbackService();
+
+    service.offline();
+    expect(service.getState().current?.kind).toBe("offline");
+
+    service.syncing();
+    expect(service.getState().current?.kind).toBe("syncing");
+    expect(
+      [service.getState().current, ...service.getState().queue].some(
+        (event) => event?.kind === "offline",
+      ),
+    ).toBe(false);
+
+    service.offline();
+    expect(service.getState().current?.kind).toBe("offline");
+    expect(
+      [service.getState().current, ...service.getState().queue].some(
+        (event) => event?.dedupeKey === "sync",
+      ),
+    ).toBe(false);
   });
 });
 
@@ -398,6 +427,124 @@ describe("VisualFeedbackViewport", () => {
     await advanceTime(5_000);
 
     expect(screen.querySelector("[data-feedback-kind='offline']")).toBeTruthy();
+  });
+
+  it("clears persistent offline feedback when connectivity returns without work", async () => {
+    const service = createVisualFeedbackService();
+    setNavigatorOnline(false);
+    mocks.syncState = syncState({ connectivity: "OFFLINE" });
+    const screen = await renderFeedback(service);
+
+    expect(screen.querySelector("[data-feedback-kind='offline']")).toBeTruthy();
+
+    setNavigatorOnline(true);
+    mocks.syncState = syncState({ connectivity: "ONLINE", phase: "WAITING" });
+    await rerenderFeedback(service);
+
+    expect(screen.querySelector("[data-feedback-kind='idle']")).toBeTruthy();
+  });
+
+  it("transitions offline with pending work to syncing, synced and idle after reconnect", async () => {
+    const service = createVisualFeedbackService();
+    setNavigatorOnline(false);
+    mocks.syncState = syncState({
+      connectivity: "OFFLINE",
+      pendingMutations: 1,
+    });
+    const screen = await renderFeedback(service);
+
+    expect(screen.querySelector("[data-feedback-kind='offline']")).toBeTruthy();
+
+    setNavigatorOnline(true);
+    mocks.syncState = syncState({
+      connectivity: "ONLINE",
+      phase: "PUSHING",
+      pendingMutations: 1,
+    });
+    await rerenderFeedback(service);
+
+    expect(screen.querySelector("[data-feedback-kind='syncing']")).toBeTruthy();
+    expect(screen.querySelector("[data-feedback-kind='offline']")).toBeNull();
+
+    mocks.syncState = syncState({
+      connectivity: "ONLINE",
+      phase: "SUCCESS",
+      lastSuccessfulSyncAt: "2026-01-01T00:00:02.000Z",
+    });
+    await rerenderFeedback(service);
+
+    expect(screen.querySelector("[data-feedback-kind='synced']")).toBeTruthy();
+
+    await advanceTime(SYNCED_VISIBLE_MS);
+
+    expect(screen.querySelector("[data-feedback-kind='idle']")).toBeTruthy();
+  });
+
+  it("clears offline feedback when auth returns online even before a sync cycle", async () => {
+    const service = createVisualFeedbackService();
+    setNavigatorOnline(false);
+    mocks.syncState = syncState({
+      connectivity: "OFFLINE",
+      authentication: "AUTHENTICATED_OFFLINE",
+    });
+    const screen = await renderFeedback(service);
+
+    expect(screen.querySelector("[data-feedback-kind='offline']")).toBeTruthy();
+
+    setNavigatorOnline(true);
+    mocks.syncState = syncState({
+      connectivity: "ONLINE",
+      authentication: "AUTHENTICATED_ONLINE",
+    });
+    await rerenderFeedback(service);
+
+    expect(screen.querySelector("[data-feedback-kind='idle']")).toBeTruthy();
+  });
+
+  it("does not duplicate feedback for duplicate reconnect events", async () => {
+    const service = createVisualFeedbackService();
+    setNavigatorOnline(false);
+    mocks.syncState = syncState({ connectivity: "OFFLINE" });
+    const screen = await renderFeedback(service);
+
+    expect(screen.querySelector("[data-feedback-kind='offline']")).toBeTruthy();
+
+    setNavigatorOnline(true);
+    mocks.syncState = syncState({ connectivity: "ONLINE", phase: "WAITING" });
+    await rerenderFeedback(service);
+    await rerenderFeedback(service);
+
+    expect(screen.querySelector("[data-feedback-kind='idle']")).toBeTruthy();
+    expect(service.getState().queue).toEqual([]);
+  });
+
+  it("lets a real sync error interrupt reconnect feedback", async () => {
+    const service = createVisualFeedbackService();
+    setNavigatorOnline(false);
+    mocks.syncState = syncState({
+      connectivity: "OFFLINE",
+      pendingMutations: 1,
+    });
+    const screen = await renderFeedback(service);
+
+    expect(screen.querySelector("[data-feedback-kind='offline']")).toBeTruthy();
+
+    setNavigatorOnline(true);
+    mocks.syncState = syncState({
+      connectivity: "ONLINE",
+      phase: "ERROR",
+      lastError: {
+        source: "PUSH",
+        code: "SERVER_ERROR",
+        message: "No fue posible sincronizar.",
+        occurredAt: "2026-01-01T00:00:02.000Z",
+      },
+    });
+    await rerenderFeedback(service);
+
+    expect(screen.querySelector("[data-feedback-kind='error']")).toBeTruthy();
+    expect(screen.querySelector("[data-feedback-kind='offline']")).toBeNull();
+    expect(screen.querySelector("[data-feedback-kind='synced']")).toBeNull();
   });
 
   it("shows error text and keeps motion-reduce classes", async () => {

@@ -283,6 +283,16 @@ function bindSyncStateToFeedback(
   const successfulRunFinished =
     syncState.lastSuccessfulSyncAt !== null &&
     syncState.lastSuccessfulSyncAt !== previousState?.lastSuccessfulSyncAt;
+  const reconnectedSincePrevious =
+    previousState?.connectivity === "OFFLINE" &&
+    syncState.connectivity === "ONLINE";
+
+  if (
+    syncState.connectivity === "ONLINE" ||
+    syncState.authentication === "AUTHENTICATED_ONLINE"
+  ) {
+    service.dismissKind("offline");
+  }
 
   if (syncState.connectivity === "OFFLINE") {
     service.dismissKind("syncing");
@@ -306,8 +316,14 @@ function bindSyncStateToFeedback(
     return;
   }
 
-  if (successfulRunFinished && showingSyncing) {
+  if (
+    successfulRunFinished &&
+    (showingSyncing ||
+      hasPreviousVisibleSyncWork(previousState) ||
+      reconnectedSincePrevious)
+  ) {
     service.dismissKind("syncing");
+    service.dismissKind("offline");
     service.synced();
     return;
   }
@@ -324,6 +340,10 @@ function bindSyncStateToFeedback(
 
 function hasVisibleSyncWork(syncState: SyncState) {
   return syncState.pendingMutations > 0 || syncState.processingMutations > 0;
+}
+
+function hasPreviousVisibleSyncWork(syncState: SyncState | null) {
+  return syncState ? hasVisibleSyncWork(syncState) : false;
 }
 
 function bindOnlineStatusToFeedback(service: VisualFeedbackService) {

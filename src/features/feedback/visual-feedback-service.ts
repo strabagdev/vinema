@@ -124,6 +124,14 @@ export function createVisualFeedbackService(): VisualFeedbackService {
       state = removeKind(state, "saving");
     }
 
+    if (event.kind === "offline") {
+      state = removeDedupeKey(state, "sync");
+    }
+
+    if (event.kind === "syncing" || event.kind === "synced") {
+      state = removeKind(state, "offline");
+    }
+
     if (event.dedupeKey) {
       state = removeDedupeKey(state, event.dedupeKey);
     }

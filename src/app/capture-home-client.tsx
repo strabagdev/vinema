@@ -1,6 +1,7 @@
 "use client";
 
 import { CaptureSurface } from "@/features/capture/capture-surface";
+import { useAuth } from "@/features/auth/auth-provider";
 import { useVinemaContext } from "@/features/node/hooks/use-vinema-context";
 import {
   createLocalSyncRepositorySet,
@@ -8,6 +9,7 @@ import {
 } from "@/infrastructure/repositories";
 
 export function CaptureHomeClient() {
+  const auth = useAuth();
   const context = useVinemaContext();
 
   if (context.status === "loading") {
@@ -39,6 +41,11 @@ export function CaptureHomeClient() {
         workspaceId: context.workspace.id,
         deviceId: context.device.id,
       })}
+      onCaptureCommitted={() => {
+        if (auth.authStatus === "AUTHENTICATED_ONLINE") {
+          void auth.syncNow();
+        }
+      }}
     />
   );
 }

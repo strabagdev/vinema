@@ -211,6 +211,30 @@ describe("sync state engine", () => {
     });
   });
 
+  it("marks connectivity online when auth or a successful sync proves reconnection", () => {
+    const engine = createSyncStateEngine();
+
+    engine.dispatch({ type: "CONNECTIVITY_CHANGED", connectivity: "OFFLINE" });
+    engine.dispatch({
+      type: "AUTHENTICATION_CHANGED",
+      authentication: "AUTHENTICATED_ONLINE",
+    });
+
+    expect(engine.getState()).toMatchObject({
+      connectivity: "ONLINE",
+      authentication: "AUTHENTICATED_ONLINE",
+    });
+
+    engine.dispatch({ type: "CONNECTIVITY_CHANGED", connectivity: "OFFLINE" });
+    engine.dispatch({ type: "SYNC_SUCCEEDED", at: later });
+
+    expect(engine.getState()).toMatchObject({
+      connectivity: "ONLINE",
+      phase: "SUCCESS",
+      lastSuccessfulSyncAt: later,
+    });
+  });
+
   it("classifies offline push failures as connectivity without keeping a critical error", () => {
     const engine = createSyncStateEngine();
     engine.dispatch({ type: "PUSH_STARTED", at: now });
