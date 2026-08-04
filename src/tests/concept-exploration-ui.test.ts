@@ -414,7 +414,7 @@ describe("ConceptExplorationClient", () => {
   it("links recent concept memories back to Memoria with concept query", async () => {
     const screen = await renderConceptExploration();
     const link = Array.from(screen.querySelectorAll("a")).find(
-      (item) => item.textContent?.includes("Ver todos en Memoria"),
+      (item) => item.textContent?.includes("Explorar memoria"),
     );
 
     expect(link?.getAttribute("href")).toBe("/memory?concept=railway");
@@ -431,6 +431,16 @@ describe("ConceptExplorationClient", () => {
     expect(screen.textContent).toContain("Conexiones del foco");
     expect(screen.textContent).toContain("Sync");
     expect(screen.textContent).toContain("Workspace");
+    const canvas = screen.querySelector("[data-knowledge-explorer-canvas]");
+    const graphRegion = screen.querySelector("[aria-label='Mapa de conexiones']");
+    const alternativeList = screen.querySelector("[aria-label='Conexiones del foco']");
+
+    expect(canvas?.className).toContain("h-full");
+    expect(canvas?.className).toContain("min-h-0");
+    expect(canvas?.className).toContain("overflow-hidden");
+    expect(graphRegion?.className).toContain("overflow-auto");
+    expect(graphRegion?.className).toContain("vinema-scrollbar");
+    expect(alternativeList?.parentElement?.className).toContain("overflow-y-auto");
     expect(screen.querySelector("svg[aria-label='Mapa de conceptos conectados']")).toBeTruthy();
   });
 

@@ -1,12 +1,10 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { SquarePen } from "lucide-react";
 import type React from "react";
 import { useCallback, useEffect } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppHeader } from "@/components/app-shell/app-header";
-import { Button } from "@/components/ui/button";
 import { AuthGuard, isPublicAuthRoute } from "@/features/auth/auth-guard";
 import { AuthProvider } from "@/features/auth/auth-provider";
 import { requestFullCaptureFocus } from "@/features/capture/capture-events";
@@ -14,6 +12,7 @@ import {
   VisualFeedbackProvider,
   VisualFeedbackViewport,
 } from "@/features/feedback/visual-feedback-provider";
+import { cn } from "@/lib/cn";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -29,6 +28,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const publicAuthRoute = isPublicAuthRoute(pathname);
+  const canvasRoute = pathname === "/" || pathname === "/concepts/explore";
 
   useEffect(() => {
     if ("serviceWorker" in navigator) {
@@ -92,24 +92,33 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   return (
     <TooltipProvider delayDuration={200}>
       <AuthGuard>
-        <div className="min-h-screen bg-zinc-50 text-zinc-950">
-          <div className="flex min-h-screen min-w-0 flex-col">
+        <div
+          className={cn(
+            "bg-zinc-50 text-zinc-950",
+            canvasRoute ? "h-dvh overflow-hidden" : "min-h-screen",
+          )}
+          data-app-shell={canvasRoute ? "canvas" : "document"}
+        >
+          <div
+            className={cn(
+              "flex min-w-0 flex-col",
+              canvasRoute ? "h-full min-h-0" : "min-h-screen",
+            )}
+          >
             <AppHeader
               pathname={pathname}
               onFocusWriting={focusFullCapture}
             />
             <VisualFeedbackViewport />
-            <main className="flex flex-1">{children}</main>
+            <main
+              className={cn(
+                "flex flex-1",
+                canvasRoute ? "min-h-0 overflow-hidden" : "",
+              )}
+            >
+              {children}
+            </main>
           </div>
-          <Button
-            type="button"
-            size="icon"
-            className="fixed bottom-5 right-5 z-40 shadow-lg md:hidden"
-            aria-label="Empezar a escribir"
-            onClick={focusFullCapture}
-          >
-            <SquarePen className="h-5 w-5" />
-          </Button>
         </div>
       </AuthGuard>
     </TooltipProvider>

@@ -931,7 +931,7 @@ function RecentMemories({
           href={`/memory?concept=${encodeURIComponent(conceptId)}`}
           className="text-sm font-medium text-zinc-700 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
         >
-          Ver todos en Memoria
+          Explorar memoria
         </Link>
       </div>
       <MemoryList memories={memories} identities={identities} returnTo={returnTo} />

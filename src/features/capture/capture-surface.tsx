@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Brain, Check, Lightbulb, Maximize2, SendHorizontal, X } from "lucide-react";
+import { Brain, Check, Lightbulb, SendHorizontal, X } from "lucide-react";
 import type { FocusEvent, ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -33,18 +33,14 @@ import {
   type CaptureSelectionResolution,
 } from "@/features/capture/capture-selection";
 import { CaptureSelectionAction } from "@/features/capture/capture-selection-action";
-import {
-  KNOWLEDGE_SUGGESTION_LABELS,
-  type KnowledgeSuggestionKind,
-} from "@/features/cognition/knowledge-suggestions";
+import type { KnowledgeSuggestionKind } from "@/features/cognition/knowledge-suggestions";
 import type { CaptureEmergentIdentity } from "@/features/identity/capture-emergent-identity";
 import { CaptureEmergentIdentityLabel } from "@/features/identity/capture-emergent-identity-view";
 import { loadCaptureEmergentIdentities } from "@/features/identity/load-capture-emergent-identities";
-import { getConceptExplorationPath } from "@/features/exploration/concept-routes";
+import { getConceptKnowledgeExplorerPath } from "@/features/exploration/concept-routes";
 import { useVisualFeedback } from "@/features/feedback/visual-feedback-provider";
 import { isKnowledgeResetRunning } from "@/features/knowledge-reset/knowledge-reset";
 import { getCapturePreview } from "@/features/node/node-display";
-import { getNodeDetailPath } from "@/features/node/node-routes";
 import type { SearchNodesRepositories } from "@/features/recovery/search-nodes";
 import type { StorageAdapter } from "@/infrastructure/storage/storage-adapter";
 import { cn } from "@/lib/cn";
@@ -123,14 +119,6 @@ export function CaptureSurface({
   const showConceptIndicator = hasContent && conceptSuggestions.length > 0;
   const showMemoryIndicator = hasContent && memorySuggestions.length > 0;
   const showIndicators = showConceptIndicator || showMemoryIndicator;
-  const conceptExpansionContextId = getConceptExpansionContextId(
-    conceptSuggestions,
-    selectedContextIds,
-  );
-  const memoryExpansionContextId = getMemoryExpansionContextId(
-    memorySuggestions,
-    memoryIdentities,
-  );
   const clearPanelCloseTimer = useCallback(() => {
     if (closePanelTimerRef.current) {
       clearTimeout(closePanelTimerRef.current);
@@ -628,16 +616,22 @@ export function CaptureSurface({
   }
 
   return (
-    <main className="flex w-full flex-1 px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-4 sm:px-6 lg:px-10">
-      <section className="mx-auto flex min-h-[calc(100dvh-5.5rem)] w-full max-w-3xl flex-1 flex-col justify-start pt-[clamp(3rem,11vh,8rem)]">
+    <main
+      className="flex h-full min-h-0 w-full flex-1 overflow-hidden px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-6 md:px-6 md:pb-[max(1rem,env(safe-area-inset-bottom))] md:pt-4 lg:px-10"
+      data-capture-canvas=""
+    >
+      <section className="mx-auto flex h-full min-h-0 w-full max-w-3xl flex-1 flex-col justify-end md:justify-start md:pt-[clamp(1.5rem,7vh,5rem)]">
         <h1 className="sr-only">Empieza a escribir</h1>
-        <div className="relative space-y-5">
+        <div
+          className="relative flex min-h-0 w-full flex-col gap-3 rounded-[1.35rem] border border-zinc-200/80 bg-white/90 p-3 shadow-[0_12px_40px_rgba(24,24,27,0.10)] backdrop-blur-md md:flex-1 md:gap-5 md:rounded-none md:border-0 md:bg-transparent md:p-0 md:shadow-none md:backdrop-blur-0"
+          data-mobile-capture-composer=""
+        >
           <Textarea
             id="capture"
             ref={textareaRef}
             aria-label="Empieza a escribir"
-            className="min-h-[min(58dvh,36rem)] resize-none border-0 bg-transparent px-0 py-0 text-[1.42rem] font-normal leading-[1.75] text-zinc-950 shadow-none outline-none ring-0 placeholder:text-zinc-300 focus-visible:ring-0 focus-visible:ring-offset-0 focus:placeholder:text-transparent sm:text-[1.65rem]"
-            placeholder="Escribe..."
+            className="vinema-scrollbar min-h-[5.5rem] max-h-[min(34dvh,12rem)] flex-none resize-none overflow-y-auto scroll-smooth border-0 bg-transparent px-1 py-1 text-[1.08rem] font-normal leading-[1.55] text-zinc-950 shadow-none outline-none ring-0 placeholder:text-zinc-400 focus-visible:ring-0 focus-visible:ring-offset-0 md:min-h-0 md:max-h-none md:flex-1 md:px-0 md:py-0 md:text-[1.42rem] md:leading-[1.75] md:placeholder:text-zinc-300 md:focus:placeholder:text-transparent sm:md:text-[1.65rem]"
+            placeholder="Escribe algo..."
             value={content}
             onKeyDown={(event) => {
               if (
@@ -671,141 +665,125 @@ export function CaptureSurface({
             onChoose={chooseAmbiguousSelectionConcept}
             onCancel={clearCapturedSelection}
           />
-          {hasContent ? (
-            <div
-              className="flex min-h-10 w-full items-center justify-between gap-4 overflow-visible"
-              data-capture-action-row=""
-            >
-              {showIndicators ? (
-                <div
-                  className="relative flex min-h-10 w-fit min-w-0 max-w-[calc(100%-3.5rem)] items-center justify-start"
-                  aria-label="Area contextual"
-                  data-contextual-panel-root=""
-                  data-capture-context-tools=""
-                >
-                  {activePanel === "concepts" ? (
-                    <ProgressivePanel
-                      title="Conceptos detectados"
-                      expandHref={
-                        conceptExpansionContextId
-                          ? getConceptExplorationPath(conceptExpansionContextId, {
-                              returnTo: "/",
-                              from: "panel",
-                            })
-                          : null
-                      }
-                      interactionSource={interactionSource}
-                      placement={panelPlacement}
-                      onIntentStart={clearPanelCloseTimer}
-                      onIntentEnd={schedulePanelClose}
-                      onBlur={closePanelAfterFocusLeaves}
-                      onClose={closePanels}
-                      onExpand={persistCurrentDraft}
-                    >
-                      <ConceptPanelContent
-                        suggestions={conceptSuggestions}
-                        selectedContextIds={selectedContextIds}
-                        selectedEmergingCandidateIds={selectedEmergingConcepts.map(
-                          (concept) => concept.candidateId,
-                        )}
-                        onToggleExisting={toggleConcept}
-                        onToggleEmerging={toggleEmergingConcept}
-                      />
-                    </ProgressivePanel>
-                  ) : null}
-                  {activePanel === "memories" ? (
-                    <ProgressivePanel
-                      title="Me recuerda a…"
-                      expandHref={
-                        memoryExpansionContextId
-                          ? getConceptExplorationPath(memoryExpansionContextId, {
-                              returnTo: "/",
-                              from: "panel",
-                            })
-                          : null
-                      }
-                      interactionSource={interactionSource}
-                      placement={panelPlacement}
-                      onIntentStart={clearPanelCloseTimer}
-                      onIntentEnd={schedulePanelClose}
-                      onBlur={closePanelAfterFocusLeaves}
-                      onClose={closePanels}
-                      onExpand={persistCurrentDraft}
-                    >
-                      <MemoryPanelContent
-                        suggestions={memorySuggestions}
-                        identities={memoryIdentities}
-                        loading={associationState.status === "loading"}
-                        error={associationState.error !== null}
-                        onRetry={associationState.retry}
-                        onOpenCapture={persistCurrentDraft}
-                      />
-                    </ProgressivePanel>
-                  ) : null}
-                  <div
-                    className="flex min-h-10 max-w-full items-center justify-start gap-2 overflow-x-auto transition-opacity motion-reduce:transition-none"
-                    aria-label="Indicadores contextuales"
-                    data-context-indicator-group=""
-                  >
-                    {showConceptIndicator ? (
-                      <ContextIndicator
-                        panel="concepts"
-                        icon="concepts"
-                        count={conceptSuggestions.length}
-                        active={activePanel === "concepts"}
-                        label={`${conceptSuggestions.length} conceptos sugeridos`}
-                        onHover={() => openPanel("concepts", "hover")}
-                        onFocus={() => openPanel("concepts", "focus")}
-                        onClick={() =>
-                          openPanel(
-                            "concepts",
-                            canUseDesktopPopover() ? "click" : "tap",
-                          )
-                        }
-                        onIntentEnd={schedulePanelClose}
-                        onBlur={closePanelAfterFocusLeaves}
-                      />
-                    ) : null}
-                    {showMemoryIndicator ? (
-                      <ContextIndicator
-                        panel="memories"
-                        icon="memories"
-                        count={memorySuggestions.length}
-                        active={activePanel === "memories"}
-                        label={`${memorySuggestions.length} ideas relacionadas`}
-                        onHover={() => openPanel("memories", "hover")}
-                        onFocus={() => openPanel("memories", "focus")}
-                        onClick={() =>
-                          openPanel(
-                            "memories",
-                            canUseDesktopPopover() ? "click" : "tap",
-                          )
-                        }
-                        onIntentEnd={schedulePanelClose}
-                        onBlur={closePanelAfterFocusLeaves}
-                      />
-                    ) : null}
-                  </div>
-                </div>
-              ) : null}
-              <Button
-                type="button"
-                onClick={() => void handleCapture()}
-                disabled={capturing}
-                variant="ghost"
-                className="ml-auto h-10 w-10 shrink-0 rounded-full border border-zinc-200 bg-white/40 p-0 text-zinc-700 hover:bg-white hover:text-zinc-950"
-                aria-label="Capturar"
-                title="Capturar con Ctrl/Cmd + Enter"
-                data-capture-submit=""
+          <div
+            className="flex min-h-10 w-full shrink-0 items-center justify-between gap-3 overflow-visible md:gap-4"
+            data-capture-action-row=""
+          >
+            {showIndicators ? (
+              <div
+                className="relative flex min-h-10 w-fit min-w-0 max-w-[calc(100%-3.5rem)] items-center justify-start"
+                aria-label="Area contextual"
+                data-contextual-panel-root=""
+                data-capture-context-tools=""
               >
-                <SendHorizontal className="h-4 w-4" aria-hidden="true" />
-                <span className="sr-only">
-                  {capturing ? "Capturando" : "Capturar"}
-                </span>
-              </Button>
-            </div>
-          ) : null}
-          <div className="min-h-5" aria-hidden="true" />
+                {activePanel === "concepts" ? (
+                  <ProgressivePanel
+                    title="Conceptos detectados"
+                    expandHref={getConceptKnowledgeExplorerPath()}
+                    expandLabel="Explorar conocimiento"
+                    interactionSource={interactionSource}
+                    placement={panelPlacement}
+                    onIntentStart={clearPanelCloseTimer}
+                    onIntentEnd={schedulePanelClose}
+                    onBlur={closePanelAfterFocusLeaves}
+                    onClose={closePanels}
+                    onExpand={persistCurrentDraft}
+                  >
+                    <ConceptPanelContent
+                      suggestions={conceptSuggestions}
+                      selectedContextIds={selectedContextIds}
+                      selectedEmergingCandidateIds={selectedEmergingConcepts.map(
+                        (concept) => concept.candidateId,
+                      )}
+                      onToggleExisting={toggleConcept}
+                      onToggleEmerging={toggleEmergingConcept}
+                    />
+                  </ProgressivePanel>
+                ) : null}
+                {activePanel === "memories" ? (
+                  <ProgressivePanel
+                    title="Me recuerda a…"
+                    expandHref="/memory"
+                    expandLabel="Explorar memoria"
+                    interactionSource={interactionSource}
+                    placement={panelPlacement}
+                    onIntentStart={clearPanelCloseTimer}
+                    onIntentEnd={schedulePanelClose}
+                    onBlur={closePanelAfterFocusLeaves}
+                    onClose={closePanels}
+                    onExpand={persistCurrentDraft}
+                  >
+                    <MemoryPanelContent
+                      suggestions={memorySuggestions}
+                      identities={memoryIdentities}
+                      loading={associationState.status === "loading"}
+                      error={associationState.error !== null}
+                      onRetry={associationState.retry}
+                    />
+                  </ProgressivePanel>
+                ) : null}
+                <div
+                  className="flex min-h-10 max-w-full items-center justify-start gap-2 overflow-x-auto transition-opacity motion-reduce:transition-none"
+                  aria-label="Indicadores contextuales"
+                  data-context-indicator-group=""
+                >
+                  {showConceptIndicator ? (
+                    <ContextIndicator
+                      panel="concepts"
+                      icon="concepts"
+                      count={conceptSuggestions.length}
+                      active={activePanel === "concepts"}
+                      label={`${conceptSuggestions.length} conceptos sugeridos`}
+                      onHover={() => openPanel("concepts", "hover")}
+                      onFocus={() => openPanel("concepts", "focus")}
+                      onClick={() =>
+                        openPanel(
+                          "concepts",
+                          canUseDesktopPopover() ? "click" : "tap",
+                        )
+                      }
+                      onIntentEnd={schedulePanelClose}
+                      onBlur={closePanelAfterFocusLeaves}
+                    />
+                  ) : null}
+                  {showMemoryIndicator ? (
+                    <ContextIndicator
+                      panel="memories"
+                      icon="memories"
+                      count={memorySuggestions.length}
+                      active={activePanel === "memories"}
+                      label={`${memorySuggestions.length} ideas relacionadas`}
+                      onHover={() => openPanel("memories", "hover")}
+                      onFocus={() => openPanel("memories", "focus")}
+                      onClick={() =>
+                        openPanel(
+                          "memories",
+                          canUseDesktopPopover() ? "click" : "tap",
+                        )
+                      }
+                      onIntentEnd={schedulePanelClose}
+                      onBlur={closePanelAfterFocusLeaves}
+                    />
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+            <Button
+              type="button"
+              onClick={() => void handleCapture()}
+              disabled={capturing}
+              variant="ghost"
+              className="ml-auto h-10 w-10 shrink-0 rounded-full border border-zinc-200 bg-zinc-950 p-0 text-white hover:bg-zinc-800 hover:text-white md:bg-white/40 md:text-zinc-700 md:hover:bg-white md:hover:text-zinc-950"
+              aria-label="Capturar"
+              title="Capturar con Ctrl/Cmd + Enter"
+              data-capture-submit=""
+            >
+              <SendHorizontal className="h-4 w-4" aria-hidden="true" />
+              <span className="sr-only">
+                {capturing ? "Capturando" : "Capturar"}
+              </span>
+            </Button>
+          </div>
         </div>
       </section>
     </main>
@@ -831,39 +809,6 @@ function mergeSelectedConceptSuggestions(
   }
 
   return Array.from(merged.values());
-}
-
-function getConceptExpansionContextId(
-  suggestions: ConceptSuggestion[],
-  selectedContextIds: string[],
-) {
-  const selectedSuggestion = suggestions.find(
-    (suggestion) =>
-      suggestion.kind === "existing" &&
-      selectedContextIds.includes(suggestion.conceptId),
-  );
-
-  if (selectedSuggestion?.kind === "existing") {
-    return selectedSuggestion.conceptId;
-  }
-
-  return suggestions.find((suggestion) => suggestion.kind === "existing")
-    ?.conceptId ?? null;
-}
-
-function getMemoryExpansionContextId(
-  suggestions: AssociationSuggestion[],
-  identities: Map<string, CaptureEmergentIdentity>,
-) {
-  for (const suggestion of suggestions) {
-    const concept = identities.get(suggestion.node.id)?.concepts[0];
-
-    if (concept) {
-      return concept.id;
-    }
-  }
-
-  return null;
 }
 
 function ContextIndicator({
@@ -937,6 +882,7 @@ function getContextIndicatorColorClassName({
 function ProgressivePanel({
   title,
   expandHref,
+  expandLabel,
   interactionSource,
   placement,
   onIntentStart,
@@ -948,6 +894,7 @@ function ProgressivePanel({
 }: {
   title: string;
   expandHref?: string | null;
+  expandLabel?: string;
   interactionSource: PanelInteractionSource;
   placement: PanelPlacement;
   onIntentStart: () => void;
@@ -970,8 +917,8 @@ function ProgressivePanel({
       className={cn(
         "z-40 overflow-hidden rounded-2xl bg-white/95 shadow-[0_12px_40px_rgba(24,24,27,0.10)] outline-none backdrop-blur-sm transition duration-150 ease-out motion-reduce:transition-none",
         isMobileSheet
-          ? "fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] max-h-[70vh] border border-zinc-200/70"
-          : "absolute bottom-[calc(100%+10px)] left-1/2 max-h-[min(42vh,24rem)] w-[min(25rem,calc(100vw-2rem))] -translate-x-1/2 border border-zinc-200/50 shadow-[0_10px_32px_rgba(24,24,27,0.08)]",
+          ? "fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] max-h-[70dvh] border border-zinc-200/70"
+          : "absolute bottom-[calc(100%+10px)] left-1/2 max-h-[min(52dvh,26rem)] w-[min(25rem,calc(100vw-2rem))] -translate-x-1/2 border border-zinc-200/50 shadow-[0_10px_32px_rgba(24,24,27,0.08)]",
       )}
       onMouseEnter={onIntentStart}
       onMouseLeave={onIntentEnd}
@@ -980,27 +927,14 @@ function ProgressivePanel({
     >
       <div
         className={cn(
-          "overflow-y-auto px-4 py-4",
+          "vinema-scrollbar overflow-y-auto scroll-smooth overscroll-contain px-4 py-4",
           isMobileSheet
-            ? "max-h-[calc(70vh-1.5rem)]"
-            : "max-h-[calc(min(42vh,24rem)-1.5rem)]",
+            ? "max-h-[calc(70dvh-1.5rem)]"
+            : "max-h-[calc(min(52dvh,26rem)-1.5rem)]",
         )}
       >
-        <div className="mb-2 flex justify-end gap-1">
-          {expandHref ? (
-            <Link
-              href={expandHref}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 outline-none transition-colors hover:bg-zinc-100 hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400 motion-reduce:transition-none"
-              aria-label="Profundizar en Base de conocimiento"
-              title="Profundizar"
-              onClick={() => {
-                void onExpand?.();
-              }}
-            >
-              <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" />
-            </Link>
-          ) : null}
-          {isMobileSheet ? (
+        {isMobileSheet ? (
+          <div className="mb-2 flex justify-end">
             <button
               type="button"
               className="inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 outline-none hover:bg-zinc-100 hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
@@ -1009,9 +943,21 @@ function ProgressivePanel({
             >
               <X className="h-4 w-4" aria-hidden="true" />
             </button>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
         {children}
+        {expandHref ? (
+          <Link
+            href={expandHref}
+            className="mt-3 inline-flex h-8 items-center rounded-md px-1 text-xs font-medium text-zinc-500 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
+            aria-label={expandLabel ?? "Explorar"}
+            onClick={() => {
+              void onExpand?.();
+            }}
+          >
+            {expandLabel ?? "Explorar"}
+          </Link>
+        ) : null}
       </div>
     </aside>
   );
@@ -1060,12 +1006,9 @@ function ConceptPanelContent({
   const groupedSuggestions = groupConceptSuggestions(suggestions);
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {groupedSuggestions.map(({ kind, items }) => (
-        <section key={kind} className="space-y-1.5">
-          <h3 className="px-1 text-xs font-medium text-zinc-500">
-            {KNOWLEDGE_SUGGESTION_LABELS[kind]}
-          </h3>
+        <section key={kind} className="space-y-2">
           <div className="space-y-2">
             {items.map((suggestion) => (
               <ConceptSuggestionRow
@@ -1141,17 +1084,7 @@ function ConceptSuggestionRow({
         ) : null}
       </button>
       {suggestion.kind === "existing" ? (
-        <Link
-          href={getConceptExplorationPath(suggestion.conceptId)}
-          className={cn(
-            "mr-1 rounded-sm px-2 py-1 text-xs outline-none focus-visible:ring-2 focus-visible:ring-zinc-400",
-            selected
-              ? "text-zinc-200 hover:text-white"
-              : "text-zinc-500 hover:text-zinc-950",
-          )}
-        >
-          Abrir
-        </Link>
+        <span className="sr-only">Concepto existente</span>
       ) : null}
     </div>
   );
@@ -1192,14 +1125,12 @@ function MemoryPanelContent({
   loading,
   error,
   onRetry,
-  onOpenCapture,
 }: {
   suggestions: AssociationSuggestion[];
   identities: Map<string, CaptureEmergentIdentity>;
   loading: boolean;
   error: boolean;
   onRetry: () => void;
-  onOpenCapture: () => void | Promise<void>;
 }) {
   const visibleSuggestions = suggestions.slice(0, INITIAL_MEMORY_RESULT_LIMIT);
 
@@ -1229,7 +1160,6 @@ function MemoryPanelContent({
           key={suggestion.node.id}
           node={suggestion.node}
           identity={identities.get(suggestion.node.id) ?? null}
-          onOpenCapture={onOpenCapture}
         />
       ))}
       {suggestions.length > INITIAL_MEMORY_RESULT_LIMIT ? (
@@ -1237,7 +1167,7 @@ function MemoryPanelContent({
           href="/memory"
           className="inline-flex h-8 items-center rounded-md px-1 text-xs text-zinc-500 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
         >
-          Ver Memoria
+          Explorar memoria
         </Link>
       ) : null}
     </div>
@@ -1247,34 +1177,23 @@ function MemoryPanelContent({
 function MemoryResult({
   node,
   identity,
-  onOpenCapture,
 }: {
   node: Node;
   identity: CaptureEmergentIdentity | null;
-  onOpenCapture: () => void | Promise<void>;
 }) {
   const preview = getCapturePreview(node.content, { maxLength: 600 });
 
   return (
-    <article className="min-w-0 rounded-md px-3 py-2 text-sm leading-6 text-zinc-700 hover:bg-zinc-50">
+    <article className="min-w-0 rounded-md px-3 py-2 text-sm leading-6 text-zinc-700">
       {identity?.displayText ? (
         <CaptureEmergentIdentityLabel
           identity={identity}
           className="truncate text-sm leading-6"
-          getConceptHref={getConceptExplorationPath}
         />
       ) : null}
-      <Link
-        href={getNodeDetailPath(node.id, { returnTo: "/" })}
-        aria-label={`Abrir captura: ${preview}`}
-        title={preview}
-        className="block min-w-0 rounded-sm outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
-        onClick={() => {
-          void onOpenCapture();
-        }}
-      >
-        <span className="block min-w-0 truncate">{preview}</span>
-      </Link>
+      <p className="block min-w-0 truncate" title={preview}>
+        {preview}
+      </p>
       <time className="mt-1 block text-xs text-zinc-400">
         {formatCompactDate(getContentTimestamp(node))}
       </time>

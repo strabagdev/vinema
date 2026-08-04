@@ -92,12 +92,36 @@ describe("CaptureSurface", () => {
     await expect(nodeRepository.listByWorkspace(workspace.id)).resolves.toEqual([]);
   });
 
-  it("does not show capture actions for empty or whitespace-only content", async () => {
+  it("keeps the canvas and capture action visible without global scroll for empty content", async () => {
     const storage = new MemoryStorageAdapter();
     const nodeRepository = new InMemoryNodeRepository();
     const screen = await renderCaptureSurface({ storage, nodeRepository });
+    const canvas = screen.container.querySelector("[data-capture-canvas]");
+    const composer = screen.container.querySelector("[data-mobile-capture-composer]");
+    const textarea = getTextarea(screen.container);
+    const row = screen.container.querySelector("[data-capture-action-row]");
+    const button = screen.container.querySelector("[data-capture-submit]");
 
-    expect(queryButton(screen.container, "Capturar")).toBeUndefined();
+    expect(canvas?.className).toContain("h-full");
+    expect(canvas?.className).toContain("min-h-0");
+    expect(canvas?.className).toContain("overflow-hidden");
+    expect(composer?.className).toContain("rounded-[1.35rem]");
+    expect(composer?.className).toContain("bg-white/90");
+    expect(composer?.className).toContain("shadow-[0_12px_40px_rgba(24,24,27,0.10)]");
+    expect(composer?.className).toContain("md:rounded-none");
+    expect(composer?.className).toContain("md:bg-transparent");
+    expect(composer?.className).toContain("md:shadow-none");
+    expect(textarea?.getAttribute("placeholder")).toBe("Escribe algo...");
+    expect(textarea?.className).toContain("max-h-[min(34dvh,12rem)]");
+    expect(textarea?.className).toContain("md:flex-1");
+    expect(textarea?.className).toContain("overflow-y-auto");
+    expect(textarea?.className).toContain("vinema-scrollbar");
+    expect(row?.className).toContain("shrink-0");
+    expect(button).toBeDefined();
+    expect(button?.className).toContain("bg-zinc-950");
+    expect(button?.className).toContain("text-white");
+    expect(button?.className).toContain("md:bg-white/40");
+    expect(button?.querySelector("svg")).toBeDefined();
     expect(getContextIndicator(screen.container, "conceptos sugeridos")).toBeUndefined();
     expect(getContextIndicator(screen.container, "ideas relacionadas")).toBeUndefined();
 
@@ -106,7 +130,7 @@ describe("CaptureSurface", () => {
 
     await expect(storage.get(CAPTURE_DRAFT_KEY)).resolves.toBeNull();
     await expect(nodeRepository.listByWorkspace(workspace.id)).resolves.toEqual([]);
-    expect(queryButton(screen.container, "Capturar")).toBeUndefined();
+    expect(screen.container.querySelector("[data-capture-submit]")).toBeDefined();
   });
 
   it("shows only contextual indicators by default when concepts and memories exist", async () => {
@@ -643,7 +667,7 @@ describe("CaptureSurface", () => {
     expect(screen.container.textContent).toContain("Captura antigua disponible");
   });
 
-  it("shows recovered captures as one-line links without creating relations", async () => {
+  it("shows recovered captures as one-line suggestions without specific capture navigation", async () => {
     const storage = new MemoryStorageAdapter();
     const nodeRepository = new InMemoryNodeRepository([
       createStoredNode({
@@ -671,14 +695,14 @@ describe("CaptureSurface", () => {
     expect(screen.container.querySelector("input[type='checkbox']")).toBeNull();
 
     const recoveryLink = getLinkByHref(screen.container, "nodeId=mitcom");
-    expect(recoveryLink?.querySelector("span")?.className).toContain("truncate");
-    await clickElement(recoveryLink as HTMLAnchorElement);
+    const memoryLink = getLinkByLabel(screen.container, "Explorar memoria");
+
+    expect(recoveryLink).toBeUndefined();
+    expect(memoryLink?.getAttribute("href")).toBe("/memory");
+    expect(screen.container.querySelector("article p")?.className).toContain("truncate");
     await expect(relationRepository.listByWorkspace(workspace.id)).resolves.toEqual(
       [],
     );
-    await expect(storage.get(CAPTURE_DRAFT_KEY)).resolves.toMatchObject({
-      content: "Planificar control de gestion con Mitcom",
-    });
   });
 
   it("keeps only one contextual panel open", async () => {
@@ -732,12 +756,13 @@ describe("CaptureSurface", () => {
     expect(panel.className).toContain("left-1/2");
     expect(panel.className).toContain("-translate-x-1/2");
     expect(panel.className).toContain("w-[min(25rem,calc(100vw-2rem))]");
-    expect(panel.className).toContain("max-h-[min(42vh,24rem)]");
+    expect(panel.className).toContain("max-h-[min(52dvh,26rem)]");
     expect(panel.style.top).toBe("");
     expect(panel.style.left).toBe("");
     expect(getButtonByLabel(screen.container, "Cerrar panel")).toBeUndefined();
     expect(screen.container.querySelector("[class*='border-b']")).toBeNull();
     expect(screen.container.textContent).not.toContain("Me recuerda a…");
+    expect(panel.querySelector(".vinema-scrollbar")).toBeTruthy();
   });
 
   it("does not use lateral desktop positioning or indicator rect measurements", async () => {
@@ -1245,14 +1270,9 @@ describe("CaptureSurface", () => {
     await advanceTime(500);
     await openConceptPanel(screen.container);
 
-    const expandLink = getLinkByLabel(
-      screen.container,
-      "Profundizar en Base de conocimiento",
-    );
+    const expandLink = getLinkByLabel(screen.container, "Explorar conocimiento");
 
-    expect(expandLink?.getAttribute("href")).toBe(
-      "/concepts/detail?contextId=reuniones&returnTo=%2F&from=panel",
-    );
+    expect(expandLink?.getAttribute("href")).toBe("/concepts/explore");
 
     await clickElement(expandLink as HTMLAnchorElement);
 
@@ -1299,8 +1319,8 @@ describe("CaptureSurface", () => {
     await advanceTime(500);
     await openConceptPanel(screen.container);
 
-    expect(screen.container.textContent).toContain("Relacionado ahora");
-    expect(screen.container.textContent).toContain("Podría faltar");
+    expect(screen.container.textContent).not.toContain("Relacionado ahora");
+    expect(screen.container.textContent).not.toContain("Podría faltar");
     expect(screen.container.textContent).toContain("Sponsor");
   });
 
@@ -1341,7 +1361,7 @@ describe("CaptureSurface", () => {
     await advanceTime(500);
     await openConceptPanel(screen.container);
 
-    expect(screen.container.textContent).toContain("Retomar");
+    expect(screen.container.textContent).not.toContain("Retomar");
     expect(screen.container.textContent).toContain("Contratos");
   });
 
@@ -1411,14 +1431,9 @@ describe("CaptureSurface", () => {
     await advanceTime(500);
     await openMemoryPanel(screen.container);
 
-    const expandLink = getLinkByLabel(
-      screen.container,
-      "Profundizar en Base de conocimiento",
-    );
+    const expandLink = getLinkByLabel(screen.container, "Explorar memoria");
 
-    expect(expandLink?.getAttribute("href")).toBe(
-      "/concepts/detail?contextId=reuniones&returnTo=%2F&from=panel",
-    );
+    expect(expandLink?.getAttribute("href")).toBe("/memory");
     expect(screen.container.textContent).not.toContain("Ver en Explorar");
   });
 

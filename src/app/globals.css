@@ -40,3 +40,27 @@ body {
   color: hsl(var(--foreground));
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
+
+.vinema-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(161 161 170 / 0.35) transparent;
+  scrollbar-gutter: stable;
+}
+
+.vinema-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.vinema-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.vinema-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgb(161 161 170 / 0.3);
+  border-radius: 999px;
+}
+
+.vinema-scrollbar:hover::-webkit-scrollbar-thumb {
+  background-color: rgb(113 113 122 / 0.45);
+}

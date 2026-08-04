@@ -195,8 +195,8 @@ export function ConceptKnowledgeExplorerClient() {
 
   return (
     <ExplorerShell onBack={goBack}>
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <div className="min-w-0 space-y-5">
+      <div className="grid min-h-0 flex-1 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="flex min-h-0 min-w-0 flex-col gap-5">
           <ConceptSearch
             query={query}
             results={searchResults}
@@ -215,7 +215,7 @@ export function ConceptKnowledgeExplorerClient() {
           )}
         </div>
 
-        <aside className="space-y-5">
+        <aside className="vinema-scrollbar min-h-0 space-y-5 overflow-y-auto pr-1">
           {selectedNode ? (
             <SelectedConceptSummary node={selectedNode} />
           ) : null}
@@ -238,8 +238,11 @@ function ExplorerShell({
   onBack: () => void;
 }) {
   return (
-    <section className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-4 py-6 sm:px-6 lg:px-8">
-      <header className="space-y-5">
+    <section
+      className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-1 flex-col gap-6 overflow-hidden px-4 py-4 sm:px-6 lg:px-8"
+      data-knowledge-explorer-canvas=""
+    >
+      <header className="shrink-0 space-y-5">
         <Button variant="ghost" size="sm" onClick={onBack}>
           <ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />
           Volver
@@ -312,12 +315,15 @@ function ConceptGraph({
   onFocusConcept: (conceptId: string) => void;
 }) {
   return (
-    <div className="overflow-x-auto" aria-label="Mapa de conexiones">
+    <div
+      className="vinema-scrollbar min-h-0 flex-1 overflow-auto overscroll-contain"
+      aria-label="Mapa de conexiones"
+    >
       <svg
         role="img"
         aria-label="Mapa de conceptos conectados"
         viewBox={`0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`}
-        className="min-h-[22rem] w-full min-w-[34rem]"
+        className="h-full min-h-[22rem] w-full min-w-[34rem]"
       >
         <title>Mapa de conceptos conectados</title>
         {graph.edges.map((edge) => {

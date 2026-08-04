@@ -195,15 +195,15 @@ describe("Global writing entry", () => {
     expect(mocks.push).not.toHaveBeenCalled();
   });
 
-  it("dispatches focus when the user is already on Inicio", async () => {
+  it("dispatches focus from the global shortcut when the user is already on Inicio", async () => {
     mocks.pathname = "/";
-    const { container } = await renderAppShell();
+    await renderAppShell();
     const focusEvents: string[] = [];
     window.addEventListener("vinema:focus-capture", () => {
       focusEvents.push("focus");
     });
 
-    await click(getWritingButton(container));
+    await keydown({ key: "k", ctrlKey: true, shiftKey: true });
 
     expect(mocks.push).not.toHaveBeenCalled();
     expect(focusEvents).toEqual(["focus"]);

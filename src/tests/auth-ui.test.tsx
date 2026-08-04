@@ -203,8 +203,21 @@ describe("minimal authentication UI", () => {
     );
     await flush();
 
-    expect(container.textContent).toContain("Iniciar sesion");
+    expect(container.textContent).toContain("Inicia sesion");
     expect(container.querySelector("[data-vinema-brand='wordmark']")).toBeTruthy();
+    expect(container.querySelector("[data-auth-screen]")).toBeTruthy();
+    expect(container.querySelector("[data-auth-flow]")).toBeTruthy();
+    expect(container.querySelector("[data-auth-screen]")?.className).not.toContain("border");
+    expect(container.querySelector("[data-auth-screen]")?.className).not.toContain("shadow");
+    expect(container.querySelector("[data-auth-flow]")?.className).not.toContain("rounded");
+    expect(container.querySelector("[data-auth-flow]")?.className).not.toContain("border");
+    expect(container.querySelector("[data-auth-flow]")?.className).not.toContain("shadow");
+    expect(
+      container
+        .querySelector("[data-vinema-brand='wordmark']")
+        ?.closest("[data-auth-screen]"),
+    ).toBe(container.querySelector("form")?.closest("[data-auth-screen]"));
+    expect(container.querySelector("button[type='submit']")?.className).toContain("w-full");
     expect(container.textContent).not.toContain("VN");
     expect(container.querySelector("a")?.getAttribute("href")).toBe("/register");
 
@@ -215,6 +228,8 @@ describe("minimal authentication UI", () => {
     await setInput("#login-password", "password-123");
     await submit("form");
     expect(container.textContent).toContain("Entrando...");
+    expect(container.textContent).toContain("Correo electronico");
+    expect(container.textContent).toContain("Contrasena");
 
     await act(async () => {
       resolveLogin?.(jsonResponse(session));
@@ -257,6 +272,15 @@ describe("minimal authentication UI", () => {
 
     expect(container.textContent).toContain("Crear cuenta");
     expect(container.querySelector("[data-vinema-brand='wordmark']")).toBeTruthy();
+    expect(container.querySelector("[data-auth-screen]")).toBeTruthy();
+    expect(container.querySelector("[data-auth-flow]")?.className).not.toContain("border");
+    expect(container.querySelector("[data-auth-flow]")?.className).not.toContain("shadow");
+    expect(
+      container
+        .querySelector("[data-vinema-brand='wordmark']")
+        ?.closest("[data-auth-screen]"),
+    ).toBe(container.querySelector("form")?.closest("[data-auth-screen]"));
+    expect(container.querySelector("button[type='submit']")?.className).toContain("w-full");
     expect(container.textContent).not.toContain("VN");
     expect(container.querySelector("a")?.getAttribute("href")).toBe("/login");
 

@@ -1129,7 +1129,7 @@ export function NoteDetailMessage({
       <h1 className="text-3xl font-semibold text-zinc-950">{heading}</h1>
       <p className="text-sm text-zinc-600">{message}</p>
       <Button asChild className="w-fit">
-        <Link href="/memory">Volver a Memoria</Link>
+        <Link href="/memory">Explorar memoria</Link>
       </Button>
     </section>
   );

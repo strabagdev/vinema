@@ -196,14 +196,14 @@ describe("AppHeader", () => {
     expect(document.body.querySelector("a[href='/']")).toBeTruthy();
     expect(document.body.querySelector("a[href='/memory']")).toBeTruthy();
     expect(document.body.querySelector("a[href='/concepts']")).toBeTruthy();
-    expect(document.body.textContent).toContain("Memoria");
+    expect(document.body.textContent).toContain("Explorar memoria");
     expect(document.body.textContent).toContain("Conceptos");
     expect(document.body.textContent).toContain("Administrar");
     expect(document.body.textContent).not.toContain("Mi conocimiento");
     expect(document.body.textContent).toContain("Cerrar sesion");
     expect(document.body.querySelector("a[href='/notes']")).toBeNull();
     expect(document.body.querySelector("a[href='/notes/archive']")).toBeNull();
-    expect(document.body.textContent).not.toContain("Explorar");
+    expect(document.body.querySelector("a[aria-label='Explorar']")).toBeNull();
     expect(document.body.textContent).not.toContain("Exportar memoria");
     expect(document.body.textContent).not.toContain("Importar memoria");
     expect(document.body.textContent).not.toContain("Vaciar memoria");
@@ -217,17 +217,17 @@ describe("AppHeader", () => {
     expect(document.body.textContent).toContain("Importar memoria");
     expect(document.body.textContent).toContain("Vaciar memoria");
     expect(document.body.textContent).not.toContain("22 capturas · 6 conceptos · 15 relaciones");
-    expect(document.body.textContent).not.toContain("Explorar");
+    expect(document.body.querySelector("a[aria-label='Explorar']")).toBeNull();
     expect(document.body.textContent).not.toContain("workspace");
   });
 
-  it("navigates directly to Memoria and Conceptos from the knowledge menu", async () => {
+  it("navigates directly to Explorar memoria and Conceptos from the knowledge menu", async () => {
     const screen = await renderHeader();
 
     await click(screen.querySelector("button[aria-label='Abrir menu']"));
 
     expect(document.body.querySelector("a[href='/memory']")?.textContent).toContain(
-      "Memoria",
+      "Explorar memoria",
     );
     expect(document.body.querySelector("a[href='/concepts']")?.textContent).toContain(
       "Conceptos",

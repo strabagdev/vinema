@@ -77,7 +77,7 @@ export function RegisterClient() {
   return (
     <AuthScreen
       title="Crear cuenta"
-      description="Crea tu identidad minima para sincronizar Vinema."
+      description="Prepara tu memoria para sincronizar."
     >
       <form className="space-y-4" onSubmit={handleSubmit} noValidate>
         <div className="space-y-2">
@@ -97,7 +97,7 @@ export function RegisterClient() {
         </div>
         <div className="space-y-2">
           <label htmlFor="register-email" className="text-sm font-medium text-zinc-800">
-            Email
+            Correo electronico
           </label>
           <Input
             id="register-email"

@@ -65,13 +65,13 @@ export function LoginClient() {
 
   return (
     <AuthScreen
-      title="Iniciar sesion"
-      description="Entra a tu memoria local de Vinema."
+      title="Inicia sesion"
+      description="Accede a tu memoria."
     >
       <form className="space-y-4" onSubmit={handleSubmit} noValidate>
         <div className="space-y-2">
           <label htmlFor="login-email" className="text-sm font-medium text-zinc-800">
-            Email
+            Correo electronico
           </label>
           <Input
             ref={emailRef}
@@ -106,7 +106,7 @@ export function LoginClient() {
           </p>
         ) : null}
         <Button type="submit" className="w-full" disabled={isLoading}>
-          {isLoading ? "Entrando..." : "Iniciar sesion"}
+          {isLoading ? "Entrando..." : "Entrar"}
         </Button>
       </form>
       <p className="mt-5 text-center text-sm text-zinc-500">
@@ -129,16 +129,19 @@ export function AuthScreen({
   children: React.ReactNode;
 }) {
   return (
-    <main className="flex min-h-screen w-full items-center justify-center bg-zinc-50 px-5 py-10">
-      <section className="w-full max-w-sm">
-        <div className="mb-8 flex items-center justify-center text-zinc-900">
-          <VinemaBrandMark asset="wordmark" className="h-8 w-44" />
+    <main className="flex min-h-screen w-full items-center justify-center bg-zinc-50 px-5 py-10 sm:px-6">
+      <section
+        className="flex w-full max-w-[25rem] flex-col items-stretch"
+        data-auth-screen=""
+      >
+        <div className="mb-9 flex justify-center text-zinc-950 sm:mb-10">
+          <VinemaBrandMark asset="wordmark" className="h-8 w-48 sm:w-52" />
         </div>
-        <div className="rounded-lg border border-zinc-200 bg-white p-6 shadow-sm">
-          <div className="mb-6 space-y-2">
-            <h1 className="text-2xl font-semibold text-zinc-950">{title}</h1>
+        <div className="space-y-6" data-auth-flow="">
+          <header className="space-y-2 text-center">
+            <h1 className="text-2xl font-medium text-zinc-950">{title}</h1>
             <p className="text-sm leading-6 text-zinc-500">{description}</p>
-          </div>
+          </header>
           {children}
         </div>
       </section>

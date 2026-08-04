@@ -81,7 +81,7 @@ export function AppHeader({ pathname, onFocusWriting }: AppHeaderProps) {
             <DropdownMenuItem asChild>
               <Link href="/memory">
                 <Brain className="mr-2 h-4 w-4" aria-hidden="true" />
-                Memoria
+                Explorar memoria
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
