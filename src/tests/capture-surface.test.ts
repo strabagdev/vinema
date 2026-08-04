@@ -478,12 +478,23 @@ describe("CaptureSurface", () => {
     expect(feedbackService.getState().current?.accessibleText).toBe(
       "Concepto asociado",
     );
+    await openConceptPanel(screen.container);
+    expect(screen.container.textContent).toContain("Mitcom");
+    const selectedMitcomChip = screen.container.querySelector(
+      "button[aria-pressed='true']",
+    );
+    expect(selectedMitcomChip?.textContent).toContain("Mitcom");
+    expect(
+      selectedMitcomChip?.closest("[data-concept-suggestion-highlighted]"),
+    ).toBeTruthy();
 
     await selectTextareaText(screen.container, "Proveedor Mitcom");
     await click(getButton(screen.container, "Capturar seleccion"));
     expect(feedbackService.getState().current?.accessibleText).toBe(
       "Ya estaba asociado",
     );
+    expect(screen.container.querySelectorAll("button[aria-pressed][type='button']"))
+      .toHaveLength(1);
 
     await click(getButton(screen.container, "Capturar"));
 
@@ -525,7 +536,12 @@ describe("CaptureSurface", () => {
     await expect(contextRepository.list({ workspaceId: workspace.id })).resolves.toHaveLength(0);
 
     await openConceptPanel(screen.container);
-    expect(getButton(screen.container, "Estado de pago")).toBeDefined();
+    const estadoDePagoChip = getButton(screen.container, "Estado de pago");
+    expect(estadoDePagoChip).toBeDefined();
+    expect(estadoDePagoChip.getAttribute("aria-pressed")).toBe("true");
+    expect(
+      estadoDePagoChip.closest("[data-concept-suggestion-highlighted]"),
+    ).toBeTruthy();
 
     await click(getButton(screen.container, "Capturar"));
 
@@ -578,6 +594,14 @@ describe("CaptureSurface", () => {
     await selectTextareaRange(screen.container, 7, 8);
     expect(queryButton(screen.container, "Capturar seleccion")).toBeUndefined();
 
+    await selectTextareaText(screen.container, "mañana");
+    expect(queryButton(screen.container, "Capturar seleccion")).toBeDefined();
+
+    await changeTextarea(screen.container, "Revisar de mañana");
+    await selectTextareaText(screen.container, "de");
+    expect(queryButton(screen.container, "Capturar seleccion")).toBeUndefined();
+
+    await changeTextarea(screen.container, "Revisar Mitcom mañana");
     await selectTextareaText(screen.container, "Mitcom");
     expect(queryButton(screen.container, "Capturar seleccion")).toBeDefined();
 
@@ -667,7 +691,7 @@ describe("CaptureSurface", () => {
     expect(screen.container.textContent).toContain("Captura antigua disponible");
   });
 
-  it("shows recovered captures as one-line suggestions without specific capture navigation", async () => {
+  it("shows recovered captures as navigable suggestions with one final memory action", async () => {
     const storage = new MemoryStorageAdapter();
     const nodeRepository = new InMemoryNodeRepository([
       createStoredNode({
@@ -695,11 +719,18 @@ describe("CaptureSurface", () => {
     expect(screen.container.querySelector("input[type='checkbox']")).toBeNull();
 
     const recoveryLink = getLinkByHref(screen.container, "nodeId=mitcom");
-    const memoryLink = getLinkByLabel(screen.container, "Explorar memoria");
+    const memoryLinks = getLinksByExactHref(screen.container, "/memory");
+    const memoryLink = memoryLinks[0];
 
-    expect(recoveryLink).toBeUndefined();
+    expect(recoveryLink).toBeDefined();
+    expect(recoveryLink?.textContent).toContain(
+      "Reunion de control de gestion con proveedor Mitcom",
+    );
+    expect(memoryLinks).toHaveLength(1);
+    expect(memoryLink?.textContent?.trim()).toBe("Memoria");
     expect(memoryLink?.getAttribute("href")).toBe("/memory");
-    expect(screen.container.querySelector("article p")?.className).toContain("truncate");
+    expect(screen.container.textContent).not.toContain("Explorar memoria");
+    expect(screen.container.querySelector("article span")?.className).toContain("truncate");
     await expect(relationRepository.listByWorkspace(workspace.id)).resolves.toEqual(
       [],
     );
@@ -1431,9 +1462,11 @@ describe("CaptureSurface", () => {
     await advanceTime(500);
     await openMemoryPanel(screen.container);
 
-    const expandLink = getLinkByLabel(screen.container, "Explorar memoria");
+    const expandLink = getLinksByExactHref(screen.container, "/memory")[0];
 
+    expect(expandLink?.textContent?.trim()).toBe("Memoria");
     expect(expandLink?.getAttribute("href")).toBe("/memory");
+    expect(getLinksByExactHref(screen.container, "/memory")).toHaveLength(1);
     expect(screen.container.textContent).not.toContain("Ver en Explorar");
   });
 
@@ -1575,6 +1608,23 @@ describe("CaptureSurface", () => {
 
     expect(screen.container.textContent).toContain("Mitcom");
     expect(screen.container.textContent).not.toContain("Railway");
+  });
+
+  it("clears incompatible concept suggestions as soon as the text changes", async () => {
+    const contextRepository = new InMemoryContextRepository([
+      createContext({ id: "railway", name: "Railway" }),
+    ]);
+    const screen = await renderCaptureSurface({ contextRepository });
+
+    await changeTextarea(screen.container, "Revisar Railway");
+    await advanceTime(500);
+    await openConceptPanel(screen.container);
+    expect(screen.container.textContent).toContain("Railway");
+
+    await changeTextarea(screen.container, "Voy a revisar pagos pendientes");
+
+    expect(screen.container.textContent).not.toContain("Railway");
+    expect(screen.container.textContent).not.toContain("Detectado como");
   });
 
   it("suggests an emerging concept, persists it only when selected and reuses it later", async () => {
@@ -2014,6 +2064,12 @@ function getLinkByHref(container: HTMLElement, hrefPart: string) {
   return Array.from(container.querySelectorAll("a")).find((link) =>
     link.getAttribute("href")?.includes(hrefPart),
   ) as HTMLAnchorElement | undefined;
+}
+
+function getLinksByExactHref(container: HTMLElement, href: string) {
+  return Array.from(container.querySelectorAll<HTMLAnchorElement>("a")).filter(
+    (link) => link.getAttribute("href") === href,
+  );
 }
 
 function getLinkByLabel(container: HTMLElement, label: string) {

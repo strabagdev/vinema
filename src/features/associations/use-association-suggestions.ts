@@ -108,6 +108,29 @@ export function useAssociationSuggestions({
       };
     }
 
+    const selectedContextIdsForImmediateState = selectedContextIdsKey
+      ? selectedContextIdsKey.split("\u0001")
+      : [];
+
+    queueMicrotask(() => {
+      if (cancelled || requestId !== latestRequestId.current) {
+        return;
+      }
+
+      setState((current) => ({
+        ...current,
+        status: "loading",
+        suggestions: [],
+        conceptSuggestions: current.conceptSuggestions.filter(
+          (suggestion) =>
+            suggestion.kind === "existing" &&
+            selectedContextIdsForImmediateState.includes(suggestion.conceptId),
+        ),
+        error: null,
+        retry,
+      }));
+    });
+
     const timer = setTimeout(() => {
       async function runSuggestions() {
         const startedAt = performance.now();
@@ -253,12 +276,6 @@ export function useAssociationSuggestions({
         }
       }
 
-      setState((current) => ({
-        ...current,
-        status: "loading",
-        error: null,
-        retry,
-      }));
       void runSuggestions();
     }, ASSOCIATION_DEBOUNCE_MS);
 

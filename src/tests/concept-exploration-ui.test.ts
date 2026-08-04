@@ -414,7 +414,7 @@ describe("ConceptExplorationClient", () => {
   it("links recent concept memories back to Memoria with concept query", async () => {
     const screen = await renderConceptExploration();
     const link = Array.from(screen.querySelectorAll("a")).find(
-      (item) => item.textContent?.includes("Explorar memoria"),
+      (item) => item.textContent?.includes("Memoria"),
     );
 
     expect(link?.getAttribute("href")).toBe("/memory?concept=railway");
@@ -493,7 +493,7 @@ describe("ConceptExplorationClient", () => {
 
     expect(screen.textContent).toContain("No hay suficientes conexiones todavía.");
     expect(screen.textContent).toContain("Volver a capturar");
-    expect(screen.textContent).toContain("Explorar conceptos");
+    expect(screen.textContent).toContain("Conceptos");
   });
 });
 

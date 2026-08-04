@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Brain, MoreHorizontal, SquarePen } from "lucide-react";
+import { Brain, MoreHorizontal, SendHorizontal } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -56,13 +56,13 @@ export function AppHeader({ pathname, onFocusWriting }: AppHeaderProps) {
                 size="sm"
                 variant="ghost"
                 onClick={onFocusWriting}
-                aria-label="Empezar a escribir"
+                aria-label="Capturar"
               >
-                <SquarePen className="h-4 w-4" />
-                <span className="hidden sm:inline">Escribir</span>
+                <SendHorizontal className="h-4 w-4" />
+                <span className="hidden sm:inline">Capturar</span>
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Ir al editor (Ctrl+Shift+K)</TooltipContent>
+            <TooltipContent>Ir a capturar (Ctrl+Shift+K)</TooltipContent>
           </Tooltip>
         ) : null}
         <DropdownMenu>
@@ -76,12 +76,12 @@ export function AppHeader({ pathname, onFocusWriting }: AppHeaderProps) {
             <DropdownMenuItem disabled>Conocimiento</DropdownMenuItem>
             <div className="my-1 h-px bg-zinc-100" role="separator" />
             <DropdownMenuItem asChild>
-              <Link href="/">Inicio</Link>
+              <Link href="/">Capturar</Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
               <Link href="/memory">
                 <Brain className="mr-2 h-4 w-4" aria-hidden="true" />
-                Explorar memoria
+                Memoria
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>

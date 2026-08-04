@@ -196,7 +196,8 @@ describe("AppHeader", () => {
     expect(document.body.querySelector("a[href='/']")).toBeTruthy();
     expect(document.body.querySelector("a[href='/memory']")).toBeTruthy();
     expect(document.body.querySelector("a[href='/concepts']")).toBeTruthy();
-    expect(document.body.textContent).toContain("Explorar memoria");
+    expect(document.body.textContent).toContain("Capturar");
+    expect(document.body.textContent).toContain("Memoria");
     expect(document.body.textContent).toContain("Conceptos");
     expect(document.body.textContent).toContain("Administrar");
     expect(document.body.textContent).not.toContain("Mi conocimiento");
@@ -221,13 +222,14 @@ describe("AppHeader", () => {
     expect(document.body.textContent).not.toContain("workspace");
   });
 
-  it("navigates directly to Explorar memoria and Conceptos from the knowledge menu", async () => {
+  it("navigates directly to Capturar, Memoria and Conceptos from the knowledge menu", async () => {
     const screen = await renderHeader();
 
     await click(screen.querySelector("button[aria-label='Abrir menu']"));
 
+    expect(getLinkByText("/", "Capturar")).toBeTruthy();
     expect(document.body.querySelector("a[href='/memory']")?.textContent).toContain(
-      "Explorar memoria",
+      "Memoria",
     );
     expect(document.body.querySelector("a[href='/concepts']")?.textContent).toContain(
       "Conceptos",
@@ -413,6 +415,14 @@ function getByText(text: string) {
   }
 
   return element;
+}
+
+function getLinkByText(href: string, text: string) {
+  return Array.from(document.body.querySelectorAll<HTMLAnchorElement>("a")).find(
+    (candidate) =>
+      candidate.getAttribute("href") === href &&
+      candidate.textContent?.trim() === text,
+  );
 }
 
 function getButtonByText(text: string) {

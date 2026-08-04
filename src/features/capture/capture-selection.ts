@@ -1,5 +1,6 @@
 import type { Context } from "@/domain/context/context";
 import type { EmergingConceptSuggestion } from "@/features/associations/association-types";
+import { isSpanishStopword } from "@/features/associations/spanish-stopwords";
 import {
   normalizeConceptIdentityLabel,
   resolveConceptIdentity,
@@ -54,6 +55,7 @@ export function createValidCapturedSelection({
   if (
     !trimmed ||
     normalizedText.length < 2 ||
+    isSingleStopword(normalizedText) ||
     trimmed.length > MAX_CAPTURE_SELECTION_LENGTH ||
     isOnlyPunctuation(trimmed) ||
     hasExtensiveParagraphSelection(trimmed)
@@ -93,6 +95,10 @@ export function createSelectionEmergingConcept(
 
 function isOnlyPunctuation(value: string) {
   return !/[\p{L}\p{N}]/u.test(value);
+}
+
+function isSingleStopword(value: string) {
+  return !value.includes(" ") && isSpanishStopword(value);
 }
 
 function hasExtensiveParagraphSelection(value: string) {

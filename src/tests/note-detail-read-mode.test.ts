@@ -700,7 +700,7 @@ describe("NoteDetailView read mode", () => {
     const screen = await renderMessage();
 
     expect(screen.textContent).toContain("Captura no encontrada");
-    expect(getLink(screen, "Explorar memoria")?.getAttribute("href")).toBe(
+    expect(getLink(screen, "Memoria")?.getAttribute("href")).toBe(
       "/memory",
     );
   });

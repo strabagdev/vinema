@@ -480,7 +480,7 @@ function ExplorerEmptyState() {
           <Link href="/">Volver a capturar</Link>
         </Button>
         <Button variant="ghost" asChild>
-          <Link href="/concepts">Explorar conceptos</Link>
+          <Link href="/concepts">Conceptos</Link>
         </Button>
       </div>
     </div>

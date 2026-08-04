@@ -578,6 +578,61 @@ describe("concept suggestions", () => {
     });
   });
 
+  it("does not resolve stop words or derived one-letter acronyms as concepts", () => {
+    const suggestions = suggestConcepts({
+      text: "Voy a revisar pagos pendientes",
+      contexts: [
+        context({
+          id: "agosto",
+          name: "Agosto",
+          aliases: ["a"],
+          normalizedAliases: ["a"],
+        }),
+      ],
+      nodes: [],
+      relations: [],
+    });
+
+    expect(suggestions).toEqual([]);
+  });
+
+  it("allows a confirmed one-letter acronym without creating one from lowercase stop words", () => {
+    const confirmed = suggestConcepts({
+      text: "X requiere seguimiento",
+      contexts: [
+        context({
+          id: "expediente",
+          name: "Expediente reservado",
+          aliases: ["X"],
+        }),
+      ],
+      nodes: [],
+      relations: [],
+    });
+    const lowerStopword = suggestConcepts({
+      text: "a requiere seguimiento",
+      contexts: [
+        context({
+          id: "agosto",
+          name: "Agosto",
+          aliases: ["A"],
+        }),
+      ],
+      nodes: [],
+      relations: [],
+    });
+
+    expect(confirmed).toMatchObject([
+      {
+        kind: "existing",
+        conceptId: "expediente",
+        label: "Expediente reservado",
+        matchedAlias: "X",
+      },
+    ]);
+    expect(lowerStopword).toEqual([]);
+  });
+
   it("resolves unique derived acronyms but does not choose ambiguous acronyms", () => {
     const unique = suggestConcepts({
       text: "MAN tiene avances operacionales",

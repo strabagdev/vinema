@@ -72,9 +72,7 @@ describe("AppShell", () => {
     expect(shell?.getAttribute("data-app-shell")).toBe("canvas");
     expect(shell?.className).toContain("h-dvh");
     expect(shell?.className).toContain("overflow-hidden");
-    expect(
-      screen.querySelector("button[aria-label='Empezar a escribir']"),
-    ).toBeNull();
+    expect(screen.querySelector("button[aria-label='Capturar']")).toBeNull();
     expect(screen.innerHTML).not.toContain("fixed bottom-5 right-5");
   });
 });

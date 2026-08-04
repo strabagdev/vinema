@@ -2,6 +2,7 @@
 
 import { Check } from "lucide-react";
 import type { ConceptSuggestion } from "@/features/associations/association-types";
+import { getUsefulDetectedAlias } from "@/features/associations/concept-alias-display";
 import { cn } from "@/lib/cn";
 
 const INITIAL_CONCEPT_LIMIT = 5;
@@ -52,6 +53,8 @@ export function ConceptSuggestionChips({
           suggestion.kind === "existing"
             ? suggestion.label
             : suggestion.suggestedLabel;
+        const detectedAlias =
+          suggestion.kind === "existing" ? getUsefulDetectedAlias(suggestion) : null;
         const id =
           suggestion.kind === "existing"
             ? suggestion.conceptId
@@ -82,14 +85,14 @@ export function ConceptSuggestionChips({
             {selected ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : null}
             <span className="flex flex-col leading-tight">
               <span>{label}</span>
-              {suggestion.kind === "existing" && suggestion.matchedAlias ? (
+              {detectedAlias ? (
                 <span
                   className={cn(
                     "text-[0.68rem]",
                     selected ? "text-zinc-300" : "text-zinc-500",
                   )}
                 >
-                  Detectado como {suggestion.matchedAlias}
+                  Detectado como {detectedAlias}
                 </span>
               ) : null}
             </span>

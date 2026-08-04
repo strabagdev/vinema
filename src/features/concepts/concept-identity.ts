@@ -1,4 +1,5 @@
 import type { Context } from "@/domain/context/context";
+import { isSpanishStopword } from "@/features/associations/spanish-stopwords";
 
 export type ConceptIdentity = {
   id: string;
@@ -52,7 +53,7 @@ export function resolveConceptIdentity(
   const visibleContexts = contexts.filter((context) => context.archivedAt === null);
   const text = matchedText.trim();
 
-  if (!text) {
+  if (!isConceptIdentityLookupCandidate(text)) {
     return { status: "NEW", matchedText };
   }
 
@@ -110,9 +111,11 @@ export function resolveConceptIdentity(
     return withMatchedAlias(normalizedAliasResolution, text);
   }
 
-  const acronymMatches = visibleContexts.filter(
-    (context) => deriveConceptAcronym(context.name) === normalizeAcronym(text),
-  );
+  const acronymMatches = isDerivedAcronymLookupCandidate(text)
+    ? visibleContexts.filter(
+        (context) => deriveConceptAcronym(context.name) === normalizeAcronym(text),
+      )
+    : [];
   const acronymResolution = resolveUniqueOrAmbiguous(acronymMatches, text, "ALIAS");
 
   if (acronymResolution) {
@@ -172,6 +175,26 @@ export function hasConceptIdentityMatch(
   }
 
   return null;
+}
+
+export function isConceptIdentityLookupCandidate(value: string) {
+  const text = value.trim();
+
+  if (!text || !/[\p{L}\p{N}]/u.test(text)) {
+    return false;
+  }
+
+  const normalizedText = normalizeConceptIdentityLabel(text);
+
+  if (!normalizedText) {
+    return false;
+  }
+
+  if (normalizedText.length === 1) {
+    return isConfirmedOneLetterAcronym(text);
+  }
+
+  return !isSingleStopword(normalizedText);
 }
 
 function resolveUniqueOrAmbiguous(
@@ -240,6 +263,22 @@ function normalizeAliasList(values: string[]) {
   }
 
   return result;
+}
+
+function isDerivedAcronymLookupCandidate(value: string) {
+  const normalizedText = normalizeConceptIdentityLabel(value);
+
+  return normalizedText.length > 1 && !isSingleStopword(normalizedText);
+}
+
+function isSingleStopword(value: string) {
+  return !value.includes(" ") && isSpanishStopword(value);
+}
+
+function isConfirmedOneLetterAcronym(value: string) {
+  const text = value.trim();
+
+  return /^[A-ZÑ]$/u.test(text) && !isSingleStopword(normalizeConceptIdentityLabel(text));
 }
 
 function normalizeAcronym(value: string) {

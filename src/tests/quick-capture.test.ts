@@ -274,7 +274,7 @@ async function renderAppShell(): Promise<{ container: HTMLDivElement; root: Root
 function getWritingButton(container: HTMLElement) {
   const button = Array.from(
     container.querySelectorAll<HTMLButtonElement>(
-      "button[aria-label='Empezar a escribir']",
+      "button[aria-label='Capturar']",
     ),
   )[0];
 

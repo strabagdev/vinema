@@ -1,6 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import MemoryArchivePage from "@/app/memory/archive/page";
 import { KnowledgeBaseClient } from "@/app/notes/knowledge-base-client";
 import type { Context } from "@/domain/context/context";
 import type { NodeContextRelation } from "@/domain/context/node-context-relation";
@@ -191,7 +192,7 @@ describe("Knowledge Base", () => {
     expect(screen.textContent).toContain("Llegaste al final de la Memoria.");
   });
 
-  it("starts in Hilos mode and groups captures with the same emergent identity", async () => {
+  it("renders a single memory surface and groups captures with the same emergent identity", async () => {
     setMockNodes([
       createNode({
         id: "thread-new",
@@ -228,9 +229,13 @@ describe("Knowledge Base", () => {
     const screen = await renderKnowledgeBase();
 
     expect(screen.textContent).toContain("Memoria");
-    expect(screen.querySelector("button[aria-pressed='true']")?.textContent).toBe(
-      "Hilos",
-    );
+    expect(screen.textContent).toContain("Tus capturas organizadas por contexto.");
+    expect(screen.textContent).not.toContain("Tus capturas organizadas por contexto y tiempo.");
+    expect(screen.textContent).not.toContain("Hilos");
+    expect(screen.textContent).not.toContain("Tiempo");
+    expect(screen.textContent).not.toContain("Archivo");
+    expect(getLinkByHref(screen, "/#capture")).toBeUndefined();
+    expect(screen.querySelector("[aria-label='Modo de Memoria']")).toBeNull();
     expect(screen.textContent).toContain("Mitcom · Servidor · Tracking");
     expect(screen.textContent).toContain("2 capturas");
     expect(screen.textContent).toContain("Seguimiento Mitcom sin servidor");
@@ -272,7 +277,7 @@ describe("Knowledge Base", () => {
     expect(screen.textContent).not.toContain("Primera captura");
   });
 
-  it("switches to Tiempo mode and preserves chronological capture cards", async () => {
+  it("keeps individual captures visible without exposing a time mode", async () => {
     setMockNodes([
       createNode({
         id: "old",
@@ -287,13 +292,13 @@ describe("Knowledge Base", () => {
     ]);
 
     const screen = await renderKnowledgeBase();
-    await click(getButton(screen, "Tiempo"));
 
     const links = Array.from(screen.querySelectorAll("a[href^='/memory/detail']"));
     expect(links.map((link) => link.textContent)).toEqual([
       expect.stringContaining("Captura reciente"),
       expect.stringContaining("Captura antigua"),
     ]);
+    expect(screen.textContent).not.toContain("Tiempo");
   });
 
   it("searches Hilos by emergent identity labels and aliases", async () => {
@@ -327,7 +332,7 @@ describe("Knowledge Base", () => {
     expect(screen.textContent).not.toContain("Contenido C");
   });
 
-  it("searches Tiempo by emergent identity aliases", async () => {
+  it("searches individual memory entries by emergent identity aliases", async () => {
     mocks.searchParams = new URLSearchParams("q=proveedor mitcom");
     setMockNodes([
       createNode({ id: "match", content: "Contenido sin el alias visible" }),
@@ -348,7 +353,6 @@ describe("Knowledge Base", () => {
     ]);
 
     const screen = await renderKnowledgeBase();
-    await click(getButton(screen, "Tiempo"));
 
     expect(screen.textContent).toContain("1 resultados para \"proveedor mitcom\".");
     expect(screen.textContent).toContain("Contenido sin el alias visible");
@@ -493,7 +497,6 @@ describe("Knowledge Base", () => {
     ]);
 
     const screen = await renderKnowledgeBase();
-    await click(getButton(screen, "Tiempo"));
 
     expect(screen.textContent).toContain('1 resultados para "Mitcom (A)".');
     expect(screen.querySelectorAll("mark")).toHaveLength(2);
@@ -518,6 +521,14 @@ describe("Knowledge Base", () => {
     await click(getButton(screen, "Limpiar busqueda"));
 
     expect(mocks.replace).toHaveBeenCalledWith("/memory", { scroll: false });
+  });
+
+  it("keeps the archive route available without exposing it from Memoria", async () => {
+    const screen = await renderKnowledgeBase();
+
+    expect(MemoryArchivePage).toBeTypeOf("function");
+    expect(screen.querySelector("a[href='/memory/archive']")).toBeNull();
+    expect(screen.textContent).not.toContain("Archivo");
   });
 });
 
@@ -647,6 +658,12 @@ function getButtonContaining(container: HTMLElement, text: string) {
 
 function getFirstDetailLink(container: HTMLElement) {
   return container.querySelector("a[href^='/memory/detail']");
+}
+
+function getLinkByHref(container: HTMLElement, href: string) {
+  return Array.from(container.querySelectorAll<HTMLAnchorElement>("a")).find(
+    (link) => link.getAttribute("href") === href,
+  );
 }
 
 async function click(element: HTMLElement) {

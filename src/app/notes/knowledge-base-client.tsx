@@ -41,7 +41,6 @@ import {
 } from "@/infrastructure/repositories";
 
 type LoadState = "loading" | "ready" | "error";
-type MemoryMode = "threads" | "time";
 const KNOWLEDGE_BASE_INVALIDATION_TYPES = [
   "capture",
   "concept",
@@ -55,7 +54,6 @@ export function KnowledgeBaseClient() {
   const vinemaContext = useVinemaContext();
   const query = searchParams.get("q")?.trim() ?? "";
   const [draftQuery, setDraftQuery] = useState(query);
-  const [mode, setMode] = useState<MemoryMode>("threads");
   const [expandedThreadIds, setExpandedThreadIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -76,57 +74,26 @@ export function KnowledgeBaseClient() {
     () => new Map(searchResults.map((result) => [result.nodeId, result])),
     [searchResults],
   );
-  const filteredTimeCaptures = useMemo(
-    () =>
-      activeQuery
-        ? filterCapturesByMemoryQuery({
-            captures,
-            identities: captureIdentities,
-            query: activeQuery,
-            searchResultsByNodeId,
-          })
-        : captures,
-    [activeQuery, captureIdentities, captures, searchResultsByNodeId],
-  );
-  const visibleTimeCaptures = useMemo(
-    () => filteredTimeCaptures.slice(0, visibleCount),
-    [filteredTimeCaptures, visibleCount],
-  );
-  const searchHasMore = visibleCount < filteredTimeCaptures.length;
-  const timeCaptures = useMemo(
-    () => captures.slice(0, visibleCount),
-    [captures, visibleCount],
-  );
   const threadEntries = useMemo(
     () =>
       activeQuery
         ? filterMemoryThreadEntries(
             deriveMemoryThreads({ captures, identities: captureIdentities }),
             activeQuery,
+            searchResultsByNodeId,
           )
         : deriveMemoryThreads({ captures, identities: captureIdentities }),
-    [activeQuery, captureIdentities, captures],
+    [activeQuery, captureIdentities, captures, searchResultsByNodeId],
   );
   const visibleThreadEntries = useMemo(
     () => threadEntries.slice(0, visibleCount),
     [threadEntries, visibleCount],
   );
-  const showingSearchResults = activeQuery && mode === "time";
   const resultCount = activeQuery
-    ? mode === "threads"
-      ? countThreadEntryCaptures(threadEntries)
-      : filteredTimeCaptures.length
+    ? countThreadEntryCaptures(threadEntries)
     : captureTotal;
-  const visibleResultCount = showingSearchResults
-    ? visibleTimeCaptures.length
-    : mode === "threads"
-      ? countThreadEntryCaptures(visibleThreadEntries)
-      : timeCaptures.length;
-  const hasMore = showingSearchResults
-    ? searchHasMore
-    : mode === "threads"
-      ? visibleCount < threadEntries.length
-      : visibleCount < captures.length || captureHasMore;
+  const visibleResultCount = countThreadEntryCaptures(visibleThreadEntries);
+  const hasMore = visibleCount < threadEntries.length || (!activeQuery && captureHasMore);
 
   const loadBase = useCallback(async () => {
     if (vinemaContext.status !== "ready") {
@@ -269,12 +236,6 @@ export function KnowledgeBaseClient() {
     router.replace("/memory", { scroll: false });
   }
 
-  function selectMode(nextMode: MemoryMode) {
-    setMode(nextMode);
-    setVisibleCount(KNOWLEDGE_BASE_BATCH_SIZE);
-    setExpandedThreadIds(new Set());
-  }
-
   function toggleThread(threadId: string) {
     setExpandedThreadIds((current) => {
       const next = new Set(current);
@@ -291,26 +252,13 @@ export function KnowledgeBaseClient() {
 
   return (
     <section className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-2">
-          <h1 className="text-3xl font-semibold tracking-normal text-zinc-950">
-            Memoria
-          </h1>
-          <p className="max-w-2xl text-sm leading-6 text-zinc-600">
-            Tus capturas organizadas por contexto y tiempo.
-          </p>
-        </div>
-        <div className="flex flex-col gap-3 sm:items-end">
-          <MemoryModeSelector mode={mode} onSelect={selectMode} />
-          <div className="flex gap-2">
-            <Button asChild variant="outline">
-              <Link href="/memory/archive">Archivo</Link>
-            </Button>
-            <Button asChild>
-              <Link href="/#capture">Escribir</Link>
-            </Button>
-          </div>
-        </div>
+      <div className="space-y-2">
+        <h1 className="text-3xl font-semibold tracking-normal text-zinc-950">
+          Memoria
+        </h1>
+        <p className="max-w-2xl text-sm leading-6 text-zinc-600">
+          Tus capturas organizadas por contexto.
+        </p>
       </div>
 
       <form
@@ -377,58 +325,23 @@ export function KnowledgeBaseClient() {
       ) : loadState === "ready" ? (
         <div className="space-y-4">
           <div className="space-y-3">
-            {mode === "threads"
-              ? visibleThreadEntries.map((entry) =>
-                  entry.kind === "thread" ? (
-                    <MemoryThreadItem
-                      key={entry.thread.id}
-                      thread={entry.thread}
-                      query={activeQuery}
-                      expanded={expandedThreadIds.has(entry.thread.id)}
-                      onToggle={() => toggleThread(entry.thread.id)}
-                    />
-                  ) : (
-                    <MemoryCaptureEntryItem
-                      key={entry.capture.node.id}
-                      capture={entry.capture}
-                      query={activeQuery}
-                    />
-                  ),
-                )
-              : activeQuery
-                ? visibleTimeCaptures.map((capture) => {
-                    const result = searchResultsByNodeId.get(capture.id);
-
-                    return (
-                      <KnowledgeResultItem
-                        key={capture.id}
-                        href={getNodeDetailPath(capture.id, {
-                          returnTo: getKnowledgeBasePath(activeQuery),
-                        })}
-                        preview={
-                          result?.preview ??
-                          getCapturePreview(capture.content, {
-                            maxLength: 180,
-                          })
-                        }
-                        excerpt={
-                          result?.excerpt ??
-                          getContentExcerpt(capture.content) ??
-                          "Sin contenido"
-                        }
-                        identity={captureIdentities.get(capture.id) ?? null}
-                        updatedAt={result?.updatedAt ?? getContentTimestamp(capture)}
-                        query={activeQuery}
-                      />
-                    );
-                  })
-                : timeCaptures.map((capture) => (
-                    <KnowledgeCaptureItem
-                      key={capture.id}
-                      node={capture}
-                      identity={captureIdentities.get(capture.id) ?? null}
-                    />
-                  ))}
+            {visibleThreadEntries.map((entry) =>
+              entry.kind === "thread" ? (
+                <MemoryThreadItem
+                  key={entry.thread.id}
+                  thread={entry.thread}
+                  query={activeQuery}
+                  expanded={expandedThreadIds.has(entry.thread.id)}
+                  onToggle={() => toggleThread(entry.thread.id)}
+                />
+              ) : (
+                <MemoryCaptureEntryItem
+                  key={entry.capture.node.id}
+                  capture={entry.capture}
+                  query={activeQuery}
+                />
+              ),
+            )}
           </div>
 
           <div className="flex flex-col items-center gap-3">
@@ -456,39 +369,6 @@ export function KnowledgeBaseClient() {
         </div>
       ) : null}
     </section>
-  );
-}
-
-function MemoryModeSelector({
-  mode,
-  onSelect,
-}: {
-  mode: MemoryMode;
-  onSelect: (mode: MemoryMode) => void;
-}) {
-  return (
-    <div
-      className="inline-flex rounded-full bg-zinc-100 p-1 text-sm"
-      role="group"
-      aria-label="Modo de Memoria"
-    >
-      <button
-        type="button"
-        aria-pressed={mode === "threads"}
-        onClick={() => onSelect("threads")}
-        className={modeButtonClassName(mode === "threads")}
-      >
-        Hilos
-      </button>
-      <button
-        type="button"
-        aria-pressed={mode === "time"}
-        onClick={() => onSelect("time")}
-        className={modeButtonClassName(mode === "time")}
-      >
-        Tiempo
-      </button>
-    </div>
   );
 }
 
@@ -702,6 +582,7 @@ function normalizeComparableText(value: string) {
 function filterMemoryThreadEntries(
   entries: MemoryThreadEntry[],
   query: string,
+  searchResultsByNodeId: Map<string, RecoveryResult>,
 ) {
   const normalizedQuery = normalizeSearchText(query);
 
@@ -712,13 +593,15 @@ function filterMemoryThreadEntries(
   return entries
     .map((entry): MemoryThreadEntry | null => {
       if (entry.kind === "capture") {
-        return matchesMemoryCapture(entry.capture, normalizedQuery)
+        return searchResultsByNodeId.has(entry.capture.node.id) ||
+          matchesMemoryCapture(entry.capture, normalizedQuery)
           ? entry
           : null;
       }
 
       const matchingCaptures = entry.thread.captures.filter((capture) =>
-        matchesMemoryCapture(capture, normalizedQuery),
+        searchResultsByNodeId.has(capture.node.id) ||
+          matchesMemoryCapture(capture, normalizedQuery),
       );
       const identityMatches = matchesIdentity(entry.thread, normalizedQuery);
 
@@ -747,36 +630,6 @@ function filterMemoryThreadEntries(
       };
     })
     .filter((entry): entry is MemoryThreadEntry => entry !== null);
-}
-
-function filterCapturesByMemoryQuery({
-  captures,
-  identities,
-  query,
-  searchResultsByNodeId,
-}: {
-  captures: Node[];
-  identities: Map<string, CaptureEmergentIdentity>;
-  query: string;
-  searchResultsByNodeId: Map<string, RecoveryResult>;
-}) {
-  const normalizedQuery = normalizeSearchText(query);
-
-  if (!normalizedQuery) {
-    return captures;
-  }
-
-  return captures.filter((capture) => {
-    if (searchResultsByNodeId.has(capture.id)) {
-      return true;
-    }
-
-    const identity = identities.get(capture.id);
-
-    return identity
-      ? matchesIdentityConcepts(identity.concepts, normalizedQuery)
-      : false;
-  });
 }
 
 function matchesMemoryCapture(
@@ -818,15 +671,6 @@ function countThreadEntryCaptures(entries: MemoryThreadEntry[]) {
   );
 }
 
-function modeButtonClassName(active: boolean) {
-  return [
-    "rounded-full px-3 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2",
-    active
-      ? "bg-white text-zinc-950 shadow-sm"
-      : "text-zinc-500 hover:text-zinc-900",
-  ].join(" ");
-}
-
 function normalizeSearchText(value: string) {
   return value.trim().toLocaleLowerCase().replace(/\s+/g, " ");
 }
@@ -861,9 +705,6 @@ function EmptyBaseState() {
           Empieza desde la superficie principal y Vinema lo guardara en tu Base
           de Memoria.
         </p>
-        <Button asChild className="mt-5">
-          <Link href="/#capture">Escribir</Link>
-        </Button>
       </div>
     </div>
   );

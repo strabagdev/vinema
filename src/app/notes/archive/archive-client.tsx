@@ -232,7 +232,7 @@ export function ArchiveClient() {
           </p>
         </div>
         <Button asChild variant="outline">
-          <Link href="/memory">Explorar memoria</Link>
+          <Link href="/memory">Memoria</Link>
         </Button>
       </div>
 
@@ -277,7 +277,7 @@ export function ArchiveClient() {
         <p className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-600" aria-live="polite">
           {feedback}{" "}
           <Link href={getKnowledgeBasePath()} className="font-medium underline">
-            Explorar memoria
+            Memoria
           </Link>
         </p>
       ) : null}

@@ -7,12 +7,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { Node } from "@/domain/node/node";
+import type { Context } from "@/domain/context/context";
 import type { Device } from "@/domain/device/device";
 import type { Workspace } from "@/domain/workspace/workspace";
 import type {
   AssociationSuggestion,
   ConceptSuggestion,
   EmergingConceptSuggestion,
+  ExistingConceptSuggestion,
 } from "@/features/associations/association-types";
 import { useAssociationSuggestions } from "@/features/associations/use-association-suggestions";
 import { getContentTimestamp } from "@/features/capture/capture-timestamps";
@@ -41,6 +43,7 @@ import { getConceptKnowledgeExplorerPath } from "@/features/exploration/concept-
 import { useVisualFeedback } from "@/features/feedback/visual-feedback-provider";
 import { isKnowledgeResetRunning } from "@/features/knowledge-reset/knowledge-reset";
 import { getCapturePreview } from "@/features/node/node-display";
+import { getNodeDetailPath } from "@/features/node/node-routes";
 import type { SearchNodesRepositories } from "@/features/recovery/search-nodes";
 import type { StorageAdapter } from "@/infrastructure/storage/storage-adapter";
 import { cn } from "@/lib/cn";
@@ -49,6 +52,7 @@ const EMPTY_SELECTED_CAPTURE_IDS: string[] = [];
 const INITIAL_MEMORY_RESULT_LIMIT = 3;
 const DESKTOP_PANEL_BREAKPOINT = 768;
 const EPHEMERAL_PANEL_CLOSE_DELAY_MS = 350;
+const CONCEPT_HIGHLIGHT_MS = 1200;
 
 type DraftStatus = "idle" | "saving" | "saved" | "error";
 type ActivePanel = "concepts" | "memories" | null;
@@ -82,6 +86,11 @@ export function CaptureSurface({
   const [selectedEmergingConcepts, setSelectedEmergingConcepts] = useState<
     EmergingConceptSuggestion[]
   >([]);
+  const [selectedExistingConceptSuggestions, setSelectedExistingConceptSuggestions] =
+    useState<ExistingConceptSuggestion[]>([]);
+  const [highlightedConceptKeys, setHighlightedConceptKeys] = useState<Set<string>>(
+    new Set(),
+  );
   const [memoryIdentities, setMemoryIdentities] = useState<
     Map<string, CaptureEmergentIdentity>
   >(new Map());
@@ -96,6 +105,9 @@ export function CaptureSurface({
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savePromiseRef = useRef<Promise<unknown> | null>(null);
   const closePanelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const highlightTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
+    new Map(),
+  );
   const captureInFlightRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [panelPlacement, setPanelPlacement] = useState<PanelPlacement>({
@@ -114,6 +126,7 @@ export function CaptureSurface({
   const conceptSuggestions = mergeSelectedConceptSuggestions(
     associationState.conceptSuggestions,
     selectedEmergingConcepts,
+    selectedExistingConceptSuggestions,
   );
   const memorySuggestions = associationState.suggestions;
   const showConceptIndicator = hasContent && conceptSuggestions.length > 0;
@@ -196,8 +209,14 @@ export function CaptureSurface({
   }, [activePanel, showIndicators]);
 
   useEffect(() => {
+    const highlightTimers = highlightTimersRef.current;
+
     return () => {
       clearPanelCloseTimer();
+      for (const timer of highlightTimers.values()) {
+        clearTimeout(timer);
+      }
+      highlightTimers.clear();
     };
   }, [clearPanelCloseTimer]);
 
@@ -413,6 +432,8 @@ export function CaptureSurface({
       setContent("");
       setSelectedContextIds([]);
       setSelectedEmergingConcepts([]);
+      setSelectedExistingConceptSuggestions([]);
+      setHighlightedConceptKeys(new Set());
       clearCapturedSelection();
       setActivePanel(null);
       setInteractionSource(null);
@@ -459,6 +480,42 @@ export function CaptureSurface({
     });
   }
 
+  function addSelectedExistingConceptSuggestion(
+    context: Context,
+    matchedAlias?: string,
+  ) {
+    const suggestion = createSelectedExistingConceptSuggestion(context, matchedAlias);
+
+    setSelectedExistingConceptSuggestions((current) => {
+      if (current.some((item) => item.conceptId === suggestion.conceptId)) {
+        return current;
+      }
+
+      return [...current, suggestion];
+    });
+  }
+
+  function highlightConcept(key: string) {
+    const existingTimer = highlightTimersRef.current.get(key);
+
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
+
+    setHighlightedConceptKeys((current) => new Set(current).add(key));
+
+    const timer = setTimeout(() => {
+      highlightTimersRef.current.delete(key);
+      setHighlightedConceptKeys((current) => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
+    }, CONCEPT_HIGHLIGHT_MS);
+
+    highlightTimersRef.current.set(key, timer);
+  }
+
   function updateCapturedSelection() {
     setCapturedSelection(readValidTextareaSelection(textareaRef.current));
     setSelectionResolution(null);
@@ -490,11 +547,21 @@ export function CaptureSurface({
 
       if (resolution.status === "EXACT" || resolution.status === "ALIAS") {
         const alreadyAssociated = selectedContextIds.includes(resolution.conceptId);
+        const context = contexts.find((item) => item.id === resolution.conceptId);
+
+        if (context) {
+          addSelectedExistingConceptSuggestion(
+            context,
+            resolution.status === "ALIAS" ? resolution.matchedAlias : undefined,
+          );
+        }
+
         setSelectedContextIds((current) =>
           current.includes(resolution.conceptId)
             ? current
             : [...current, resolution.conceptId],
         );
+        highlightConcept(`existing:${resolution.conceptId}`);
         clearCapturedSelection();
         showSelectionFeedback(
           feedback,
@@ -527,6 +594,7 @@ export function CaptureSurface({
         ? current
         : [...current, emergingConcept],
     );
+    highlightConcept(`emerging:${emergingConcept.candidateId}`);
     clearCapturedSelection();
     showSelectionFeedback(
       feedback,
@@ -537,9 +605,18 @@ export function CaptureSurface({
 
   function chooseAmbiguousSelectionConcept(contextId: string) {
     const alreadyAssociated = selectedContextIds.includes(contextId);
+    const context = selectionResolution?.status === "AMBIGUOUS"
+      ? selectionResolution.candidates.find((item) => item.id === contextId)
+      : null;
+
+    if (context) {
+      addSelectedExistingConceptSuggestion(context);
+    }
+
     setSelectedContextIds((current) =>
       current.includes(contextId) ? current : [...current, contextId],
     );
+    highlightConcept(`existing:${contextId}`);
     clearCapturedSelection();
     showSelectionFeedback(
       feedback,
@@ -621,7 +698,7 @@ export function CaptureSurface({
       data-capture-canvas=""
     >
       <section className="mx-auto flex h-full min-h-0 w-full max-w-3xl flex-1 flex-col justify-end md:justify-start md:pt-[clamp(1.5rem,7vh,5rem)]">
-        <h1 className="sr-only">Empieza a escribir</h1>
+        <h1 className="sr-only">Capturar</h1>
         <div
           className="relative flex min-h-0 w-full flex-col gap-3 rounded-[1.35rem] border border-zinc-200/80 bg-white/90 p-3 shadow-[0_12px_40px_rgba(24,24,27,0.10)] backdrop-blur-md md:flex-1 md:gap-5 md:rounded-none md:border-0 md:bg-transparent md:p-0 md:shadow-none md:backdrop-blur-0"
           data-mobile-capture-composer=""
@@ -629,7 +706,7 @@ export function CaptureSurface({
           <Textarea
             id="capture"
             ref={textareaRef}
-            aria-label="Empieza a escribir"
+            aria-label="Capturar"
             className="vinema-scrollbar min-h-[5.5rem] max-h-[min(34dvh,12rem)] flex-none resize-none overflow-y-auto scroll-smooth border-0 bg-transparent px-1 py-1 text-[1.08rem] font-normal leading-[1.55] text-zinc-950 shadow-none outline-none ring-0 placeholder:text-zinc-400 focus-visible:ring-0 focus-visible:ring-offset-0 md:min-h-0 md:max-h-none md:flex-1 md:px-0 md:py-0 md:text-[1.42rem] md:leading-[1.75] md:placeholder:text-zinc-300 md:focus:placeholder:text-transparent sm:md:text-[1.65rem]"
             placeholder="Escribe algo..."
             value={content}
@@ -695,6 +772,7 @@ export function CaptureSurface({
                       selectedEmergingCandidateIds={selectedEmergingConcepts.map(
                         (concept) => concept.candidateId,
                       )}
+                      highlightedConceptKeys={highlightedConceptKeys}
                       onToggleExisting={toggleConcept}
                       onToggleEmerging={toggleEmergingConcept}
                     />
@@ -703,8 +781,6 @@ export function CaptureSurface({
                 {activePanel === "memories" ? (
                   <ProgressivePanel
                     title="Me recuerda a…"
-                    expandHref="/memory"
-                    expandLabel="Explorar memoria"
                     interactionSource={interactionSource}
                     placement={panelPlacement}
                     onIntentStart={clearPanelCloseTimer}
@@ -719,6 +795,7 @@ export function CaptureSurface({
                       loading={associationState.status === "loading"}
                       error={associationState.error !== null}
                       onRetry={associationState.retry}
+                      onOpenCapture={persistCurrentDraft}
                     />
                   </ProgressivePanel>
                 ) : null}
@@ -793,6 +870,7 @@ export function CaptureSurface({
 function mergeSelectedConceptSuggestions(
   suggestions: ConceptSuggestion[],
   selectedEmergingConcepts: EmergingConceptSuggestion[],
+  selectedExistingConcepts: ExistingConceptSuggestion[],
 ) {
   const merged = new Map<string, ConceptSuggestion>();
 
@@ -804,11 +882,32 @@ function mergeSelectedConceptSuggestions(
     merged.set(key, suggestion);
   }
 
+  for (const suggestion of selectedExistingConcepts) {
+    merged.set(`existing:${suggestion.conceptId}`, suggestion);
+  }
+
   for (const suggestion of selectedEmergingConcepts) {
     merged.set(`emerging:${suggestion.candidateId}`, suggestion);
   }
 
   return Array.from(merged.values());
+}
+
+function createSelectedExistingConceptSuggestion(
+  context: Context,
+  matchedAlias?: string,
+): ExistingConceptSuggestion {
+  return {
+    kind: "existing",
+    context,
+    conceptId: context.id,
+    label: context.name,
+    score: 1,
+    evidenceCaptureIds: [],
+    matchedTerms: [],
+    matchedAlias,
+    knowledgeSuggestionKind: "RELATED_NOW",
+  };
 }
 
 function ContextIndicator({
@@ -990,12 +1089,14 @@ function ConceptPanelContent({
   suggestions,
   selectedContextIds,
   selectedEmergingCandidateIds,
+  highlightedConceptKeys,
   onToggleExisting,
   onToggleEmerging,
 }: {
   suggestions: ConceptSuggestion[];
   selectedContextIds: string[];
   selectedEmergingCandidateIds: string[];
+  highlightedConceptKeys: Set<string>;
   onToggleExisting: (contextId: string) => void;
   onToggleEmerging: (candidateId: string) => void;
 }) {
@@ -1016,6 +1117,9 @@ function ConceptPanelContent({
                 suggestion={suggestion}
                 selectedContextIds={selectedContextIds}
                 selectedEmergingCandidateIds={selectedEmergingCandidateIds}
+                highlighted={highlightedConceptKeys.has(
+                  `${suggestion.kind}:${getConceptSuggestionId(suggestion)}`,
+                )}
                 onToggleExisting={onToggleExisting}
                 onToggleEmerging={onToggleEmerging}
               />
@@ -1031,12 +1135,14 @@ function ConceptSuggestionRow({
   suggestion,
   selectedContextIds,
   selectedEmergingCandidateIds,
+  highlighted,
   onToggleExisting,
   onToggleEmerging,
 }: {
   suggestion: ConceptSuggestion;
   selectedContextIds: string[];
   selectedEmergingCandidateIds: string[];
+  highlighted: boolean;
   onToggleExisting: (contextId: string) => void;
   onToggleEmerging: (candidateId: string) => void;
 }) {
@@ -1051,9 +1157,11 @@ function ConceptSuggestionRow({
 
   return (
     <div
+      data-concept-suggestion-highlighted={highlighted ? "" : undefined}
       className={cn(
         "flex items-center gap-2 rounded-md transition-colors motion-reduce:transition-none",
         selected ? "bg-zinc-950 text-white" : "text-zinc-700 hover:bg-zinc-50",
+        highlighted ? "ring-2 ring-indigo-200" : "",
       )}
     >
       <button
@@ -1125,12 +1233,14 @@ function MemoryPanelContent({
   loading,
   error,
   onRetry,
+  onOpenCapture,
 }: {
   suggestions: AssociationSuggestion[];
   identities: Map<string, CaptureEmergentIdentity>;
   loading: boolean;
   error: boolean;
   onRetry: () => void;
+  onOpenCapture: () => void | Promise<void>;
 }) {
   const visibleSuggestions = suggestions.slice(0, INITIAL_MEMORY_RESULT_LIMIT);
 
@@ -1160,16 +1270,15 @@ function MemoryPanelContent({
           key={suggestion.node.id}
           node={suggestion.node}
           identity={identities.get(suggestion.node.id) ?? null}
+          onOpenCapture={onOpenCapture}
         />
       ))}
-      {suggestions.length > INITIAL_MEMORY_RESULT_LIMIT ? (
-        <Link
-          href="/memory"
-          className="inline-flex h-8 items-center rounded-md px-1 text-xs text-zinc-500 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
-        >
-          Explorar memoria
-        </Link>
-      ) : null}
+      <Link
+        href="/memory"
+        className="inline-flex h-8 items-center rounded-md px-1 text-xs text-zinc-500 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
+      >
+        Memoria
+      </Link>
     </div>
   );
 }
@@ -1177,26 +1286,36 @@ function MemoryPanelContent({
 function MemoryResult({
   node,
   identity,
+  onOpenCapture,
 }: {
   node: Node;
   identity: CaptureEmergentIdentity | null;
+  onOpenCapture: () => void | Promise<void>;
 }) {
   const preview = getCapturePreview(node.content, { maxLength: 600 });
 
   return (
-    <article className="min-w-0 rounded-md px-3 py-2 text-sm leading-6 text-zinc-700">
+    <article className="min-w-0 rounded-md text-sm leading-6 text-zinc-700">
       {identity?.displayText ? (
         <CaptureEmergentIdentityLabel
           identity={identity}
-          className="truncate text-sm leading-6"
+          className="px-3 pt-2 text-sm leading-6"
         />
       ) : null}
-      <p className="block min-w-0 truncate" title={preview}>
-        {preview}
-      </p>
-      <time className="mt-1 block text-xs text-zinc-400">
-        {formatCompactDate(getContentTimestamp(node))}
-      </time>
+      <Link
+        href={getNodeDetailPath(node.id, { returnTo: "/" })}
+        aria-label={`Abrir recuerdo: ${preview}`}
+        title={preview}
+        className="block min-w-0 rounded-md px-3 py-2 outline-none hover:bg-zinc-50 hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
+        onClick={() => {
+          void onOpenCapture();
+        }}
+      >
+        <span className="block min-w-0 truncate">{preview}</span>
+        <time className="mt-1 block text-xs text-zinc-400">
+          {formatCompactDate(getContentTimestamp(node))}
+        </time>
+      </Link>
     </article>
   );
 }

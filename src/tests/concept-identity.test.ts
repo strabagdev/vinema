@@ -65,6 +65,27 @@ describe("concept identity resolution", () => {
     });
   });
 
+  it("rejects empty identity inputs, stop words and unconfirmed one-letter acronyms", () => {
+    const contexts = [
+      context({ id: "agosto", name: "Agosto", aliases: ["a"] }),
+      context({ id: "expediente", name: "Expediente reservado", aliases: ["X"] }),
+    ];
+
+    expect(resolveConceptIdentity("a", contexts)).toEqual({
+      status: "NEW",
+      matchedText: "a",
+    });
+    expect(resolveConceptIdentity("de", contexts)).toEqual({
+      status: "NEW",
+      matchedText: "de",
+    });
+    expect(resolveConceptIdentity("X", contexts)).toMatchObject({
+      status: "ALIAS",
+      conceptId: "expediente",
+      matchedAlias: "X",
+    });
+  });
+
   it("derives acronyms deterministically and treats conflicts as ambiguous", () => {
     expect(deriveConceptAcronym("Operational Core")).toBe("OC");
     expect(deriveConceptAcronym("Mina Andes Norte")).toBe("MAN");
