@@ -204,6 +204,8 @@ describe("minimal authentication UI", () => {
     await flush();
 
     expect(container.textContent).toContain("Iniciar sesion");
+    expect(container.querySelector("[data-vinema-brand='wordmark']")).toBeTruthy();
+    expect(container.textContent).not.toContain("VN");
     expect(container.querySelector("a")?.getAttribute("href")).toBe("/register");
 
     await submit("form");
@@ -254,6 +256,8 @@ describe("minimal authentication UI", () => {
     await flush();
 
     expect(container.textContent).toContain("Crear cuenta");
+    expect(container.querySelector("[data-vinema-brand='wordmark']")).toBeTruthy();
+    expect(container.textContent).not.toContain("VN");
     expect(container.querySelector("a")?.getAttribute("href")).toBe("/login");
 
     await submit("form");

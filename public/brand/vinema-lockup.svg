@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 360" role="img" aria-labelledby="title desc">
+  <title id="title">VINEMA lockup</title>
+  <desc id="desc">Vinema monogram above the VINEMA wordmark.</desc>
+  <g transform="translate(250 30) scale(1.2)">
+    <path d="M18 16 L49 82 L73 16 L102 82"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="10"
+          stroke-linecap="square"
+          stroke-linejoin="miter"/>
+  </g>
+  <g transform="translate(0 220)" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M20 18 L46 92 L72 18"/>
+    <path d="M132 18 L132 92"/>
+    <path d="M196 92 L196 18 L252 92 L252 18"/>
+    <path d="M326 18 L278 18 L278 92 L326 92 M278 55 L318 55"/>
+    <path d="M372 92 L372 18 L404 60 L436 18 L436 92"/>
+    <path d="M506 92 L536 18 L566 92"/>
+  </g>
+</svg>

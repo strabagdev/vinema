@@ -23,7 +23,8 @@ vi.mock("@/features/auth/auth-provider", () => ({
 }));
 
 vi.mock("@/features/feedback/visual-feedback-provider", () => ({
-  VisualFeedbackWordmark: () => createElement("span", null, "VN"),
+  VisualFeedbackWordmark: () =>
+    createElement("span", { "data-vinema-brand": "monogram" }),
   useVisualFeedback: () => ({
     error: mocks.error,
     dismissKind: mocks.dismissKind,
@@ -81,6 +82,9 @@ describe("MemorySyncStatusPanel", () => {
 
     const panel = screen.querySelector("[data-memory-sync-panel]");
     const dot = screen.querySelector("[data-memory-sync-status-dot]");
+    const homeLink = screen.querySelector("a[aria-label='Vinema']");
+    expect(homeLink?.getAttribute("href")).toBe("/");
+    expect(screen.querySelector("[data-vinema-brand='monogram']")).toBeTruthy();
     expect(panel?.textContent).toContain("Estado de la memoria");
     expect(panel?.textContent).toContain("Memoria integra");
     expect(panel?.textContent).toContain("Verificar memoria");

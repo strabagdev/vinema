@@ -12,6 +12,12 @@ const SHELL_ASSETS = [
   "/contexts/detail",
   "/manifest.webmanifest",
   "/icon.svg",
+  "/icon-16.png",
+  "/icon-32.png",
+  "/icon-48.png",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/apple-touch-icon.png",
 ];
 
 self.addEventListener("install", (event) => {

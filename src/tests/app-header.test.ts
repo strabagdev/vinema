@@ -73,7 +73,8 @@ vi.mock("@/features/auth/public-api-url", () => ({
 }));
 
 vi.mock("@/features/feedback/visual-feedback-provider", () => ({
-  VisualFeedbackWordmark: () => createElement("span", null, "VN"),
+  VisualFeedbackWordmark: () =>
+    createElement("span", { "data-vinema-brand": "monogram" }),
   useVisualFeedback: () => ({
     saving: vi.fn(),
     success: vi.fn(),
@@ -179,7 +180,9 @@ describe("AppHeader", () => {
 
     expect(header?.className).toContain("grid-cols-[1fr_auto_1fr]");
     expect(wordmarkTrigger?.getAttribute("data-memory-sync-trigger")).toBe("");
-    expect(wordmarkTrigger?.textContent).toBe("VN");
+    expect(screen.querySelector("a[aria-label='Vinema']")?.getAttribute("href")).toBe("/");
+    expect(screen.querySelector("[data-vinema-brand='monogram']")).toBeTruthy();
+    expect(header?.textContent).not.toContain("VN");
     expect(wordmarkTrigger?.textContent).not.toBe("V");
     expect(wordmarkTrigger?.textContent).not.toContain("VA");
     expect(screen.querySelector("nav[aria-label='Navegacion principal']")).toBeNull();

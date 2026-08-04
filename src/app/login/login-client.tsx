@@ -11,6 +11,7 @@ import {
   validatePassword,
 } from "@/features/auth/auth-form-utils";
 import { useAuth } from "@/features/auth/auth-provider";
+import { VinemaBrandMark } from "@/components/brand/vinema-brand";
 
 export function LoginClient() {
   const router = useRouter();
@@ -130,10 +131,8 @@ export function AuthScreen({
   return (
     <main className="flex min-h-screen w-full items-center justify-center bg-zinc-50 px-5 py-10">
       <section className="w-full max-w-sm">
-        <div className="mb-8 flex items-center">
-          <span className="text-lg font-medium tracking-[0.18em] text-zinc-900">
-            VN
-          </span>
+        <div className="mb-8 flex items-center justify-center text-zinc-900">
+          <VinemaBrandMark asset="wordmark" className="h-8 w-44" />
         </div>
         <div className="rounded-lg border border-zinc-200 bg-white p-6 shadow-sm">
           <div className="mb-6 space-y-2">

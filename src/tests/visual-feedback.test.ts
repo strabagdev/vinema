@@ -165,8 +165,9 @@ describe("VisualFeedbackViewport", () => {
     expect(viewport?.getAttribute("aria-live")).toBe("polite");
     expect(viewport?.className).toContain("sr-only");
     expect(
-      screen.querySelector("[data-feedback-wordmark]")?.textContent,
-    ).toContain("VN");
+      screen.querySelector("[data-feedback-wordmark] [data-vinema-brand='monogram']"),
+    ).toBeTruthy();
+    expect(screen.querySelector("[data-feedback-wordmark]")?.textContent).not.toContain("VN");
     expect(screen.querySelector("[data-feedback-wordmark] svg")).toBeNull();
     expect(screen.querySelector("[data-feedback-kind='idle']")).toBeTruthy();
   });
@@ -417,9 +418,10 @@ describe("VisualFeedbackViewport", () => {
     const screen = await renderFeedback(service);
 
     expect(screen.querySelector("[data-feedback-kind='offline']")).toBeTruthy();
-    expect(screen.querySelector("[data-feedback-wordmark]")?.textContent).toBe(
-      "VN",
-    );
+    expect(
+      screen.querySelector("[data-feedback-wordmark] [data-vinema-brand='monogram']"),
+    ).toBeTruthy();
+    expect(screen.querySelector("[data-feedback-wordmark]")?.textContent).not.toContain("VN");
     expect(screen.querySelector("[data-visual-feedback-viewport]")?.textContent).toBe(
       "Modo local. Los cambios se sincronizaran luego.",
     );

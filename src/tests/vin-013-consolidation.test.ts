@@ -31,7 +31,9 @@ describe("VIN-013 consolidation", () => {
   it("keeps the legacy sidebar from exposing global exploration entries", async () => {
     const screen = await renderElement(createElement(SidebarContent));
 
-    expect(screen.textContent).toContain("VN");
+    expect(screen.querySelector("a[aria-label='Vinema']")?.getAttribute("href")).toBe("/");
+    expect(screen.querySelector("[data-vinema-brand='monogram']")).toBeTruthy();
+    expect(screen.textContent).not.toContain("VN");
     expect(screen.textContent).toContain("La exploracion comienza");
     expect(screen.textContent).not.toContain("Explorar");
     expect(screen.textContent).not.toContain("Archivo");

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 736 110" role="img" aria-labelledby="title desc">
+  <title id="title">VINEMA wordmark</title>
+  <desc id="desc">Geometric VINEMA wordmark with uniform spacing and harmonious proportions.</desc>
+  <g fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="square" stroke-linejoin="miter">
+    <!-- V: center=68, width=56 -->
+    <path d="M40 18 L68 92 L96 18"/>
+    <!-- I: center=188, width=56 -->
+    <path d="M188 18 L188 92"/>
+    <!-- N: center=308, width=56 -->
+    <path d="M280 92 L280 18 L336 92 L336 18"/>
+    <!-- E: center=428, width=56 -->
+    <path d="M456 18 L400 18 L400 92 L456 92 M400 55 L444 55"/>
+    <!-- M: center=548, width=56 -->
+    <path d="M520 92 L520 18 L548 55 L576 18 L576 92"/>
+    <!-- A: center=668, width=56, no crossbar -->
+    <path d="M640 92 L668 18 L696 92"/>
+  </g>
+</svg>

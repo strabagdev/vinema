@@ -100,7 +100,9 @@ describe("Global writing entry", () => {
       "button[aria-label='Abrir Estado de la memoria']",
     );
     expect(memoryStatusTrigger?.getAttribute("data-memory-sync-trigger")).toBe("");
-    expect(memoryStatusTrigger?.textContent).toContain("VN");
+    expect(container.querySelector("a[aria-label='Vinema']")?.getAttribute("href")).toBe("/");
+    expect(container.querySelector("[data-vinema-brand='monogram']")).toBeTruthy();
+    expect(header?.textContent).not.toContain("VN");
     expect(container.querySelector("a[aria-label='Explorar']")).toBeNull();
   });
 

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -237,10 +238,17 @@ export function MemorySyncStatusPanel() {
   }
 
   return (
-    <div className="relative" ref={panelRef}>
+    <div className="relative flex h-10 w-16 items-center justify-center" ref={panelRef}>
+      <Link
+        href="/"
+        className="inline-flex h-10 items-center justify-center rounded-md px-2 text-zinc-900 outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+        aria-label="Vinema"
+      >
+        <VisualFeedbackWordmark />
+      </Link>
       <button
         type="button"
-        className="flex h-10 items-center rounded-md px-2 outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+        className="absolute left-1/2 ml-5 inline-flex h-6 w-6 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
         aria-label="Abrir Estado de la memoria"
         aria-expanded={open}
         disabled={!canOpen}
@@ -251,10 +259,9 @@ export function MemorySyncStatusPanel() {
           }
         }}
       >
-        <VisualFeedbackWordmark />
         <span
           className={cn(
-            "ml-1.5 h-1.5 w-1.5 rounded-full",
+            "h-1.5 w-1.5 rounded-full",
             getMemoryStatusDotClass(presentation.severity),
           )}
           title={presentation.ariaLabel}

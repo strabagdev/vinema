@@ -27,6 +27,7 @@ import {
   type VisualFeedbackService,
   type VisualFeedbackState,
 } from "@/features/feedback/visual-feedback-service";
+import { VinemaBrandMark } from "@/components/brand/vinema-brand";
 import { cn } from "@/lib/cn";
 
 const VisualFeedbackContext = createContext<VisualFeedbackService | null>(null);
@@ -137,7 +138,7 @@ export function VisualFeedbackWordmark() {
       data-feedback-wordmark=""
       data-feedback-kind={state.current?.kind ?? "idle"}
     >
-      <span className="font-medium tracking-[0.18em]">VN</span>
+      <VinemaBrandMark asset="monogram" className="h-6 w-7" decorative />
       {visual.Icon ? (
         <span
           className={cn(
