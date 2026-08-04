@@ -32,6 +32,7 @@ import {
   isSameEnqueuedMutation,
   type SyncMutationOutboxRecord,
 } from "@/features/sync/sync-outbox-repository";
+import { chooseLatestConflictRecord } from "@/features/sync/conflict-lifecycle";
 import { appendMemorySyncEvent } from "@/features/sync/observability/sync-event-buffer";
 import { normalizeContextAliases } from "@/features/concepts/concept-identity";
 
@@ -71,6 +72,7 @@ export class LocalSyncWriteError extends Error {
 
 type OutboxStore = {
   get(mutationId: string): Promise<SyncMutationOutboxRecord | undefined>;
+  getAll(): Promise<SyncMutationOutboxRecord[]>;
   put(record: SyncMutationOutboxRecord): Promise<unknown>;
 };
 
@@ -396,6 +398,39 @@ async function enqueueLocalMutation({
       at,
     );
     const existing = await outboxStore.get(record.mutationId);
+    const activeConflict = chooseLatestConflictRecord(
+      (await outboxStore.getAll()).filter(
+        (candidate) =>
+          candidate.workspaceId === syncContext.workspaceId &&
+          candidate.status === "CONFLICT" &&
+          candidate.mutation.entityType === mutation.entityType &&
+          candidate.mutation.entityId === mutation.entityId,
+      ),
+    );
+
+    if (activeConflict) {
+      await outboxStore.put({
+        ...activeConflict,
+        localVersion,
+        mutation: {
+          ...mutation,
+          mutationId: activeConflict.mutation.mutationId,
+        },
+        updatedAt: at,
+      });
+      appendMemorySyncEvent({
+        type: "CONFLICT_DETECTED",
+        timestamp: at,
+        workspaceId: syncContext.workspaceId,
+        deviceId: syncContext.deviceId,
+        entityType: mutation.entityType,
+        entityId: mutation.entityId,
+        mutationId: activeConflict.mutationId,
+        status: "REQUIRES_ATTENTION",
+        code: "VERSION_CONFLICT",
+      });
+      return activeConflict;
+    }
 
     if (existing) {
       if (!isSameEnqueuedMutation(existing, record)) {

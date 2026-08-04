@@ -7,6 +7,7 @@ import {
   SYNC_OUTBOX_MAX_LIST_LIMIT,
   type SyncMutationOutboxRecord,
 } from "@/features/sync/sync-outbox-repository";
+import { createEntityConflictKey } from "@/features/sync/conflict-lifecycle";
 import {
   IndexedDbSyncEntityAcknowledgementRepository,
   createAcknowledgementFromAcceptedMutation,
@@ -59,6 +60,11 @@ export type PushCoordinatorLogger = {
 
 export type PushCoordinatorOutboxRepository = {
   listPending(
+    workspaceId: string,
+    limit: number,
+  ): Promise<SyncMutationOutboxRecord[]>;
+  listAllConflicts?(workspaceId: string): Promise<SyncMutationOutboxRecord[]>;
+  listConflicts?(
     workspaceId: string,
     limit: number,
   ): Promise<SyncMutationOutboxRecord[]>;
@@ -335,9 +341,19 @@ async function processPendingBatches(input: {
       input.workspaceId,
       SYNC_OUTBOX_MAX_LIST_LIMIT,
     );
-    const eligible = pending.filter((record) => isEligible(record, now));
+    const conflictKeys = await listActiveConflictKeys(
+      input.outboxRepository,
+      input.workspaceId,
+    );
+    const eligible = pending.filter(
+      (record) => isEligible(record, now) && !conflictKeys.has(recordEntityKey(record)),
+    );
     for (const record of pending) {
-      if (!isEligible(record, now) && !input.state.deferredIds.has(record.mutationId)) {
+      const blockedByConflict = conflictKeys.has(recordEntityKey(record));
+      if (
+        (!isEligible(record, now) || blockedByConflict) &&
+        !input.state.deferredIds.has(record.mutationId)
+      ) {
         input.state.deferredIds.add(record.mutationId);
         input.state.result.deferred += 1;
       }
@@ -383,6 +399,25 @@ async function processPendingBatches(input: {
       message: "Push cancelado.",
     });
   }
+}
+
+async function listActiveConflictKeys(
+  outboxRepository: PushCoordinatorOutboxRepository,
+  workspaceId: string,
+) {
+  const conflicts = outboxRepository.listAllConflicts
+    ? await outboxRepository.listAllConflicts(workspaceId)
+    : await outboxRepository.listConflicts?.(workspaceId, SYNC_OUTBOX_MAX_LIST_LIMIT) ?? [];
+
+  return new Set(conflicts.map(recordEntityKey));
+}
+
+function recordEntityKey(record: SyncMutationOutboxRecord) {
+  return createEntityConflictKey({
+    workspaceId: record.workspaceId,
+    entityType: record.mutation.entityType,
+    entityId: record.mutation.entityId,
+  });
 }
 
 async function applyPushResponse(

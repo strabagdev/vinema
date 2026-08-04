@@ -27,6 +27,7 @@ import {
   type MemorySyncHealth,
 } from "@/features/sync/observability/memory-sync-health";
 import { syncEventBuffer } from "@/features/sync/observability/sync-event-buffer";
+import { groupEntitySyncConflicts } from "@/features/sync/conflict-lifecycle";
 
 export type MemorySyncSnapshot = {
   health: MemorySyncHealth;
@@ -68,14 +69,38 @@ export async function loadMemorySyncSnapshot({
 
   const metadataRepository = new IndexedDbSyncMetadataRepository();
   const outboxRepository = new IndexedDbSyncOutboxRepository();
-  const [metadata, mutations, nodes, contexts, relations] = await Promise.all([
+  const [
+    metadata,
+    mutations,
+    pendingMutations,
+    processingMutations,
+    failedMutations,
+    conflictMutations,
+    nodes,
+    contexts,
+    relations,
+  ] = await Promise.all([
     metadataRepository.get(workspaceId, deviceId),
     outboxRepository.listByWorkspace(workspaceId, 100),
+    outboxRepository.countByStatus(workspaceId, "PENDING"),
+    outboxRepository.countByStatus(workspaceId, "PROCESSING"),
+    outboxRepository.countByStatus(workspaceId, "FAILED"),
+    outboxRepository.listAllConflicts(workspaceId),
     nodeRepository.listByWorkspace(workspaceId),
     contextRepository.list({ workspaceId, includeArchived: true }),
     nodeContextRelationRepository.listByWorkspace(workspaceId),
   ]);
   const recentEvents = syncEventBuffer.list({ workspaceId, limit: 20 });
+  const logicalConflicts = groupEntitySyncConflicts(conflictMutations);
+  const conflictEntityCounts = {
+    captures: logicalConflicts.filter((conflict) => conflict.entityType === "capture")
+      .length,
+    concepts: logicalConflicts.filter((conflict) => conflict.entityType === "concept")
+      .length,
+    captureConcepts: logicalConflicts.filter(
+      (conflict) => conflict.entityType === "captureConcept",
+    ).length,
+  };
   const localSignature = createMemorySignature({
     nodes,
     contexts,
@@ -88,6 +113,13 @@ export async function loadMemorySyncSnapshot({
       syncState,
       metadata,
       mutations,
+      mutationCounts: {
+        pendingMutations,
+        processingMutations,
+        failedMutations,
+        conflictMutations: logicalConflicts.length,
+        conflictEntityCounts,
+      },
       recentEvents,
       workspaceId,
       deviceId,

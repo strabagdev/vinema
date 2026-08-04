@@ -195,6 +195,65 @@ describe("local sync repositories", () => {
     await expect(outbox.listPending(workspace.id, 10)).resolves.toHaveLength(4);
   });
 
+  it("updates a conflicted capture locally without creating repeated outbox mutations", async () => {
+    const mutationIds = mutationIdFactory([
+      "33333333-3333-4333-8333-333333333333",
+      "44444444-4444-4444-8444-444444444444",
+      "55555555-5555-4555-8555-555555555555",
+    ]);
+    const repositories = createLocalSyncRepositories({
+      syncContext: { workspaceId: workspace.id, deviceId: device.id },
+      mutationIdFactory: mutationIds,
+    });
+    const outbox = new IndexedDbSyncOutboxRepository();
+
+    const node = await createNode(repositories.nodeRepository, {
+      type: "NOTE",
+      content: "Primera captura local",
+      organizationStatus: "ORGANIZED",
+      workspace,
+      device,
+    });
+    await updateNode(repositories.nodeRepository, {
+      id: node.id,
+      content: "Captura en conflicto",
+      device,
+    });
+    await outbox.markProcessing(["44444444-4444-4444-8444-444444444444"]);
+    await outbox.markConflict("44444444-4444-4444-8444-444444444444", {
+      reason: "VERSION_CONFLICT",
+      serverEntity: {
+        id: node.id,
+        workspaceId: workspace.id,
+        content: "Captura remota",
+        createdAt: node.createdAt,
+        updatedAt: node.updatedAt,
+        archivedAt: null,
+        version: 11,
+      },
+    });
+
+    await updateNode(repositories.nodeRepository, {
+      id: node.id,
+      content: "Nueva edicion local mientras sigue el conflicto",
+      device,
+    });
+
+    await expect(outbox.getById("55555555-5555-4555-8555-555555555555"))
+      .resolves.toBeNull();
+    await expect(outbox.listByWorkspace(workspace.id, 10)).resolves.toHaveLength(2);
+    await expect(outbox.getById("44444444-4444-4444-8444-444444444444"))
+      .resolves.toMatchObject({
+        status: "CONFLICT",
+        localVersion: 3,
+        mutation: {
+          payload: {
+            content: "Nueva edicion local mientras sigue el conflicto",
+          },
+        },
+      });
+  });
+
   it("commits a capture into nodes and sync_mutations for the authenticated workspace", async () => {
     const authenticatedWorkspace: Workspace = {
       ...workspace,

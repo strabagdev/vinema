@@ -68,6 +68,32 @@ describe("push coordinator", () => {
     ]);
   });
 
+  it("does not push pending mutations for an entity with an active conflict", async () => {
+    const mutation = makeMutation("33333333-3333-4333-8333-333333333333");
+    const conflict = makeRecord(mutation, {
+      mutationId: "44444444-4444-4444-8444-444444444444",
+      status: "CONFLICT",
+      conflictData: {
+        reason: "VERSION_CONFLICT",
+        serverEntity: { version: 11 },
+      },
+    });
+    const setup = createSetup({
+      records: [makeRecord(mutation), conflict],
+      responses: [acceptedResponse(mutation)],
+    });
+
+    const result = await setup.coordinator.run();
+
+    expect(result).toMatchObject({
+      status: "SUCCESS",
+      pushed: 0,
+      deferred: 1,
+    });
+    expect(setup.client.push).not.toHaveBeenCalled();
+    expect(setup.outbox.records).toHaveLength(2);
+  });
+
   it("processes multiple batches", async () => {
     const first = makeMutation("33333333-3333-4333-8333-333333333333");
     const second = makeMutation("44444444-4444-4444-8444-444444444444");
@@ -466,6 +492,13 @@ class FakeOutboxRepository implements PushCoordinatorOutboxRepository {
           record.workspaceId === workspaceIdInput && record.status === "PENDING",
       )
       .slice(0, limit);
+  }
+
+  async listAllConflicts(workspaceIdInput: string) {
+    return this.records.filter(
+      (record) =>
+        record.workspaceId === workspaceIdInput && record.status === "CONFLICT",
+    );
   }
 
   async markProcessing(mutationIds: string[]) {

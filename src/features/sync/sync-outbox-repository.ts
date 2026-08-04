@@ -4,6 +4,10 @@ import {
   SYNC_MUTATIONS_STORE,
   getVinemaDb,
 } from "@/infrastructure/storage/vinema-db";
+import {
+  consolidateEntitySyncConflicts,
+  countEntitySyncConflicts,
+} from "@/features/sync/conflict-lifecycle";
 
 export const SYNC_OUTBOX_MAX_LIST_LIMIT = MAX_PUSH_MUTATIONS;
 
@@ -154,6 +158,45 @@ export class IndexedDbSyncOutboxRepository {
 
   async listConflicts(workspaceId: string, limit: number): Promise<SyncMutationOutboxRecord[]> {
     return this.listByStatus(workspaceId, "CONFLICT", limit);
+  }
+
+  async listAllConflicts(workspaceId: string): Promise<SyncMutationOutboxRecord[]> {
+    assertNonEmpty("workspaceId", workspaceId);
+    const db = await getVinemaDb();
+    const records = await db.getAllFromIndex(
+      SYNC_MUTATIONS_STORE,
+      "by-workspace-and-status",
+      [workspaceId, "CONFLICT"],
+    );
+    return sortOutboxRecords(records);
+  }
+
+  async countLogicalConflicts(workspaceId: string): Promise<number> {
+    return countEntitySyncConflicts(await this.listAllConflicts(workspaceId));
+  }
+
+  async consolidateLogicalConflicts(workspaceId: string): Promise<{
+    logicalConflicts: number;
+    removedMutations: number;
+  }> {
+    assertNonEmpty("workspaceId", workspaceId);
+    const db = await getVinemaDb();
+    const transaction = db.transaction(SYNC_MUTATIONS_STORE, "readwrite");
+    const records = await transaction.store.index("by-workspace-and-status").getAll([
+      workspaceId,
+      "CONFLICT",
+    ]);
+    const consolidation = consolidateEntitySyncConflicts(records);
+
+    for (const mutationId of consolidation.redundantMutationIds) {
+      await transaction.store.delete(mutationId);
+    }
+
+    await transaction.done;
+    return {
+      logicalConflicts: consolidation.conflicts.length,
+      removedMutations: consolidation.redundantMutationIds.length,
+    };
   }
 
   async listByWorkspace(

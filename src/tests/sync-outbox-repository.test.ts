@@ -151,6 +151,39 @@ describe("sync outbox repository", () => {
     await expect(repository.listPending(workspaceId, 2)).resolves.toHaveLength(2);
   });
 
+  it("consolidates repeated conflict mutations by logical entity", async () => {
+    const repository = new IndexedDbSyncOutboxRepository(() => now);
+    const first = makeMutation({
+      mutationId: "55555555-5555-4555-8555-555555555555",
+      entityId: "99999999-9999-4999-8999-999999999999",
+    });
+    const second = makeMutation({
+      mutationId: "66666666-6666-4666-8666-666666666666",
+      entityId: first.entityId,
+    });
+    const third = makeMutation({
+      mutationId: "77777777-7777-4777-8777-777777777777",
+      entityId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    });
+    await repository.enqueue({ workspaceId, deviceId, mutation: first });
+    await repository.enqueue({ workspaceId, deviceId, mutation: second });
+    await repository.enqueue({ workspaceId, deviceId, mutation: third });
+    await repository.markProcessing([first.mutationId, second.mutationId, third.mutationId]);
+    await repository.markConflict(first.mutationId, { reason: "VERSION_CONFLICT" });
+    await repository.markConflict(second.mutationId, { reason: "VERSION_CONFLICT" });
+    await repository.markConflict(third.mutationId, { reason: "VERSION_CONFLICT" });
+
+    await expect(repository.countByStatus(workspaceId, "CONFLICT")).resolves.toBe(3);
+    await expect(repository.countLogicalConflicts(workspaceId)).resolves.toBe(2);
+
+    await expect(repository.consolidateLogicalConflicts(workspaceId)).resolves.toEqual({
+      logicalConflicts: 2,
+      removedMutations: 1,
+    });
+    await expect(repository.countByStatus(workspaceId, "CONFLICT")).resolves.toBe(2);
+    await expect(repository.countLogicalConflicts(workspaceId)).resolves.toBe(2);
+  });
+
   it("validates limits and counts pending mutations", async () => {
     const repository = new IndexedDbSyncOutboxRepository(() => now);
     await repository.enqueue({
@@ -393,15 +426,17 @@ describe("sync outbox repository", () => {
 function makeMutation({
   mutationId,
   content = "Contenido local",
+  entityId = crypto.randomUUID(),
 }: {
   mutationId: string;
   content?: string;
+  entityId?: string;
 }): SyncMutation {
   return {
     mutationId,
     entityType: "capture",
     operation: "upsert",
-    entityId: crypto.randomUUID(),
+    entityId,
     baseVersion: null,
     payload: {
       content,

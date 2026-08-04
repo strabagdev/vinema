@@ -15,6 +15,7 @@ import {
 import {
   MemoryReconciliationEngine,
   findOrphanEntities,
+  resolveFalseConflictMutations,
   type MemoryReconciliationDependencies,
 } from "@/features/sync/reconciliation";
 import { initialSyncState, type SyncState } from "@/features/sync/sync-state-engine";
@@ -72,6 +73,44 @@ describe("memory sync observability", () => {
     expect(result.sentChanges).toBe(2);
     expect(result.receivedChanges).toBe(3);
     expect(result.appliedChanges).toBe(1);
+  });
+
+  it("uses current mutation records instead of a stale SyncState conflict count", () => {
+    const result = deriveMemorySyncHealth({
+      syncState: {
+        ...initialSyncState,
+        conflictCount: 49,
+        lastSuccessfulSyncAt: now,
+      },
+      metadata: metadata(),
+      mutations: [],
+      recentEvents: [],
+      workspaceId,
+      deviceId,
+    });
+
+    expect(result.conflictMutations).toBe(0);
+    expect(result.status).toBe("SYNCED");
+  });
+
+  it("uses authoritative outbox counts when the listed mutation snapshot is bounded", () => {
+    const result = deriveMemorySyncHealth({
+      syncState: initialSyncState,
+      metadata: metadata(),
+      mutations: [],
+      mutationCounts: {
+        pendingMutations: 0,
+        processingMutations: 0,
+        failedMutations: 0,
+        conflictMutations: 49,
+      },
+      recentEvents: [],
+      workspaceId,
+      deviceId,
+    });
+
+    expect(result.conflictMutations).toBe(49);
+    expect(result.status).toBe("DIVERGED");
   });
 
   it("keeps a bounded event buffer and does not store content payloads", () => {
@@ -369,6 +408,101 @@ describe("memory sync observability", () => {
     expect(result.status).toBe("CONFLICT");
   });
 
+  it("resolves false conflicts when the server entity matches local memory", async () => {
+    const conflict = outboxRecord("CONFLICT", {
+      conflictData: {
+        reason: "VERSION_CONFLICT",
+        serverEntity: {
+          id: nodeId,
+          workspaceId,
+          content: "Memoria",
+          createdAt: now,
+          updatedAt: now,
+          archivedAt: null,
+          version: 7,
+        },
+      },
+    });
+    const setup = reconciliationSetup({
+      nodes: [node({ version: 1 })],
+      mutations: [conflict],
+    });
+
+    const result = await setup.engine.reconcile({
+      workspaceId,
+      deviceId,
+      syncState: initialSyncState,
+    });
+
+    expect(result.status).not.toBe("CONFLICT");
+    expect(setup.removedMutationIds).toEqual([conflict.mutationId]);
+    expect(setup.acknowledgements).toMatchObject([
+      {
+        entityType: "capture",
+        entityId: nodeId,
+        acknowledgedRemoteVersion: 7,
+        acknowledgedLocalVersion: 1,
+      },
+    ]);
+  });
+
+  it("updates the post-reconciliation health check after clearing false conflicts", async () => {
+    const falseConflict = outboxRecord("CONFLICT", {
+      conflictData: {
+        reason: "VERSION_CONFLICT",
+        serverEntity: {
+          id: nodeId,
+          workspaceId,
+          content: "Memoria",
+          createdAt: now,
+          updatedAt: now,
+          archivedAt: null,
+          version: 7,
+        },
+      },
+    });
+    const setup = reconciliationSetup({
+      nodes: [node({ version: 1 })],
+      mutations: [falseConflict],
+    });
+
+    const result = await setup.engine.reconcile({
+      workspaceId,
+      deviceId,
+      syncState: initialSyncState,
+    });
+
+    expect(result.health.conflictMutations).toBe(0);
+    expect(result.status).toBe("MEMORY_INTEGRAL");
+    expect(setup.removedMutationIds).toEqual([falseConflict.mutationId]);
+  });
+
+  it("keeps real conflicts when local and remote content differ", () => {
+    const conflict = outboxRecord("CONFLICT", {
+      conflictData: {
+        reason: "VERSION_CONFLICT",
+        serverEntity: {
+          id: nodeId,
+          workspaceId,
+          content: "Memoria remota distinta",
+          createdAt: now,
+          updatedAt: now,
+          archivedAt: null,
+          version: 7,
+        },
+      },
+    });
+
+    expect(resolveFalseConflictMutations({
+      workspaceId,
+      mutations: [conflict],
+      nodes: [node({ content: "Memoria local distinta" })],
+      contexts: [],
+      relations: [],
+      generation: "42",
+    })).toEqual({ mutationIds: [], acknowledgements: [] });
+  });
+
   it("handles a larger local dataset without changing the convergence contract", async () => {
     const nodes = Array.from({ length: 120 }, (_, index) =>
       node({
@@ -486,6 +620,7 @@ function metadata(): SyncMetadataRecord {
 
 function outboxRecord(
   status: SyncMutationOutboxRecord["status"],
+  overrides: Partial<SyncMutationOutboxRecord> = {},
 ): SyncMutationOutboxRecord {
   return {
     mutationId: "44444444-4444-4444-8444-444444444444",
@@ -508,6 +643,7 @@ function outboxRecord(
     attemptCount: 0,
     createdAt: now,
     updatedAt: now,
+    ...overrides,
   };
 }
 
@@ -590,6 +726,7 @@ function reconciliationSetup({
   acknowledgeOnSync?: boolean;
 }) {
   const enqueued: SyncMutationOutboxRecord[] = [];
+  const removedMutationIds: string[] = [];
   const runSync = vi.fn(async () => {
     if (!acknowledgeOnSync) {
       return;
@@ -614,6 +751,19 @@ function reconciliationSetup({
     listRelations: async () => relations,
     listMutations: async () => [...mutations, ...enqueued],
     listAcknowledgements: async () => acknowledgements,
+    recordAcknowledgements: async (inputs) => {
+      acknowledgements.push(...inputs.map((input) => acknowledgement(input)));
+    },
+    removeMutations: async (mutationIds) => {
+      removedMutationIds.push(...mutationIds);
+      for (const mutationId of mutationIds) {
+        const index = mutations.findIndex((record) => record.mutationId === mutationId);
+        if (index >= 0) {
+          mutations.splice(index, 1);
+        }
+      }
+    },
+    consolidateConflicts: async () => undefined,
     enqueueMutation: async (input) => {
       const record: SyncMutationOutboxRecord = {
         mutationId: input.mutation.mutationId,
@@ -638,6 +788,8 @@ function reconciliationSetup({
   return {
     engine: new MemoryReconciliationEngine(dependencies),
     enqueued,
+    acknowledgements,
+    removedMutationIds,
     runSync,
   };
 }

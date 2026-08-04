@@ -23,6 +23,7 @@ import {
 import type { SyncState } from "@/features/sync/sync-state-engine";
 import {
   IndexedDbSyncEntityAcknowledgementRepository,
+  type SyncEntityAcknowledgementInput,
   type SyncEntityAcknowledgementRecord,
 } from "@/features/sync/sync-entity-acknowledgement-repository";
 import {
@@ -88,6 +89,9 @@ export type MemoryReconciliationDependencies = {
   listRelations(workspaceId: string): Promise<NodeContextRelation[]>;
   listMutations(workspaceId: string): Promise<SyncMutationOutboxRecord[]>;
   listAcknowledgements(workspaceId: string): Promise<SyncEntityAcknowledgementRecord[]>;
+  recordAcknowledgements(inputs: SyncEntityAcknowledgementInput[]): Promise<unknown>;
+  removeMutations(mutationIds: string[]): Promise<void>;
+  consolidateConflicts(workspaceId: string): Promise<unknown>;
   enqueueMutation(input: {
     workspaceId: string;
     deviceId: string;
@@ -115,7 +119,13 @@ export class MemoryReconciliationEngine {
 
     this.emit("RECONCILIATION_STARTED", input, { status: "STARTED" });
     phases.push("HEALTH_CHECK");
-    const initialState = await this.loadState(input.workspaceId, input.deviceId);
+    let initialState = await this.loadState(input.workspaceId, input.deviceId);
+    await this.resolveFalseConflicts({
+      workspaceId: input.workspaceId,
+      state: initialState,
+    });
+    await this.dependencies.consolidateConflicts(input.workspaceId);
+    initialState = await this.loadState(input.workspaceId, input.deviceId);
     const health = createHealthCheck({
       workspaceId: input.workspaceId,
       deviceId: input.deviceId,
@@ -198,7 +208,13 @@ export class MemoryReconciliationEngine {
     await this.dependencies.runSync();
 
     phases.push("VERIFYING_CONVERGENCE");
-    const finalState = await this.loadState(input.workspaceId, input.deviceId);
+    let finalState = await this.loadState(input.workspaceId, input.deviceId);
+    await this.resolveFalseConflicts({
+      workspaceId: input.workspaceId,
+      state: finalState,
+    });
+    await this.dependencies.consolidateConflicts(input.workspaceId);
+    finalState = await this.loadState(input.workspaceId, input.deviceId);
     const finalHealth = createHealthCheck({
       workspaceId: input.workspaceId,
       deviceId: input.deviceId,
@@ -270,6 +286,30 @@ export class MemoryReconciliationEngine {
     return { metadata, mutations, acknowledgements, nodes, contexts, relations };
   }
 
+  private async resolveFalseConflicts({
+    workspaceId,
+    state,
+  }: {
+    workspaceId: string;
+    state: Awaited<ReturnType<MemoryReconciliationEngine["loadState"]>>;
+  }) {
+    const resolutions = resolveFalseConflictMutations({
+      workspaceId,
+      mutations: state.mutations,
+      nodes: state.nodes,
+      contexts: state.contexts,
+      relations: state.relations,
+      generation: state.metadata?.pullCursor ?? null,
+    });
+
+    if (resolutions.mutationIds.length === 0) {
+      return;
+    }
+
+    await this.dependencies.recordAcknowledgements(resolutions.acknowledgements);
+    await this.dependencies.removeMutations(resolutions.mutationIds);
+  }
+
   private emit(
     type: MemorySyncEvent["type"],
     input: Pick<MemoryReconciliationInput, "workspaceId" | "deviceId">,
@@ -305,6 +345,10 @@ export function createMemoryReconciliationEngine(input: {
     listMutations: (workspaceId) => outboxRepository.listByWorkspace(workspaceId, 100),
     listAcknowledgements: (workspaceId) =>
       acknowledgementRepository.listByWorkspace(workspaceId),
+    recordAcknowledgements: (inputs) => acknowledgementRepository.recordMany(inputs),
+    removeMutations: (mutationIds) => outboxRepository.remove(mutationIds),
+    consolidateConflicts: (workspaceId) =>
+      outboxRepository.consolidateLogicalConflicts(workspaceId),
     enqueueMutation: (mutationInput) => outboxRepository.enqueue(mutationInput),
     getMetadata: (workspaceId, deviceId) => metadataRepository.get(workspaceId, deviceId),
     runSync: input.runSync,
@@ -384,6 +428,184 @@ export function findMissingSyncMutations({
       }),
     ),
   ];
+}
+
+export function resolveFalseConflictMutations({
+  workspaceId,
+  mutations,
+  nodes,
+  contexts,
+  relations,
+  generation,
+}: {
+  workspaceId: string;
+  mutations: SyncMutationOutboxRecord[];
+  nodes: Node[];
+  contexts: Context[];
+  relations: NodeContextRelation[];
+  generation: string | null;
+}): {
+  mutationIds: string[];
+  acknowledgements: SyncEntityAcknowledgementInput[];
+} {
+  const mutationIds: string[] = [];
+  const acknowledgements: SyncEntityAcknowledgementInput[] = [];
+
+  for (const record of mutations) {
+    if (record.status !== "CONFLICT") {
+      continue;
+    }
+
+    const serverEntity = getConflictServerEntity(record);
+    if (!serverEntity || !isFalseConflict(record, serverEntity, {
+      nodes,
+      contexts,
+      relations,
+    })) {
+      continue;
+    }
+
+    mutationIds.push(record.mutationId);
+    acknowledgements.push({
+      workspaceId,
+      entityType: record.mutation.entityType,
+      entityId: record.mutation.entityId,
+      acknowledgedRemoteVersion: getServerVersion(serverEntity),
+      acknowledgedLocalVersion: getLocalVersion(record, { nodes, contexts, relations }),
+      acknowledgedLocalUpdatedAt: getLocalUpdatedAt(record, { nodes, contexts, relations }),
+      acknowledgedAt: new Date().toISOString(),
+      generation,
+      lastChangeId: null,
+    });
+  }
+
+  return { mutationIds, acknowledgements };
+}
+
+function getConflictServerEntity(record: SyncMutationOutboxRecord) {
+  if (!record.conflictData || typeof record.conflictData !== "object") {
+    return null;
+  }
+
+  if (!("serverEntity" in record.conflictData)) {
+    return null;
+  }
+
+  return record.conflictData.serverEntity;
+}
+
+function isFalseConflict(
+  record: SyncMutationOutboxRecord,
+  serverEntity: unknown,
+  local: {
+    nodes: Node[];
+    contexts: Context[];
+    relations: NodeContextRelation[];
+  },
+) {
+  if (!serverEntity || typeof serverEntity !== "object") {
+    return false;
+  }
+
+  if (record.mutation.entityType === "capture") {
+    const node = local.nodes.find((candidate) => candidate.id === record.mutation.entityId);
+    return Boolean(
+      node &&
+      "content" in serverEntity &&
+      "archivedAt" in serverEntity &&
+      node.content === serverEntity.content &&
+      (node.archivedAt ?? null) === (serverEntity.archivedAt ?? null),
+    );
+  }
+
+  if (record.mutation.entityType === "concept") {
+    const context = local.contexts.find(
+      (candidate) => candidate.id === record.mutation.entityId,
+    );
+    return Boolean(
+      context &&
+      "label" in serverEntity &&
+      "archivedAt" in serverEntity &&
+      "aliases" in serverEntity &&
+      "normalizedAliases" in serverEntity &&
+      context.name === serverEntity.label &&
+      (context.archivedAt ?? null) === (serverEntity.archivedAt ?? null) &&
+      sameStringArray(context.aliases ?? [], serverEntity.aliases) &&
+      sameStringArray(context.normalizedAliases ?? [], serverEntity.normalizedAliases),
+    );
+  }
+
+  const relation = local.relations.find(
+    (candidate) => candidate.id === record.mutation.entityId,
+  );
+  return Boolean(
+    relation &&
+    "captureId" in serverEntity &&
+    "conceptId" in serverEntity &&
+    "archivedAt" in serverEntity &&
+    relation.nodeId === serverEntity.captureId &&
+    relation.contextId === serverEntity.conceptId &&
+    serverEntity.archivedAt === null,
+  );
+}
+
+function getServerVersion(serverEntity: unknown) {
+  if (
+    serverEntity &&
+    typeof serverEntity === "object" &&
+    "version" in serverEntity &&
+    typeof serverEntity.version === "number"
+  ) {
+    return serverEntity.version;
+  }
+
+  return 1;
+}
+
+function getLocalVersion(
+  record: SyncMutationOutboxRecord,
+  local: {
+    nodes: Node[];
+    contexts: Context[];
+    relations: NodeContextRelation[];
+  },
+) {
+  if (record.mutation.entityType === "capture") {
+    return local.nodes.find((node) => node.id === record.mutation.entityId)?.version ?? null;
+  }
+
+  if (record.mutation.entityType === "concept") {
+    return local.contexts.find((context) => context.id === record.mutation.entityId)?.version ?? null;
+  }
+
+  return local.relations.find((relation) => relation.id === record.mutation.entityId)?.version ?? null;
+}
+
+function getLocalUpdatedAt(
+  record: SyncMutationOutboxRecord,
+  local: {
+    nodes: Node[];
+    contexts: Context[];
+    relations: NodeContextRelation[];
+  },
+) {
+  if (record.mutation.entityType === "capture") {
+    return local.nodes.find((node) => node.id === record.mutation.entityId)?.updatedAt ?? null;
+  }
+
+  if (record.mutation.entityType === "concept") {
+    return local.contexts.find((context) => context.id === record.mutation.entityId)?.updatedAt ?? null;
+  }
+
+  return local.relations.find((relation) => relation.id === record.mutation.entityId)?.createdAt ?? null;
+}
+
+function sameStringArray(left: string[], right: unknown) {
+  return (
+    Array.isArray(right) &&
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
 }
 
 function needsMutation({

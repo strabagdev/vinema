@@ -379,6 +379,59 @@ El ledger se actualiza cuando:
 El ledger se elimina para el workspace durante reset local o reset remoto para no
 mezclar generaciones.
 
+### Recuperacion De Falsos Conflictos
+
+El servidor devuelve `VERSION_CONFLICT` cuando la mutacion trae un `baseVersion`
+distinto de la version remota actual.
+
+VIN-SYNC-002 puede generar mutaciones con `baseVersion: null` para entidades
+locales sin acknowledgement. En instalaciones existentes, el servidor podria ya
+tener esas entidades y responder conflicto aunque la memoria local y remota sean
+equivalentes.
+
+Para no dejar `DIVERGED` permanente, el reconciliador revisa conflictos locales
+antes y despues del ciclo Push/Pull:
+
+- si `serverEntity` es equivalente a la entidad local, el conflicto se clasifica
+  como falso positivo;
+- se registra acknowledgement durable;
+- se elimina solo esa mutacion conflictiva;
+- si el contenido local y remoto difiere, el conflicto permanece para resolucion
+  futura.
+
+La recuperacion no sobrescribe contenido silenciosamente.
+
+### Ciclo De Vida De Conflictos
+
+VIN-SYNC-003 define que un conflicto pertenece a una entidad logica, no a cada
+intento de sincronizacion. La identidad del conflicto se deriva de:
+
+`workspaceId + entityType + entityId`
+
+Por eso varias mutaciones `CONFLICT` de la misma captura se consolidan como un
+solo conflicto visible.
+
+Cuando una entidad tiene un conflicto real activo:
+
+- nuevas escrituras locales conservan el contenido local;
+- el snapshot local del conflicto se actualiza;
+- no se crea otra mutacion automatica para la misma entidad;
+- `PushCoordinator` no vuelve a empujar mutaciones pendientes de esa entidad;
+- `Verificar memoria` consolida mutaciones conflictivas redundantes;
+- los falsos conflictos equivalentes siguen limpiandose con acknowledgement.
+
+La resolucion inicial esta implementada para capturas:
+
+- conservar la version local genera una unica mutacion basada en la version
+  remota conocida;
+- conservar la version sincronizada aplica el contenido remoto localmente y
+  limpia el conflicto;
+- fusion manual permite confirmar un contenido resultante y genera una unica
+  mutacion.
+
+Conceptos y relaciones quedan protegidos contra bucles de reintento, pero su
+interfaz especifica de resolucion se mantiene fuera de esta fase.
+
 ### UI
 
 El panel Estado de la memoria reutiliza esta capacidad bajo la accion visible:
@@ -402,6 +455,15 @@ El wordmark `VN` incluye un indicador discreto:
 
 El indicador tiene `aria-label` y tooltip `Estado de la memoria`, por lo que no
 depende solo del color.
+
+El panel no es un dashboard tecnico. En estado normal muestra solamente:
+
+- estado de la memoria;
+- ultima verificacion;
+- accion `Verificar memoria`.
+
+Detalles como conteos internos o diagnostico de captura aparecen solo cuando hay
+un problema que explicar.
 
 ### Convergencia
 

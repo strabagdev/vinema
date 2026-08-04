@@ -28,6 +28,11 @@ export type MemorySyncHealth = {
   processingMutations: number;
   failedMutations: number;
   conflictMutations: number;
+  conflictEntityCounts: {
+    captures: number;
+    concepts: number;
+    captureConcepts: number;
+  };
   lastSuccessfulSyncAt: Date | null;
   lastPushAt: Date | null;
   lastPullAt: Date | null;
@@ -40,10 +45,19 @@ export type MemorySyncHealth = {
   recentEvents: MemorySyncEvent[];
 };
 
+export type MemorySyncMutationCounts = {
+  pendingMutations: number;
+  processingMutations: number;
+  failedMutations: number;
+  conflictMutations: number;
+  conflictEntityCounts?: MemorySyncHealth["conflictEntityCounts"];
+};
+
 export function deriveMemorySyncHealth({
   syncState,
   metadata,
   mutations,
+  mutationCounts,
   recentEvents,
   workspaceId,
   deviceId,
@@ -51,14 +65,21 @@ export function deriveMemorySyncHealth({
   syncState: SyncState;
   metadata: SyncMetadataRecord | null;
   mutations: SyncMutationOutboxRecord[];
+  mutationCounts?: MemorySyncMutationCounts;
   recentEvents: MemorySyncEvent[];
   workspaceId: string | null;
   deviceId: string | null;
 }): MemorySyncHealth {
-  const pendingMutations = countStatus(mutations, "PENDING");
-  const processingMutations = countStatus(mutations, "PROCESSING");
-  const failedMutations = countStatus(mutations, "FAILED");
-  const conflictMutations = countStatus(mutations, "CONFLICT") + syncState.conflictCount;
+  const pendingMutations =
+    mutationCounts?.pendingMutations ?? countStatus(mutations, "PENDING");
+  const processingMutations =
+    mutationCounts?.processingMutations ?? countStatus(mutations, "PROCESSING");
+  const failedMutations =
+    mutationCounts?.failedMutations ?? countStatus(mutations, "FAILED");
+  const conflictMutations =
+    mutationCounts?.conflictMutations ?? countStatus(mutations, "CONFLICT");
+  const conflictEntityCounts =
+    mutationCounts?.conflictEntityCounts ?? countConflictEntityTypes(mutations);
   const status = deriveStatus({
     syncState,
     pendingMutations,
@@ -85,6 +106,7 @@ export function deriveMemorySyncHealth({
     processingMutations,
     failedMutations,
     conflictMutations,
+    conflictEntityCounts,
     lastSuccessfulSyncAt: toDate(syncState.lastSuccessfulSyncAt),
     lastPushAt: toDate(metadata?.lastSuccessfulPushAt ?? null),
     lastPullAt: toDate(metadata?.lastSuccessfulPullAt ?? null),
@@ -96,6 +118,39 @@ export function deriveMemorySyncHealth({
     convergence,
     recentEvents: recentEvents.slice(0, 20),
   };
+}
+
+function countConflictEntityTypes(
+  mutations: SyncMutationOutboxRecord[],
+): MemorySyncHealth["conflictEntityCounts"] {
+  const keys = new Set<string>();
+  const counts = {
+    captures: 0,
+    concepts: 0,
+    captureConcepts: 0,
+  };
+
+  for (const mutation of mutations) {
+    if (mutation.status !== "CONFLICT") {
+      continue;
+    }
+
+    const key = `${mutation.mutation.entityType}:${mutation.mutation.entityId}`;
+    if (keys.has(key)) {
+      continue;
+    }
+
+    keys.add(key);
+    if (mutation.mutation.entityType === "capture") {
+      counts.captures += 1;
+    } else if (mutation.mutation.entityType === "concept") {
+      counts.concepts += 1;
+    } else {
+      counts.captureConcepts += 1;
+    }
+  }
+
+  return counts;
 }
 
 export function getMemorySyncStatusLabel(status: MemorySyncStatus) {
