@@ -9,7 +9,10 @@ import type { NodeContextRelation } from "@/domain/context/node-context-relation
 import type { Node } from "@/domain/node/node";
 import { Button } from "@/components/ui/button";
 import { deriveConceptRelationships } from "@/features/exploration/concept-relationships";
-import { getConceptExplorationPath } from "@/features/exploration/concept-routes";
+import {
+  getConceptExplorationPath,
+  getConceptKnowledgeExplorerPath,
+} from "@/features/exploration/concept-routes";
 import { useVinemaContext } from "@/features/node/hooks/use-vinema-context";
 import { useSyncDataInvalidation } from "@/features/sync/use-sync-data-invalidation";
 import {
@@ -193,6 +196,13 @@ function ConceptIndexShell({ children }: { children: ReactNode }) {
               Recorre tus conceptos, recuerdos y conexiones.
             </p>
           </div>
+        </div>
+        <div>
+          <Button variant="ghost" size="sm" asChild>
+            <Link href={getConceptKnowledgeExplorerPath()}>
+              Explorar conocimiento
+            </Link>
+          </Button>
         </div>
       </header>
       {children}

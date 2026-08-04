@@ -15,6 +15,16 @@ export function getConceptExplorationPath(
   return `/concepts/detail?${searchParams.join("&")}`;
 }
 
+export function getConceptKnowledgeExplorerPath(
+  options: { focus?: string | null } = {},
+): string {
+  if (!options.focus) {
+    return "/concepts/explore";
+  }
+
+  return `/concepts/explore?focus=${encodeURIComponent(options.focus)}`;
+}
+
 export function getConceptExpansionSourceFromSearchParams(
   searchParams: Pick<URLSearchParams, "get">,
 ): string | null {

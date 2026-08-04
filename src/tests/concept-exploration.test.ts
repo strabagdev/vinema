@@ -5,6 +5,7 @@ import type { NodeContextRelation } from "@/domain/context/node-context-relation
 import { deriveConceptNeighborhood } from "@/features/exploration/concept-neighborhood";
 import {
   getConceptExplorationPath,
+  getConceptKnowledgeExplorerPath,
   getConceptIdFromSearchParams,
 } from "@/features/exploration/concept-routes";
 
@@ -21,6 +22,10 @@ describe("contextual concept exploration", () => {
     expect(
       getConceptExplorationPath("workspace", { returnTo: "/", from: "panel" }),
     ).toBe("/concepts/detail?contextId=workspace&returnTo=%2F&from=panel");
+    expect(getConceptKnowledgeExplorerPath()).toBe("/concepts/explore");
+    expect(getConceptKnowledgeExplorerPath({ focus: "railway/sync?" })).toBe(
+      "/concepts/explore?focus=railway%2Fsync%3F",
+    );
     expect(
       getConceptIdFromSearchParams(new URLSearchParams("contextId=Railway")),
     ).toBe("Railway");

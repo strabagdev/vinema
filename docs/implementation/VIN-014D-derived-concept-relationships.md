@@ -103,7 +103,10 @@ Esto permite observar persistencia sin afirmar causalidad.
 
 ## Perfiles
 
-`/concepts/detail` usa las relaciones derivadas en `Conectado con`.
+`/concepts/detail` usa las relaciones derivadas en un perfil vivo de concepto.
+La pantalla ya no separa el concepto en modos manuales; muestra una lectura
+continua con identidad, actividad, conexiones principales, evolucion,
+significados, patrones y recuerdos.
 
 La vista muestra:
 
@@ -114,6 +117,18 @@ La vista muestra:
 - fragmento de evidencia con acceso al detalle.
 
 No muestra scores ni coeficientes.
+
+## Exploracion Global
+
+`/concepts/explore` permite explorar la red de conocimiento reconstruida desde
+`Node`, `Context` y `NodeContextRelation`. Con `?focus=<conceptId>` ubica el
+concepto enfocado al centro y despliega sus vecinos principales. Sin foco, elige
+deterministicamente un concepto activo con conexiones suficientes para presentar
+una vista global acotada.
+
+El mapa visual no persiste posiciones ni introduce edicion manual. La lista
+alternativa `Conexiones del foco` mantiene la navegacion accesible, permite abrir
+perfiles y cambiar el foco sin depender del hover.
 
 ## Base de Conocimiento
 
@@ -128,8 +143,9 @@ siendo navegacion de conocimiento, no dashboard.
 - nodos relacionados;
 - edges con fuerza y recuerdos compartidos.
 
-No calcula posiciones, no renderiza un grafo visual y no introduce librerias.
-Queda listo para una fase posterior de mapa.
+Las posiciones visuales de `/concepts/explore` son derivadas, deterministicas y
+temporales. No se guardan, no modifican el dominio y no introducen librerias de
+grafos.
 
 ## Sync, Backup, Restore y Reset
 

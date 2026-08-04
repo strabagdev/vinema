@@ -2,6 +2,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ConceptExplorationClient } from "@/app/concepts/detail/concept-exploration-client";
+import { ConceptKnowledgeExplorerClient } from "@/app/concepts/explore/concept-knowledge-explorer-client";
 import type { Context } from "@/domain/context/context";
 import type { Node } from "@/domain/node/node";
 import type { NodeContextRelation } from "@/domain/context/node-context-relation";
@@ -87,11 +88,11 @@ describe("ConceptExplorationClient", () => {
 
     expect(screen.querySelector("[data-knowledge-base-surface]")).toBeTruthy();
     expect(screen.textContent).toContain("Railway");
-    expect(screen.textContent).toContain("Base de conocimiento");
-    expect(screen.textContent).toContain("2 recuerdos relacionados");
+    expect(screen.textContent).toContain("Perfil vivo");
+    expect(screen.textContent).toContain("2 recuerdos");
     expect(screen.textContent).toContain("Recuerdos representativos");
-    expect(screen.textContent).toContain("Conectado con");
-    expect(screen.textContent).toContain("Evolución");
+    expect(screen.textContent).toContain("Conexiones principales");
+    expect(screen.textContent).toContain("Actividad");
     expect(screen.textContent).toContain("Sync");
     expect(screen.textContent).toContain("Workspace");
     expect(screen.textContent).toContain("Captura sobre Railway y Sync");
@@ -125,20 +126,14 @@ describe("ConceptExplorationClient", () => {
     );
   });
 
-  it("keeps Recuerdos, Tiempo and Mapa modes within the centered knowledge base", async () => {
+  it("removes Recuerdos, Tiempo and Mapa modes from the living concept profile", async () => {
     const screen = await renderConceptExploration();
 
-    expect(getButtonByLabel(screen, "Recuerdos").getAttribute("aria-pressed")).toBe(
-      "true",
-    );
-    expect(getButtonByLabel(screen, "Tiempo")).toBeDefined();
-    expect(getButtonByLabel(screen, "Mapa")).toBeDefined();
-
-    await click(getButtonByLabel(screen, "Mapa"));
-
-    expect(screen.textContent).toContain("Mapa conceptual preparado");
-    expect(screen.textContent).toContain("Actividad conectada");
-    expect(screen.textContent).toContain("Conceptos cercanos");
+    expect(queryButtonByLabel(screen, "Recuerdos")).toBeNull();
+    expect(queryButtonByLabel(screen, "Tiempo")).toBeNull();
+    expect(queryButtonByLabel(screen, "Mapa")).toBeNull();
+    expect(screen.textContent).toContain("Conexiones principales");
+    expect(screen.textContent).toContain("Explorar conexiones");
     expect(screen.textContent).not.toContain("Graphify");
   });
 
@@ -153,13 +148,13 @@ describe("ConceptExplorationClient", () => {
         .querySelector("[data-knowledge-base-surface]")
         ?.getAttribute("data-expansion-source"),
     ).toBe("panel");
-    expect(screen.textContent).not.toContain("Explorar");
+    expect(screen.textContent).toContain("Explorar conexiones");
   });
 
   it("refreshes the open exploration after remote sync invalidation", async () => {
     const screen = await renderConceptExploration();
 
-    expect(screen.textContent).toContain("2 recuerdos relacionados");
+    expect(screen.textContent).toContain("2 recuerdos");
     mocks.nodes.set(
       "new",
       node({ id: "new", content: "Nueva captura remota de Railway" }),
@@ -178,8 +173,7 @@ describe("ConceptExplorationClient", () => {
       await flushPromises();
     });
 
-    expect(screen.textContent).toContain("3 recuerdos relacionados");
-    expect(screen.textContent).toContain("3");
+    expect(screen.textContent).toContain("3 recuerdos");
     expect(screen.textContent).toContain("Nueva captura remota de Railway");
   });
 
@@ -214,10 +208,11 @@ describe("ConceptExplorationClient", () => {
 
     const screen = await renderConceptExploration();
 
-    expect(screen.textContent).toContain("1 recuerdos relacionados");
+    expect(screen.textContent).toContain("1 recuerdo");
     expect(screen.textContent).toContain("Recuerdos representativos");
     expect(screen.textContent).toContain("Railway despliega Vinema API");
     expect(screen.textContent).not.toContain("Conectado con");
+    expect(screen.textContent).not.toContain("Conexiones principales");
     expect(screen.textContent).not.toContain("Evolución");
     expect(screen.textContent).not.toContain("últimos 7 días");
     expect(screen.textContent).not.toContain("Aún sin recuerdos");
@@ -240,7 +235,7 @@ describe("ConceptExplorationClient", () => {
     expect(screen.textContent).not.toContain("Patrones observados");
   });
 
-  it("shows observed behavioral patterns in the concept profile", async () => {
+  it("does not duplicate main relationships as observed patterns", async () => {
     mocks.nodes.clear();
     mocks.relations.clear();
 
@@ -275,8 +270,9 @@ describe("ConceptExplorationClient", () => {
 
     const screen = await renderConceptExploration();
 
-    expect(screen.textContent).toContain("Patrones observados");
-    expect(screen.textContent).toContain("Aparece frecuentemente junto a Sync.");
+    expect(screen.textContent).not.toContain("Patrones observados");
+    expect(screen.textContent).toContain("Conexiones principales");
+    expect(screen.textContent).toContain("Sync");
   });
 
   it("hides observed meanings when no explicit semantic statement exists", async () => {
@@ -360,7 +356,7 @@ describe("ConceptExplorationClient", () => {
     expect(screen.textContent).not.toContain("Concepto reciente");
   });
 
-  it("shows memory evolution signals with human labels and evidence links", async () => {
+  it("uses the primary memory evolution signal as the activity signal", async () => {
     mocks.nodes.clear();
     mocks.relations.clear();
 
@@ -395,13 +391,99 @@ describe("ConceptExplorationClient", () => {
 
     const screen = await renderConceptExploration();
 
-    expect(screen.textContent).toContain("Evolución");
     expect(screen.textContent).toContain("Ha ganado actividad");
+    expect(screen.textContent).toContain(
+      "Tiene más presencia reciente que en el periodo anterior.",
+    );
     expect(
       Array.from(screen.querySelectorAll("a")).some((link) =>
         link.getAttribute("href")?.startsWith("/memory/detail?nodeId=evolution-recent"),
       ),
     ).toBeTruthy();
+  });
+
+  it("links profile connections to the global knowledge explorer with focus", async () => {
+    const screen = await renderConceptExploration();
+    const link = Array.from(screen.querySelectorAll("a")).find(
+      (item) => item.textContent?.includes("Explorar conexiones"),
+    );
+
+    expect(link?.getAttribute("href")).toBe("/concepts/explore?focus=railway");
+  });
+
+  it("links recent concept memories back to Memoria with concept query", async () => {
+    const screen = await renderConceptExploration();
+    const link = Array.from(screen.querySelectorAll("a")).find(
+      (item) => item.textContent?.includes("Ver todos en Memoria"),
+    );
+
+    expect(link?.getAttribute("href")).toBe("/memory?concept=railway");
+  });
+
+  it("renders the global knowledge explorer focused from the query", async () => {
+    mocks.searchParams = new URLSearchParams("focus=railway");
+    const screen = await renderConceptExplorer();
+
+    expect(screen.textContent).toContain("Explorar conocimiento");
+    expect(screen.textContent).toContain("¿Cómo está conectada mi memoria?");
+    expect(screen.textContent).toContain("Foco");
+    expect(screen.textContent).toContain("Railway");
+    expect(screen.textContent).toContain("Conexiones del foco");
+    expect(screen.textContent).toContain("Sync");
+    expect(screen.textContent).toContain("Workspace");
+    expect(screen.querySelector("svg[aria-label='Mapa de conceptos conectados']")).toBeTruthy();
+  });
+
+  it("changes graph focus when a node is clicked", async () => {
+    mocks.searchParams = new URLSearchParams("focus=railway");
+    const screen = await renderConceptExplorer();
+    const syncNode = screen.querySelector("[aria-label='Enfocar Sync']");
+
+    expect(syncNode).toBeTruthy();
+    await click(syncNode as HTMLElement);
+
+    expect(mocks.push).toHaveBeenCalledWith("/concepts/explore?focus=sync");
+  });
+
+  it("uses concept search to focus an existing concept without creating alias nodes", async () => {
+    mocks.contexts.set(
+      "railway",
+      context({
+        id: "railway",
+        name: "Railway",
+        aliases: ["Railway Cloud"],
+      }),
+    );
+    mocks.searchParams = new URLSearchParams("");
+    const screen = await renderConceptExplorer();
+    const input = screen.querySelector("#concept-explorer-search") as HTMLInputElement;
+
+    await act(async () => {
+      setInputValue(input, "cloud");
+      input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+      await flushPromises();
+    });
+
+    expect(screen.textContent).toContain("Railway");
+    expect(screen.textContent).not.toContain("Railway Cloud");
+    const result = Array.from(screen.querySelectorAll("button")).find(
+      (button) => button.textContent === "Railway",
+    );
+
+    expect(result).toBeTruthy();
+    await click(result as HTMLButtonElement);
+
+    expect(mocks.push).toHaveBeenCalledWith("/concepts/explore?focus=railway");
+  });
+
+  it("shows an empty state when there are not enough graph connections", async () => {
+    mocks.relations.clear();
+    mocks.searchParams = new URLSearchParams("");
+    const screen = await renderConceptExplorer();
+
+    expect(screen.textContent).toContain("No hay suficientes conexiones todavía.");
+    expect(screen.textContent).toContain("Volver a capturar");
+    expect(screen.textContent).toContain("Explorar conceptos");
   });
 });
 
@@ -411,6 +493,18 @@ async function renderConceptExploration() {
 
   await act(async () => {
     createRoot(container).render(createElement(ConceptExplorationClient));
+    await flushPromises();
+  });
+
+  return container;
+}
+
+async function renderConceptExplorer() {
+  const container = document.createElement("div");
+  document.body.replaceChildren(container);
+
+  await act(async () => {
+    createRoot(container).render(createElement(ConceptKnowledgeExplorerClient));
     await flushPromises();
   });
 
@@ -508,16 +602,10 @@ function getButton(container: HTMLElement, name: string) {
   return button as HTMLButtonElement;
 }
 
-function getButtonByLabel(container: HTMLElement, label: string) {
-  const button = Array.from(container.querySelectorAll("button")).find(
+function queryButtonByLabel(container: HTMLElement, label: string) {
+  return Array.from(container.querySelectorAll("button")).find(
     (item) => item.getAttribute("aria-label") === label,
-  );
-
-  if (!button) {
-    throw new Error(`Button not found: ${label}`);
-  }
-
-  return button as HTMLButtonElement;
+  ) ?? null;
 }
 
 async function click(element: HTMLElement) {
@@ -525,6 +613,15 @@ async function click(element: HTMLElement) {
     element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await flushPromises();
   });
+}
+
+function setInputValue(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "value",
+  )?.set;
+
+  setter?.call(input, value);
 }
 
 async function flushPromises() {

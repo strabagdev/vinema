@@ -29,7 +29,7 @@ El boton de panel usa el icono de expansion y el texto accesible `Profundizar en
 
 ## Superficie
 
-La ruta `/concepts/detail` se mantiene porque ya es compatible con el modelo local-first y con rutas estaticas. La pantalla se presenta como una Base de conocimiento centrada en el concepto:
+La ruta `/concepts/detail` se mantiene porque ya es compatible con el modelo local-first y con rutas estaticas. En VIN-011C, la pantalla se presentaba como una Base de conocimiento centrada en el concepto:
 
 - boton visible para volver;
 - nombre del concepto actual;
@@ -39,6 +39,10 @@ La ruta `/concepts/detail` se mantiene porque ya es compatible con el modelo loc
 - conexiones cercanas derivadas por coocurrencia.
 
 No hay breadcrumbs, dashboard, CRUD ni listado global.
+
+Desde VIN-UX-007, los modos Recuerdos, Tiempo y Mapa dejaron de ser parte del
+detalle. `/concepts/detail` funciona como perfil vivo de lectura continua, y la
+exploracion global de conexiones vive en `/concepts/explore`.
 
 ## Modos
 
