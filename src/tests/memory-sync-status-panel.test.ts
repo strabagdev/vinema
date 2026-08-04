@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   error: vi.fn(),
   dismissKind: vi.fn(),
   loadMemorySyncSnapshot: vi.fn(),
+  listCaptureConflicts: vi.fn(),
   offline: vi.fn(),
   reconcile: vi.fn(),
   syncNow: vi.fn(),
@@ -49,6 +50,11 @@ vi.mock("@/features/sync/reconciliation", () => ({
   }),
 }));
 
+vi.mock("@/features/sync/conflict-resolution", () => ({
+  listCaptureConflicts: mocks.listCaptureConflicts,
+  resolveCaptureConflict: vi.fn(),
+}));
+
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
   .IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -59,6 +65,7 @@ describe("MemorySyncStatusPanel", () => {
     vi.clearAllMocks();
     mocks.useAuth.mockReturnValue(authValue());
     mocks.loadMemorySyncSnapshot.mockResolvedValue(snapshotFixture());
+    mocks.listCaptureConflicts.mockResolvedValue([captureConflictFixture()]);
     mocks.reconcile.mockResolvedValue(reconciliationFixture());
   });
 
@@ -95,11 +102,80 @@ describe("MemorySyncStatusPanel", () => {
     expect(panel?.querySelector("details")).toBeNull();
     expect(panel?.className).toContain("fixed");
     expect(panel?.className).toContain("md:absolute");
+    expect(panel?.className).toContain("overflow-hidden");
+    expect(panel?.getAttribute("role")).toBe("dialog");
+    expect(panel?.getAttribute("aria-modal")).toBe("true");
+    expect(panel?.querySelector("[data-memory-sync-panel-body]")?.className).toContain(
+      "overflow-y-auto",
+    );
     expect(dot?.getAttribute("title")).toBe("memoria integra");
     expect(dot?.getAttribute("aria-label")).toBe(
       "Estado de la memoria: memoria integra",
     );
     expect(dot?.className).toContain("bg-emerald-500");
+  });
+
+  it("keeps the panel open on mouse movement, trigger reclicks, and clicks inside", async () => {
+    const screen = await renderPanel();
+    const trigger = screen.querySelector("button[aria-label='Abrir Estado de la memoria']");
+
+    await click(trigger);
+    const panel = screen.querySelector("[data-memory-sync-panel]");
+    expect(panel).toBeTruthy();
+
+    await mouseLeave(trigger);
+    expect(screen.querySelector("[data-memory-sync-panel]")).toBeTruthy();
+
+    await click(trigger);
+    expect(screen.querySelector("[data-memory-sync-panel]")).toBeTruthy();
+
+    await pointerDown(panel);
+    expect(screen.querySelector("[data-memory-sync-panel]")).toBeTruthy();
+
+    await click(getButton(screen, "Verificar memoria"));
+    expect(screen.querySelector("[data-memory-sync-panel]")).toBeTruthy();
+  });
+
+  it("closes only with Escape, outside click, or the explicit close button", async () => {
+    const screen = await renderPanel();
+    const trigger = screen.querySelector<HTMLButtonElement>(
+      "button[aria-label='Abrir Estado de la memoria']",
+    );
+
+    await click(trigger);
+    expect(document.activeElement).toBe(
+      screen.querySelector("button[aria-label='Cerrar Estado de la memoria']"),
+    );
+
+    await keyDownWindow({ key: "Escape" });
+    expect(screen.querySelector("[data-memory-sync-panel]")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+
+    await click(trigger);
+    await pointerDown(document.body);
+    expect(screen.querySelector("[data-memory-sync-panel]")).toBeNull();
+
+    await click(trigger);
+    await click(screen.querySelector("button[aria-label='Cerrar Estado de la memoria']"));
+    expect(screen.querySelector("[data-memory-sync-panel]")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("keeps focus inside the dialog while tabbing", async () => {
+    const screen = await renderPanel();
+
+    await click(screen.querySelector("button[aria-label='Abrir Estado de la memoria']"));
+    const closeButton = screen.querySelector<HTMLButtonElement>(
+      "button[aria-label='Cerrar Estado de la memoria']",
+    );
+    const verifyButton = getButton(screen, "Verificar memoria");
+
+    verifyButton.focus();
+    await keyDownWindow({ key: "Tab" });
+    expect(document.activeElement).toBe(closeButton);
+
+    await keyDownWindow({ key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(verifyButton);
   });
 
   it("does not call syncNow while offline", async () => {
@@ -171,6 +247,7 @@ describe("MemorySyncStatusPanel", () => {
     expect(screen.querySelector("[data-memory-sync-panel]")?.textContent).toContain(
       "Memoria integra",
     );
+    expect(screen.querySelector("[data-memory-sync-panel]")).toBeTruthy();
     expect(screen.querySelector("[data-memory-sync-panel]")?.textContent).not.toContain(
       "requieren atencion",
     );
@@ -209,6 +286,30 @@ describe("MemorySyncStatusPanel", () => {
     expect(screen.querySelector("[data-memory-sync-panel]")?.textContent).toContain(
       "Exportar diagnostico",
     );
+  });
+
+  it("opens the resolver and diagnostic details without unmounting the status panel", async () => {
+    mocks.loadMemorySyncSnapshot.mockResolvedValue(snapshotFixture({
+      status: "DIVERGED",
+      conflictMutations: 1,
+      conflictEntityCounts: {
+        captures: 1,
+        concepts: 0,
+        captureConcepts: 0,
+      },
+    }));
+    const screen = await renderPanel();
+
+    await click(screen.querySelector("button[aria-label='Abrir Estado de la memoria']"));
+    await click(getButton(screen, "Resolver"));
+
+    expect(mocks.listCaptureConflicts).toHaveBeenCalledTimes(1);
+    expect(screen.querySelector("[data-memory-sync-panel]")).toBeTruthy();
+    expect(screen.textContent).toContain("Una captura requiere atencion");
+
+    await click(screen.querySelector("summary"));
+    expect(screen.querySelector("[data-memory-sync-panel]")).toBeTruthy();
+    expect(screen.querySelector("details")?.hasAttribute("open")).toBe(true);
   });
 
   it("keeps verification loading only while reconciliation is active", async () => {
@@ -339,6 +440,19 @@ function reconciliationFixture() {
   };
 }
 
+function captureConflictFixture() {
+  return {
+    workspaceId: "workspace-1",
+    entityId: "capture-1",
+    localContent: "Version local",
+    remoteContent: "Version sincronizada",
+    localVersion: 2,
+    remoteVersion: 1,
+    mutationIds: ["mutation-1"],
+    occurrenceCount: 1,
+  };
+}
+
 function getButton(container: HTMLElement, text: string) {
   const button = Array.from(container.querySelectorAll("button")).find(
     (candidate) => candidate.textContent?.includes(text),
@@ -358,6 +472,45 @@ async function click(target: Element | null) {
 
   await act(async () => {
     target.click();
+    await flushPromises();
+  });
+}
+
+async function pointerDown(target: Element | null) {
+  if (!(target instanceof Element)) {
+    throw new Error("Expected pointer target.");
+  }
+
+  await act(async () => {
+    target.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    await flushPromises();
+  });
+}
+
+async function mouseLeave(target: Element | null) {
+  if (!(target instanceof Element)) {
+    throw new Error("Expected mouse target.");
+  }
+
+  await act(async () => {
+    target.dispatchEvent(new MouseEvent("mouseleave", { bubbles: true }));
+    await flushPromises();
+  });
+}
+
+async function keyDownWindow({
+  key,
+  shiftKey = false,
+}: {
+  key: string;
+  shiftKey?: boolean;
+}) {
+  await act(async () => {
+    window.dispatchEvent(new KeyboardEvent("keydown", {
+      key,
+      shiftKey,
+      bubbles: true,
+    }));
     await flushPromises();
   });
 }

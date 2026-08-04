@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { RefObject } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -45,6 +46,9 @@ export function MemorySyncStatusPanel() {
   const [localError, setLocalError] = useState<string | null>(null);
   const [lastVerificationMessage, setLastVerificationMessage] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const canOpen = auth.isAuthenticated && Boolean(auth.workspaceId && auth.deviceId);
   const presentation = deriveMemoryHealthPresentation({
     health: snapshot?.health ?? null,
@@ -70,6 +74,13 @@ export function MemorySyncStatusPanel() {
     }
   }, [auth.deviceId, auth.syncState, auth.workspaceId]);
 
+  const closePanel = useCallback(() => {
+    setOpen(false);
+    queueMicrotask(() => {
+      triggerRef.current?.focus();
+    });
+  }, []);
+
   useEffect(() => {
     if (!open) {
       return;
@@ -86,13 +97,28 @@ export function MemorySyncStatusPanel() {
   }, [open, refreshSnapshot]);
 
   useEffect(() => {
+    if (!open || !snapshot) {
+      return;
+    }
+
+    queueMicrotask(() => {
+      closeButtonRef.current?.focus();
+    });
+  }, [open, snapshot]);
+
+  useEffect(() => {
     if (!open) {
       return;
     }
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        setOpen(false);
+        closePanel();
+        return;
+      }
+
+      if (event.key === "Tab") {
+        trapDialogFocus(event, dialogRef.current);
       }
     }
 
@@ -102,7 +128,7 @@ export function MemorySyncStatusPanel() {
         event.target instanceof Node &&
         !panelRef.current.contains(event.target)
       ) {
-        setOpen(false);
+        closePanel();
       }
     }
 
@@ -113,7 +139,7 @@ export function MemorySyncStatusPanel() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("pointerdown", handlePointerDown);
     };
-  }, [open]);
+  }, [closePanel, open]);
 
   async function handleVerifyMemory() {
     if (!auth.workspaceId || !auth.deviceId || verifyingMemory) {
@@ -247,6 +273,7 @@ export function MemorySyncStatusPanel() {
         <VisualFeedbackWordmark />
       </Link>
       <button
+        ref={triggerRef}
         type="button"
         className="absolute left-1/2 ml-5 inline-flex h-6 w-6 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
         aria-label="Abrir Estado de la memoria"
@@ -254,8 +281,8 @@ export function MemorySyncStatusPanel() {
         disabled={!canOpen}
         data-memory-sync-trigger=""
         onClick={() => {
-          if (canOpen) {
-            setOpen((current) => !current);
+          if (canOpen && !open) {
+            setOpen(true);
           }
         }}
       >
@@ -271,6 +298,8 @@ export function MemorySyncStatusPanel() {
       </button>
       {open && snapshot ? (
         <MemorySyncPanelContent
+          dialogRef={dialogRef}
+          closeButtonRef={closeButtonRef}
           snapshot={snapshot}
           loading={loading}
           verifyingMemory={verifyingMemory}
@@ -283,7 +312,7 @@ export function MemorySyncStatusPanel() {
           resolvingConflict={resolvingConflict}
           mergeContent={mergeContent}
           showMergeEditor={showMergeEditor}
-          onClose={() => setOpen(false)}
+          onClose={closePanel}
           onVerifyMemory={() => void handleVerifyMemory()}
           onExportConflictDiagnostic={() => void handleExportConflictDiagnostic()}
           onOpenConflictResolver={() => void handleOpenConflictResolver()}
@@ -299,6 +328,8 @@ export function MemorySyncStatusPanel() {
 }
 
 function MemorySyncPanelContent({
+  dialogRef,
+  closeButtonRef,
   snapshot,
   loading,
   verifyingMemory,
@@ -319,6 +350,8 @@ function MemorySyncPanelContent({
   onMergeContentChange,
   onShowMergeEditor,
 }: {
+  dialogRef: RefObject<HTMLElement | null>;
+  closeButtonRef: RefObject<HTMLButtonElement | null>;
   snapshot: MemorySyncSnapshot;
   loading: boolean;
   verifyingMemory: boolean;
@@ -350,12 +383,15 @@ function MemorySyncPanelContent({
 
   return (
     <section
-      className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-50 max-h-[min(78vh,42rem)] overflow-y-auto rounded-xl border border-zinc-200 bg-white p-4 text-left text-sm shadow-xl md:absolute md:inset-auto md:left-1/2 md:top-full md:mt-2 md:w-[24rem] md:-translate-x-1/2"
+      ref={dialogRef}
+      className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-50 flex max-h-[min(82dvh,42rem)] flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white text-left text-sm shadow-xl md:absolute md:inset-auto md:left-1/2 md:top-full md:mt-2 md:w-96 md:max-w-[calc(100vw-1.5rem)] md:-translate-x-1/2"
       aria-label="Estado de la memoria"
+      aria-modal="true"
       role="dialog"
+      tabIndex={-1}
       data-memory-sync-panel=""
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-3 px-4 pt-4">
         <div>
           <h2 className="font-medium text-zinc-950">Estado de la memoria</h2>
           <p className="mt-1 text-sm text-zinc-700">
@@ -363,6 +399,7 @@ function MemorySyncPanelContent({
           </p>
         </div>
         <button
+          ref={closeButtonRef}
           type="button"
           className="inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100"
           aria-label="Cerrar Estado de la memoria"
@@ -372,101 +409,143 @@ function MemorySyncPanelContent({
         </button>
       </div>
 
-      <p className="mt-4 text-xs text-zinc-500">
-        Ultima verificacion {formatRelativeDate(health.lastSuccessfulSyncAt)}
-      </p>
+      <div
+        className="min-h-0 overflow-y-auto px-4 pb-4 pt-4"
+        data-memory-sync-panel-body=""
+      >
+        <p className="text-xs text-zinc-500">
+          Ultima verificacion {formatRelativeDate(health.lastSuccessfulSyncAt)}
+        </p>
 
-      {localError ? (
-        <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          {localError}
-        </p>
-      ) : null}
-      {verifyingMemory && lastVerificationMessage ? (
-        <p className="mt-3 rounded-md bg-zinc-50 px-3 py-2 text-xs text-zinc-700">
-          {lastVerificationMessage}
-        </p>
-      ) : null}
-      {isOffline ? (
-        <p className="mt-3 rounded-md bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
-          Los cambios se guardaran y sincronizaran al volver.
-        </p>
-      ) : null}
+        {localError ? (
+          <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            {localError}
+          </p>
+        ) : null}
+        {verifyingMemory && lastVerificationMessage ? (
+          <p className="mt-3 rounded-md bg-zinc-50 px-3 py-2 text-xs text-zinc-700">
+            {lastVerificationMessage}
+          </p>
+        ) : null}
+        {isOffline ? (
+          <p className="mt-3 rounded-md bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
+            Los cambios se guardaran y sincronizaran al volver.
+          </p>
+        ) : null}
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        {health.conflictMutations > 0 ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {health.conflictMutations > 0 ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onOpenConflictResolver}
+            >
+              Resolver
+            </Button>
+          ) : null}
           <Button
             size="sm"
-            variant="ghost"
-            onClick={onOpenConflictResolver}
+            onClick={onVerifyMemory}
+            disabled={verifyingMemory || loading || isOffline}
           >
-            Resolver
+            <RefreshCw className={cn("mr-2 h-3.5 w-3.5", verifyingMemory ? "animate-spin" : null)} />
+            Verificar memoria
           </Button>
-        ) : null}
-        <Button
-          size="sm"
-          onClick={onVerifyMemory}
-          disabled={verifyingMemory || loading || isOffline}
-        >
-          <RefreshCw className={cn("mr-2 h-3.5 w-3.5", verifyingMemory ? "animate-spin" : null)} />
-          Verificar memoria
-        </Button>
-      </div>
-
-      {captureConflicts[0] ? (
-        <div className="mt-4">
-          <CaptureConflictResolver
-            conflict={captureConflicts[0]}
-            resolving={resolvingConflict}
-            mergeContent={mergeContent}
-            showMergeEditor={showMergeEditor}
-            onResolve={onResolveCaptureConflict}
-            onMergeContentChange={onMergeContentChange}
-            onShowMergeEditor={onShowMergeEditor}
-          />
         </div>
-      ) : null}
 
-      {hasProblem ? (
-      <details className="mt-4 rounded-lg border border-zinc-100 p-3">
-        <summary className="cursor-pointer text-xs font-medium text-zinc-700">
-          {health.status === "DIVERGED" || health.status === "ERROR"
-            ? "Ver diagnostico"
-            : "Ver detalles"}
-        </summary>
-        <div className="mt-3 space-y-3">
-          <div className="grid gap-1 text-xs text-zinc-600">
-            {health.pendingMutations > 0 ? (
-              <Metric label="Cambios pendientes" value={`${health.pendingMutations}`} />
-            ) : null}
-            {health.failedMutations > 0 ? (
-              <Metric label="Cambios con error" value={`${health.failedMutations}`} />
-            ) : null}
-            {health.conflictMutations > 0 ? (
-              <Metric
-                label={getConflictAttentionLabel(health)}
-                value={`${health.conflictMutations}`}
-              />
-            ) : null}
+        {captureConflicts[0] ? (
+          <div className="mt-4">
+            <CaptureConflictResolver
+              conflict={captureConflicts[0]}
+              resolving={resolvingConflict}
+              mergeContent={mergeContent}
+              showMergeEditor={showMergeEditor}
+              onResolve={onResolveCaptureConflict}
+              onMergeContentChange={onMergeContentChange}
+              onShowMergeEditor={onShowMergeEditor}
+            />
           </div>
-          {health.conflictMutations > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={onExportConflictDiagnostic}
-                disabled={exportingConflicts}
-              >
-                Exportar diagnostico
-              </Button>
+        ) : null}
+
+        {hasProblem ? (
+          <details className="mt-4 rounded-lg border border-zinc-100 p-3">
+            <summary className="cursor-pointer text-xs font-medium text-zinc-700">
+              {health.status === "DIVERGED" || health.status === "ERROR"
+                ? "Ver diagnostico"
+                : "Ver detalles"}
+            </summary>
+            <div className="mt-3 space-y-3">
+              <div className="grid gap-1 text-xs text-zinc-600">
+                {health.pendingMutations > 0 ? (
+                  <Metric label="Cambios pendientes" value={`${health.pendingMutations}`} />
+                ) : null}
+                {health.failedMutations > 0 ? (
+                  <Metric label="Cambios con error" value={`${health.failedMutations}`} />
+                ) : null}
+                {health.conflictMutations > 0 ? (
+                  <Metric
+                    label={getConflictAttentionLabel(health)}
+                    value={`${health.conflictMutations}`}
+                  />
+                ) : null}
+              </div>
+              {health.conflictMutations > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={onExportConflictDiagnostic}
+                    disabled={exportingConflicts}
+                  >
+                    Exportar diagnostico
+                  </Button>
+                </div>
+              ) : null}
+              {reconciliation ? <ReconciliationSummary reconciliation={reconciliation} /> : null}
+              <RecentEvents events={health.recentEvents} />
             </div>
-          ) : null}
-          {reconciliation ? <ReconciliationSummary reconciliation={reconciliation} /> : null}
-          <RecentEvents events={health.recentEvents} />
-        </div>
-      </details>
-      ) : null}
+          </details>
+        ) : null}
+      </div>
     </section>
   );
+}
+
+function trapDialogFocus(event: KeyboardEvent, dialog: HTMLElement | null) {
+  if (!dialog) {
+    return;
+  }
+
+  const focusable = Array.from(
+    dialog.querySelectorAll<HTMLElement>(
+      [
+        "a[href]",
+        "button:not([disabled])",
+        "textarea:not([disabled])",
+        "input:not([disabled])",
+        "select:not([disabled])",
+        "[tabindex]:not([tabindex='-1'])",
+      ].join(","),
+    ),
+  );
+
+  const first = focusable[0];
+  const last = focusable.at(-1);
+
+  if (!first || !last) {
+    return;
+  }
+
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+    return;
+  }
+
+  if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
 }
 
 function CaptureConflictResolver({
