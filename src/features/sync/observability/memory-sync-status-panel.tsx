@@ -7,6 +7,7 @@ import { RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { VisualFeedbackWordmark, useVisualFeedback } from "@/features/feedback/visual-feedback-provider";
 import { useAuth } from "@/features/auth/auth-provider";
+import { getPublicApiUrl } from "@/features/auth/public-api-url";
 import {
   loadMemorySyncSnapshot,
   type MemorySyncSnapshot,
@@ -22,6 +23,7 @@ import {
   resolveCaptureConflict,
   type CaptureConflictSummary,
 } from "@/features/sync/conflict-resolution";
+import { createSyncClient } from "@/features/sync/sync-client";
 import { syncEventBuffer } from "@/features/sync/observability/sync-event-buffer";
 import {
   createMemoryReconciliationEngine,
@@ -216,10 +218,27 @@ export function MemorySyncStatusPanel() {
       return;
     }
 
-    const conflicts = await listCaptureConflicts(auth.workspaceId);
+    const apiBaseUrl = getPublicApiUrl();
+    const conflicts = await listCaptureConflicts(auth.workspaceId, {
+      loadRemoteSnapshot: apiBaseUrl
+        ? async ({ workspaceId, entityId }) => {
+          const client = createSyncClient({
+            baseUrl: apiBaseUrl,
+            accessToken: auth.accessToken,
+          });
+          return client.getCapture({ workspaceId, entityId });
+        }
+        : undefined,
+    });
     setCaptureConflicts(conflicts);
     setShowMergeEditor(false);
     setMergeContent(conflicts[0]?.localContent ?? "");
+  }
+
+  function handleCancelConflictResolver() {
+    setCaptureConflicts([]);
+    setShowMergeEditor(false);
+    setMergeContent("");
   }
 
   async function handleResolveCaptureConflict(
@@ -319,6 +338,8 @@ export function MemorySyncStatusPanel() {
           onResolveCaptureConflict={(strategy) =>
             void handleResolveCaptureConflict(strategy)
           }
+          onRetryLoadConflict={() => void handleOpenConflictResolver()}
+          onCancelConflict={handleCancelConflictResolver}
           onMergeContentChange={setMergeContent}
           onShowMergeEditor={() => setShowMergeEditor(true)}
         />
@@ -347,6 +368,8 @@ function MemorySyncPanelContent({
   onExportConflictDiagnostic,
   onOpenConflictResolver,
   onResolveCaptureConflict,
+  onRetryLoadConflict,
+  onCancelConflict,
   onMergeContentChange,
   onShowMergeEditor,
 }: {
@@ -371,6 +394,8 @@ function MemorySyncPanelContent({
   onResolveCaptureConflict: (
     strategy: "KEEP_LOCAL" | "KEEP_REMOTE" | "MERGE_MANUALLY",
   ) => void;
+  onRetryLoadConflict: () => void;
+  onCancelConflict: () => void;
   onMergeContentChange: (value: string) => void;
   onShowMergeEditor: () => void;
 }) {
@@ -461,6 +486,8 @@ function MemorySyncPanelContent({
               mergeContent={mergeContent}
               showMergeEditor={showMergeEditor}
               onResolve={onResolveCaptureConflict}
+              onRetryLoad={onRetryLoadConflict}
+              onCancel={onCancelConflict}
               onMergeContentChange={onMergeContentChange}
               onShowMergeEditor={onShowMergeEditor}
             />
@@ -554,6 +581,8 @@ function CaptureConflictResolver({
   mergeContent,
   showMergeEditor,
   onResolve,
+  onRetryLoad,
+  onCancel,
   onMergeContentChange,
   onShowMergeEditor,
 }: {
@@ -562,17 +591,44 @@ function CaptureConflictResolver({
   mergeContent: string;
   showMergeEditor: boolean;
   onResolve: (strategy: "KEEP_LOCAL" | "KEEP_REMOTE" | "MERGE_MANUALLY") => void;
+  onRetryLoad: () => void;
+  onCancel: () => void;
   onMergeContentChange: (value: string) => void;
   onShowMergeEditor: () => void;
 }) {
+  const localContent = conflict.localContent;
+  const remoteContent = conflict.remoteContent;
+  const hasLocalSnapshot = localContent !== null;
+  const hasRemoteSnapshot = remoteContent !== null;
+  const canResolve = hasLocalSnapshot && hasRemoteSnapshot;
+
   return (
     <div className="rounded-lg border border-amber-100 bg-amber-50/60 p-3 text-xs text-zinc-700">
       <p className="font-medium text-zinc-900">Una captura requiere atencion</p>
       <div className="mt-3 grid gap-2 md:grid-cols-2">
-        <VersionPreview label="Version de este dispositivo" content={conflict.localContent} />
-        <VersionPreview label="Version sincronizada" content={conflict.remoteContent} />
+        {hasLocalSnapshot ? (
+          <VersionPreview label="Versión de este dispositivo" content={localContent} />
+        ) : null}
+        {hasRemoteSnapshot ? (
+          <VersionPreview label="Versión sincronizada" content={remoteContent} />
+        ) : null}
       </div>
-      {showMergeEditor ? (
+      {!hasLocalSnapshot && !hasRemoteSnapshot ? (
+        <p className="mt-3 rounded-md bg-white/80 p-2 text-zinc-700">
+          No fue posible cargar las versiones de esta captura.
+        </p>
+      ) : null}
+      {hasLocalSnapshot && !hasRemoteSnapshot ? (
+        <p className="mt-3 rounded-md bg-white/80 p-2 text-zinc-700">
+          {getRemoteSnapshotErrorMessage(conflict.remoteLoadStatus)}
+        </p>
+      ) : null}
+      {!hasLocalSnapshot && hasRemoteSnapshot ? (
+        <p className="mt-3 rounded-md bg-white/80 p-2 text-zinc-700">
+          No fue posible cargar la versión local.
+        </p>
+      ) : null}
+      {showMergeEditor && canResolve ? (
         <textarea
           className="mt-3 min-h-28 w-full resize-y rounded-md border border-amber-200 bg-white p-2 outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
           aria-label="Resultado de fusion manual"
@@ -581,18 +637,22 @@ function CaptureConflictResolver({
         />
       ) : null}
       <div className="mt-3 flex flex-wrap gap-2">
-        <Button size="sm" onClick={() => onResolve("KEEP_LOCAL")} disabled={resolving}>
-          Conservar esta version
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => onResolve("KEEP_REMOTE")}
-          disabled={resolving}
-        >
-          Conservar version sincronizada
-        </Button>
-        {showMergeEditor ? (
+        {canResolve ? (
+          <>
+            <Button size="sm" onClick={() => onResolve("KEEP_LOCAL")} disabled={resolving}>
+              Conservar esta versión
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => onResolve("KEEP_REMOTE")}
+              disabled={resolving}
+            >
+              Conservar versión sincronizada
+            </Button>
+          </>
+        ) : null}
+        {canResolve && showMergeEditor ? (
           <Button
             size="sm"
             variant="ghost"
@@ -601,14 +661,41 @@ function CaptureConflictResolver({
           >
             Confirmar fusion
           </Button>
-        ) : (
+        ) : canResolve ? (
           <Button size="sm" variant="ghost" onClick={onShowMergeEditor} disabled={resolving}>
             Fusionar manualmente
           </Button>
+        ) : (
+          <>
+            <Button size="sm" variant="ghost" onClick={onRetryLoad} disabled={resolving}>
+              {hasLocalSnapshot || hasRemoteSnapshot ? "Reintentar cargar" : "Reintentar"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onCancel} disabled={resolving}>
+              Cancelar
+            </Button>
+          </>
         )}
       </div>
     </div>
   );
+}
+
+function getRemoteSnapshotErrorMessage(
+  status: CaptureConflictSummary["remoteLoadStatus"],
+) {
+  if (status === "ENTITY_NOT_FOUND") {
+    return "La captura sincronizada ya no existe.";
+  }
+
+  if (status === "AUTH_ERROR") {
+    return "No fue posible autorizar la consulta.";
+  }
+
+  if (status === "NETWORK_ERROR") {
+    return "Sin conexión. Reintenta cuando vuelvas a estar en línea.";
+  }
+
+  return "No fue posible cargar la versión sincronizada.";
 }
 
 function VersionPreview({ label, content }: { label: string; content: string }) {

@@ -276,6 +276,9 @@ describe("VisualFeedbackViewport", () => {
     const screen = await renderFeedback(service);
 
     expect(screen.querySelector("[data-feedback-kind='syncing']")).toBeTruthy();
+    expect(screen.querySelector("[data-visual-feedback-viewport]")?.textContent).toBe(
+      "Actualizando memoria...",
+    );
     expect(screen.querySelector(".animate-spin")).toBeTruthy();
 
     mocks.syncState = syncState({
@@ -330,6 +333,41 @@ describe("VisualFeedbackViewport", () => {
     expect(screen.querySelector("[data-feedback-kind='error']")).toBeTruthy();
     expect(screen.querySelector("[data-feedback-kind='syncing']")).toBeNull();
     expect(screen.textContent).toContain("No fue posible sincronizar.");
+  });
+
+  it("clears a historical red alert when a new sync cycle succeeds", async () => {
+    const service = createVisualFeedbackService();
+    mocks.syncState = syncState({
+      phase: "ERROR",
+      lastError: {
+        source: "PULL",
+        message: "Ocurrio un error",
+        occurredAt: "2026-01-01T00:00:01.000Z",
+      },
+    });
+    const screen = await renderFeedback(service);
+
+    expect(screen.querySelector("[data-feedback-kind='error']")).toBeTruthy();
+
+    mocks.syncState = syncState({
+      phase: "PUSHING",
+      pendingMutations: 1,
+      lastError: null,
+    });
+    await rerenderFeedback(service);
+
+    expect(screen.querySelector("[data-feedback-kind='syncing']")).toBeTruthy();
+    expect(screen.textContent).not.toContain("Ocurrio un error");
+
+    mocks.syncState = syncState({
+      phase: "SUCCESS",
+      lastSuccessfulSyncAt: "2026-01-01T00:00:02.000Z",
+      lastError: null,
+    });
+    await rerenderFeedback(service);
+
+    expect(screen.querySelector("[data-feedback-kind='synced']")).toBeTruthy();
+    expect(screen.textContent).not.toContain("Ocurrio un error");
   });
 
   it("replaces syncing with offline when connectivity drops", async () => {

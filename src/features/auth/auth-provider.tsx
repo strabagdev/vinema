@@ -21,6 +21,7 @@ import {
   createAuthController,
   type AuthController,
 } from "@/features/auth/auth-controller";
+import { createAppResumeLifecycle } from "@/features/auth/app-resume-lifecycle";
 import {
   type AuthLoginInput,
   type AuthRegisterInput,
@@ -102,6 +103,25 @@ export function AuthProvider({
     setAccessToken(runtime.controller.getAccessToken());
   }), [runtime]);
   useEffect(() => runtime.syncStateEngine.subscribe(setSyncState), [runtime]);
+  useEffect(() => {
+    const lifecycle = createAppResumeLifecycle({
+      getAuthState: () => runtime.controller.getState(),
+      revalidate: async () => {
+        await runtime.controller.revalidate();
+        return runtime.controller.getState();
+      },
+      syncNow: () => runtime.controller.syncNow(),
+      setConnectivity: (connectivity) => {
+        runtime.syncStateEngine.dispatch({
+          type: "CONNECTIVITY_CHANGED",
+          connectivity,
+        });
+      },
+      logger: process.env.NODE_ENV === "development" ? console : undefined,
+    });
+
+    return () => lifecycle.dispose();
+  }, [runtime]);
 
   useEffect(() => {
     let mounted = true;

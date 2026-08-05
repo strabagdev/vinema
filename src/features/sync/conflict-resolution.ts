@@ -20,15 +20,49 @@ export type CaptureConflictResolutionStrategy =
 
 export type CaptureConflictSummary = {
   entityId: string;
-  localContent: string;
-  remoteContent: string;
+  localContent: string | null;
+  remoteContent: string | null;
   localVersion: number | null;
-  remoteVersion: number;
+  remoteVersion: number | null;
+  remoteLoadStatus: CaptureRemoteLoadStatus;
+  remoteLoadDiagnostic?: CaptureRemoteLoadDiagnostic;
   occurrenceCount: number;
 };
 
+export type CaptureRemoteLoadStatus =
+  | "LOADED"
+  | "MISSING"
+  | "ENTITY_NOT_FOUND"
+  | "AUTH_ERROR"
+  | "NETWORK_ERROR"
+  | "ERROR";
+
+export type CaptureRemoteLoadDiagnostic = {
+  status?: number;
+  errorCode?: string;
+  message?: string;
+};
+
+export type CaptureRemoteSnapshot = {
+  entityType: "capture";
+  entityId: string;
+  version: number;
+  content: string;
+  archivedAt: string | null;
+  updatedAt: string;
+};
+
+export type CaptureRemoteSnapshotLoader = (input: {
+  workspaceId: string;
+  entityId: string;
+  requestedRemoteVersion: number | null;
+}) => Promise<CaptureRemoteSnapshot>;
+
 export async function listCaptureConflicts(
   workspaceId: string,
+  options: {
+    loadRemoteSnapshot?: CaptureRemoteSnapshotLoader;
+  } = {},
 ): Promise<CaptureConflictSummary[]> {
   const db = await getVinemaDb();
   const records = await db.getAllFromIndex(
@@ -40,26 +74,60 @@ export async function listCaptureConflicts(
     records.filter((record) => record.mutation.entityType === "capture"),
   ).conflicts;
 
-  return groups.flatMap((group) => {
+  const summaries: CaptureConflictSummary[] = [];
+
+  for (const group of groups) {
     const latest = chooseLatestConflictRecord(
       records.filter((record) => group.mutationIds.includes(record.mutationId)),
     );
-    const remote = getServerCapture(latest?.conflictData);
+    let remote = getServerCapture(latest?.conflictData);
+    let remoteLoadStatus: CaptureRemoteLoadStatus = remote ? "LOADED" : "MISSING";
+    let remoteLoadDiagnostic: CaptureRemoteLoadDiagnostic | undefined;
+    const requestedRemoteVersion = getRemoteChangeVersion(latest?.conflictData);
     const localContent = getMutationContent(latest);
 
-    if (!latest || !remote || localContent === null) {
-      return [];
+    if (!latest) {
+      continue;
     }
 
-    return [{
+    if (!remote && options.loadRemoteSnapshot) {
+      try {
+        const loaded = await options.loadRemoteSnapshot({
+          workspaceId,
+          entityId: group.entityId,
+          requestedRemoteVersion,
+        });
+        remote = toCaptureEntity(workspaceId, latest, loaded);
+        remoteLoadStatus = "LOADED";
+        await db.put(SYNC_MUTATIONS_STORE, {
+          ...latest,
+          conflictData: {
+            ...(latest.conflictData && typeof latest.conflictData === "object"
+              ? latest.conflictData
+              : {}),
+            serverEntity: remote,
+          },
+        });
+      } catch (error) {
+        const loadError = normalizeRemoteLoadError(error);
+        remoteLoadStatus = loadError.status;
+        remoteLoadDiagnostic = loadError.diagnostic;
+      }
+    }
+
+    summaries.push({
       entityId: group.entityId,
       localContent,
-      remoteContent: remote.content,
+      remoteContent: remote?.content ?? null,
       localVersion: group.localVersion,
-      remoteVersion: remote.version,
+      remoteVersion: remote?.version ?? requestedRemoteVersion,
+      remoteLoadStatus,
+      remoteLoadDiagnostic,
       occurrenceCount: group.occurrenceCount,
-    }];
-  });
+    });
+  }
+
+  return summaries;
 }
 
 export async function resolveCaptureConflict(input: {
@@ -175,6 +243,76 @@ function getMutationContent(record: SyncMutationOutboxRecord | null | undefined)
     : null;
 }
 
+function toCaptureEntity(
+  workspaceId: string,
+  record: SyncMutationOutboxRecord,
+  snapshot: CaptureRemoteSnapshot,
+): CaptureEntity {
+  const payload = record.mutation.payload;
+  const createdAt =
+    payload && "createdAt" in payload && typeof payload.createdAt === "string"
+      ? payload.createdAt
+      : snapshot.updatedAt;
+
+  return {
+    id: snapshot.entityId,
+    workspaceId,
+    content: snapshot.content,
+    createdAt,
+    updatedAt: snapshot.updatedAt,
+    archivedAt: snapshot.archivedAt,
+    version: snapshot.version,
+  };
+}
+
+function normalizeRemoteLoadError(error: unknown): {
+  status: CaptureRemoteLoadStatus;
+  diagnostic: CaptureRemoteLoadDiagnostic;
+} {
+  if (error && typeof error === "object") {
+    const status = "status" in error && typeof error.status === "number"
+      ? error.status
+      : undefined;
+    const code = "code" in error && typeof error.code === "string"
+      ? error.code
+      : undefined;
+    const message = "message" in error && typeof error.message === "string"
+      ? error.message
+      : undefined;
+
+    if (status === 404) {
+      return {
+        status: "ENTITY_NOT_FOUND",
+        diagnostic: { status, errorCode: code, message },
+      };
+    }
+
+    if (status === 401 || status === 403 || code === "AUTH_ERROR") {
+      return {
+        status: "AUTH_ERROR",
+        diagnostic: { status, errorCode: code, message },
+      };
+    }
+
+    if (code === "NETWORK_ERROR" || code === "TIMEOUT" || code === "ABORTED") {
+      return {
+        status: "NETWORK_ERROR",
+        diagnostic: { status, errorCode: code, message },
+      };
+    }
+
+    return {
+      status: "ERROR",
+      diagnostic: { status, errorCode: code, message },
+    };
+  }
+
+  return {
+    status: "ERROR",
+    diagnostic: { message: "Unknown remote capture load error." },
+  };
+}
+
 function getServerCapture(conflictData: unknown): CaptureEntity | null {
   if (!conflictData || typeof conflictData !== "object") {
     return null;
@@ -216,4 +354,26 @@ function getServerCapture(conflictData: unknown): CaptureEntity | null {
         : null,
     version: entity.version,
   };
+}
+
+function getRemoteChangeVersion(conflictData: unknown) {
+  if (!conflictData || typeof conflictData !== "object") {
+    return null;
+  }
+
+  if (!("remoteChange" in conflictData)) {
+    return null;
+  }
+
+  const remoteChange = conflictData.remoteChange;
+  if (
+    !remoteChange ||
+    typeof remoteChange !== "object" ||
+    !("version" in remoteChange) ||
+    typeof remoteChange.version !== "number"
+  ) {
+    return null;
+  }
+
+  return remoteChange.version;
 }

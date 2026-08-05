@@ -1,4 +1,5 @@
 import {
+  captureEntityResponseSchema,
   pullRequestSchema,
   pullResponseSchema,
   pushRequestSchema,
@@ -8,6 +9,7 @@ import {
   type PullResponse,
   type PushRequest,
   type PushResponse,
+  type CaptureEntityResponse,
   type SyncError,
 } from "@vinema/sync-contracts";
 import type { AccessTokenProvider } from "@/features/auth/access-token-provider";
@@ -56,6 +58,7 @@ export type SyncHealthResponse = {
 
 export type SyncClient = {
   health(input?: SyncClientRequestOptions): Promise<SyncHealthResponse>;
+  getCapture(input: SyncClientCaptureInput): Promise<CaptureEntityResponse>;
   push(input: SyncClientPushInput): Promise<PushResponse>;
   pull(input: SyncClientPullInput): Promise<PullResponse>;
 };
@@ -73,6 +76,10 @@ export type SyncClientRequestOptions = {
 };
 
 export type SyncClientPushInput = PushRequest & SyncClientRequestOptions;
+export type SyncClientCaptureInput = {
+  workspaceId: PullRequest["workspaceId"];
+  entityId: string;
+} & SyncClientRequestOptions;
 export type SyncClientPullInput = {
   workspaceId: PullRequest["workspaceId"];
   cursor?: PullRequest["cursor"];
@@ -103,6 +110,30 @@ export function createSyncClient({
       const body = await readJson(response);
 
       return parseHealthResponse(body);
+    },
+
+    async getCapture(input) {
+      const token = resolveAccessToken(accessToken, accessTokenProvider);
+      const { signal, workspaceId, entityId } = input;
+      const url = buildCaptureUrl(normalizedBaseUrl, { workspaceId, entityId });
+      const response = await request({
+        fetchFn,
+        timeoutMs,
+        url,
+        signal,
+        init: {
+          method: "GET",
+          headers: authorizationHeaders(token),
+        },
+      });
+      const body = await readJson(response);
+      const parsed = captureEntityResponseSchema.safeParse(body);
+
+      if (!parsed.success) {
+        throw invalidResponse(parsed.error.issues);
+      }
+
+      return parsed.data;
     },
 
     async push(input) {
@@ -392,6 +423,18 @@ function buildPullUrl(
     url.searchParams.set("limit", String(input.limit));
   }
 
+  return url;
+}
+
+function buildCaptureUrl(
+  baseUrl: string,
+  input: Pick<SyncClientCaptureInput, "workspaceId" | "entityId">,
+) {
+  const url = buildUrl(
+    baseUrl,
+    `/api/sync/entities/capture/${encodeURIComponent(input.entityId)}`,
+  );
+  url.searchParams.set("workspaceId", input.workspaceId);
   return url;
 }
 

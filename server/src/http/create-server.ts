@@ -5,6 +5,7 @@ import Fastify, {
   type FastifyRequest,
 } from "fastify";
 import {
+  captureEntityResponseSchema,
   currentSessionResponseSchema,
   currentDeviceResponseSchema,
   loginRequestSchema,
@@ -255,6 +256,65 @@ export function createVinemaApiServer({
 
     const response = await processPull(store, parsed.data);
     return reply.send(response);
+  });
+
+  app.get("/api/sync/entities/capture/:entityId", async (request, reply) => {
+    const params = request.params as { entityId?: unknown };
+    const query = request.query as { workspaceId?: unknown };
+    const parsed = pullRequestSchema.pick({ workspaceId: true }).safeParse(query);
+
+    if (!parsed.success || typeof params.entityId !== "string") {
+      return reply.status(400).send(
+        syncError(
+          "INVALID_REQUEST",
+          "La solicitud no es valida.",
+          parsed.success ? undefined : parsed.error.issues,
+        ),
+      );
+    }
+
+    const authContext = authorizeSyncRequest({
+      request,
+      workspaceId: parsed.data.workspaceId,
+      tokenConfig,
+      apiKey,
+    });
+    if (authContext instanceof AuthError) {
+      return sendAuthError(reply, authContext);
+    }
+
+    if (parsed.data.workspaceId !== authContext.workspaceId) {
+      return reply
+        .status(403)
+        .send(authErrorResponse("WORKSPACE_FORBIDDEN", "Workspace no permitido."));
+    }
+
+    if (!(await store.workspaceExists(parsed.data.workspaceId))) {
+      return reply
+        .status(404)
+        .send(syncError("WORKSPACE_NOT_FOUND", "El workspace no existe."));
+    }
+
+    const stored = await store.getEntity(
+      parsed.data.workspaceId,
+      "capture",
+      params.entityId,
+    );
+
+    if (!stored || stored.entityType !== "capture") {
+      return reply
+        .status(404)
+        .send(syncError("ENTITY_NOT_FOUND", "La captura no existe."));
+    }
+
+    return reply.send(captureEntityResponseSchema.parse({
+      entityType: "capture",
+      entityId: stored.entity.id,
+      version: stored.entity.version,
+      content: stored.entity.content,
+      archivedAt: stored.entity.archivedAt,
+      updatedAt: stored.entity.updatedAt,
+    }));
   });
 
   app.post("/api/knowledge/reset", async (request, reply) => {

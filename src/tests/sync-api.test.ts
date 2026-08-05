@@ -64,6 +64,12 @@ describe("Vinema sync API", () => {
         headers: { Authorization: "Bearer wrong" },
       }),
     ).resolves.toMatchObject({ statusCode: 401 });
+    await expect(
+      app.inject({
+        method: "GET",
+        url: `/api/sync/entities/capture/55555555-5555-4555-8555-555555555555?workspaceId=${workspaceId}`,
+      }),
+    ).resolves.toMatchObject({ statusCode: 401 });
   });
 
   it("allows the deployed web origin and auth headers through CORS", async () => {
@@ -172,6 +178,75 @@ describe("Vinema sync API", () => {
     });
     expect(store.changes).toHaveLength(1);
     expect(store.processedMutations.size).toBe(1);
+  });
+
+  it("returns the current capture entity for conflict resolution without exposing workspace data", async () => {
+    const store = new InMemorySyncStore([workspaceId]);
+    const app = createVinemaApiServer({ store, apiKey });
+    const mutation = captureMutation({
+      mutationId: "44444444-4444-4444-8444-444444444444",
+      entityId: "55555555-5555-4555-8555-555555555555",
+      baseVersion: null,
+      content: "Captura creada en web",
+    });
+    await push(app, [mutation]);
+    await push(app, [
+      captureMutation({
+        mutationId: "66666666-6666-4666-8666-666666666666",
+        entityId: mutation.entityId,
+        baseVersion: 1,
+        content: "Captura remota actual",
+      }),
+    ]);
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/sync/entities/capture/${mutation.entityId}?workspaceId=${workspaceId}`,
+      headers: authHeaders(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      entityType: "capture",
+      entityId: mutation.entityId,
+      version: 2,
+      content: "Captura remota actual",
+      archivedAt: null,
+      updatedAt: now,
+    });
+    expect(response.body).not.toContain(workspaceId);
+    expect(response.body).not.toContain(apiKey);
+  });
+
+  it("rejects wrong workspaces and missing captures from the conflict entity endpoint", async () => {
+    const store = new InMemorySyncStore([workspaceId, otherWorkspaceId]);
+    const app = createVinemaApiServer({ store, apiKey });
+    const mutation = captureMutation({
+      mutationId: "44444444-4444-4444-8444-444444444444",
+      entityId: "55555555-5555-4555-8555-555555555555",
+      baseVersion: null,
+    });
+    await push(app, [mutation]);
+
+    const forbidden = await app.inject({
+      method: "GET",
+      url: `/api/sync/entities/capture/${mutation.entityId}?workspaceId=${otherWorkspaceId}`,
+      headers: authHeaders(),
+    });
+    const missing = await app.inject({
+      method: "GET",
+      url: `/api/sync/entities/capture/77777777-7777-4777-8777-777777777777?workspaceId=${workspaceId}`,
+      headers: authHeaders(),
+    });
+
+    expect(forbidden.statusCode).toBe(404);
+    expect(forbidden.json()).toMatchObject({
+      error: { code: "ENTITY_NOT_FOUND" },
+    });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json()).toMatchObject({
+      error: { code: "ENTITY_NOT_FOUND" },
+    });
   });
 
   it("updates captures, increments version and reports stale baseVersion conflicts", async () => {

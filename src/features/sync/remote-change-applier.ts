@@ -461,6 +461,7 @@ async function markLocalMutationConflict(
     status: "CONFLICT",
     conflictData: {
       reason: "REMOTE_CHANGE_CONFLICT",
+      serverEntity: change.entity,
       remoteChange: {
         sequence: change.sequence,
         entityType: change.entityType,

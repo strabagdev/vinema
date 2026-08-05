@@ -236,7 +236,7 @@ export function createVisualFeedbackService(): VisualFeedbackService {
       }),
     syncing: () =>
       publish("syncing", {
-        accessibleText: "Sincronizando.",
+        accessibleText: "Actualizando memoria...",
         persistent: true,
         dedupeKey: "sync",
       }),

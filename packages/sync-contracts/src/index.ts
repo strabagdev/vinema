@@ -155,6 +155,15 @@ export const syncChangeSchema = z.object({
   entity: remoteEntitySchema,
 });
 
+export const captureEntityResponseSchema = z.object({
+  entityType: z.literal("capture"),
+  entityId: uuidSchema,
+  version: z.number().int().positive(),
+  content: z.string().max(MAX_CAPTURE_CONTENT_LENGTH),
+  archivedAt: nullableIsoDateSchema,
+  updatedAt: isoDateSchema,
+});
+
 export const workspaceKnowledgeResetChangeSchema = z.object({
   sequence: z.string(),
   entityType: z.literal("workspaceKnowledgeReset"),
@@ -378,6 +387,7 @@ export type PushRequest = z.infer<typeof pushRequestSchema>;
 export type PushResponse = z.infer<typeof pushResponseSchema>;
 export type PullRequest = z.infer<typeof pullRequestSchema>;
 export type PullResponse = z.infer<typeof pullResponseSchema>;
+export type CaptureEntityResponse = z.infer<typeof captureEntityResponseSchema>;
 export type KnowledgeResetRequest = z.infer<typeof knowledgeResetRequestSchema>;
 export type KnowledgeResetResponse = z.infer<typeof knowledgeResetResponseSchema>;
 export type SyncConflict = z.infer<typeof syncConflictSchema>;

@@ -199,6 +199,44 @@ describe("AuthController", () => {
     expect(controller.getState().status).toBe("UNAUTHENTICATED");
   });
 
+  it("shares an in-flight refresh when resume revalidation arrives after a suspended timer", async () => {
+    const storage = new InMemoryAuthSessionStorage();
+    let resolveRefresh: ((value: typeof session) => void) | undefined;
+    const client = createAuthClientMock({
+      refresh: vi.fn(
+        () =>
+          new Promise<typeof session>((resolve) => {
+            resolveRefresh = resolve;
+          }),
+      ),
+    });
+    const controller = createAuthController({
+      authClient: client,
+      authSessionStorage: storage,
+      deviceIdentityProvider: createDeviceIdentityProvider(),
+    });
+
+    await controller.login({ email: user.email, password: "password-123" });
+    const refresh = controller.refresh();
+    const revalidate = controller.revalidate();
+    await flush();
+
+    expect(client.refresh).toHaveBeenCalledTimes(1);
+    resolveRefresh?.({
+      ...session,
+      accessToken: "resumed-access-token",
+      refreshToken: "resumed-refresh-token",
+    });
+
+    await expect(refresh).resolves.toMatchObject({
+      accessToken: "resumed-access-token",
+    });
+    await expect(revalidate).resolves.toMatchObject({
+      accessToken: "resumed-access-token",
+    });
+    expect(controller.getAccessToken()).toBe("resumed-access-token");
+  });
+
   it("keeps local session offline on temporary refresh errors and clears it when server rejects", async () => {
     const storage = new InMemoryAuthSessionStorage();
     const networkController = createAuthController({

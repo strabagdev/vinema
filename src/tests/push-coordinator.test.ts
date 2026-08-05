@@ -462,7 +462,14 @@ function createSetup(input: {
       }
       return response ?? emptyResponse();
     });
-  const client = { push };
+  const client: SyncClient = {
+    health: async () => ({ status: "ok" }),
+    getCapture: async () => {
+      throw new Error("getCapture is not used by push coordinator tests.");
+    },
+    pull: async () => ({ changes: [], nextCursor: "0", hasMore: false }),
+    push,
+  };
   const coordinator = createPushCoordinator({
     workspaceId,
     deviceId,

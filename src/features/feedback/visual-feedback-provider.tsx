@@ -295,6 +295,10 @@ function bindSyncStateToFeedback(
     service.dismissKind("offline");
   }
 
+  if (previousState?.lastError && !syncState.lastError) {
+    service.dismissKind("error");
+  }
+
   if (syncState.connectivity === "OFFLINE") {
     service.dismissKind("syncing");
     service.offline();

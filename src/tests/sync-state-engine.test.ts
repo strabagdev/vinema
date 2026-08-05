@@ -153,6 +153,31 @@ describe("sync state engine", () => {
     expect(engine.getState().lastError).toBeNull();
   });
 
+  it("clears historical errors as soon as a new sync cycle starts", () => {
+    const engine = createSyncStateEngine();
+    engine.dispatch({
+      type: "SYNC_FAILED",
+      at: now,
+      source: "PULL",
+      message: "Error historico",
+    });
+
+    engine.dispatch({ type: "SYNC_STARTED", at: later });
+    expect(engine.getState()).toMatchObject({
+      phase: "PUSHING",
+      lastError: null,
+    });
+
+    engine.dispatch({
+      type: "SYNC_FAILED",
+      at: now,
+      source: "PULL",
+      message: "Error historico",
+    });
+    engine.dispatch({ type: "PUSH_STARTED", at: later });
+    expect(engine.getState().lastError).toBeNull();
+  });
+
   it("tracks outbox counts, normalizes negatives and tracks conflicts", () => {
     const engine = createSyncStateEngine();
     engine.dispatch({

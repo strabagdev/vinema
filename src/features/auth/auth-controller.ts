@@ -145,6 +145,14 @@ export function createAuthController({
 
   async function revalidate() {
     assertActive();
+    if (inFlightRefresh) {
+      try {
+        return await inFlightRefresh;
+      } catch {
+        return null;
+      }
+    }
+
     if (!refreshToken) {
       return null;
     }

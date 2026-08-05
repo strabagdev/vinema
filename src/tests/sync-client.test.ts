@@ -90,6 +90,37 @@ describe("sync client", () => {
     );
   });
 
+  it("loads a current capture with authorization and the expected endpoint", async () => {
+    const fetchFn = mockFetch(jsonResponse({
+      entityType: "capture",
+      entityId: captureId,
+      version: 31,
+      content: "Captura remota actual",
+      archivedAt: null,
+      updatedAt: now,
+    }));
+    const client = createSyncClient({ baseUrl, accessToken, fetchFn });
+
+    await expect(
+      client.getCapture({ workspaceId, entityId: captureId }),
+    ).resolves.toMatchObject({
+      entityType: "capture",
+      entityId: captureId,
+      version: 31,
+      content: "Captura remota actual",
+    });
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      new URL(
+        "https://api.example.test/api/sync/entities/capture/33333333-3333-4333-8333-333333333333?workspaceId=11111111-1111-4111-8111-111111111111",
+      ),
+      expect.objectContaining({
+        method: "GET",
+        headers: { Authorization: "Bearer test-token" },
+      }),
+    );
+  });
+
   it("omits cursor when pulling without one", async () => {
     const fetchFn = mockFetch(jsonResponse({
       changes: [],
@@ -258,7 +289,7 @@ describe("sync client", () => {
     });
   });
 
-  it("requires a token for push and pull without calling fetch", async () => {
+  it("requires a token for push, pull and capture loading without calling fetch", async () => {
     const fetchFn = mockFetch(jsonResponse({}));
     const client = createSyncClient({ baseUrl, fetchFn });
 
@@ -266,6 +297,9 @@ describe("sync client", () => {
       code: "AUTH_ERROR",
     });
     await expect(client.pull({ workspaceId })).rejects.toMatchObject({
+      code: "AUTH_ERROR",
+    });
+    await expect(client.getCapture({ workspaceId, entityId: captureId })).rejects.toMatchObject({
       code: "AUTH_ERROR",
     });
     expect(fetchFn).not.toHaveBeenCalled();

@@ -115,6 +115,32 @@ describe("MemorySyncStatusPanel", () => {
     expect(dot?.className).toContain("bg-emerald-500");
   });
 
+  it("updates the memory status indicator from sync state without opening the panel", async () => {
+    const screen = await renderPanel();
+
+    expect(screen.querySelector("[data-memory-sync-panel]")).toBeNull();
+    expect(
+      screen.querySelector("[data-memory-sync-status-dot]")?.className,
+    ).toContain("bg-emerald-500");
+
+    mocks.useAuth.mockReturnValue(authValue({
+      syncState: {
+        ...initialSyncState,
+        connectivity: "ONLINE",
+        conflictCount: 1,
+      },
+    }));
+    await act(async () => {
+      mountedRoot?.render(createElement(MemorySyncStatusPanel));
+      await flushPromises();
+    });
+
+    expect(screen.querySelector("[data-memory-sync-panel]")).toBeNull();
+    expect(
+      screen.querySelector("[data-memory-sync-status-dot]")?.className,
+    ).toContain("bg-red-500");
+  });
+
   it("keeps the panel open on mouse movement, trigger reclicks, and clicks inside", async () => {
     const screen = await renderPanel();
     const trigger = screen.querySelector("button[aria-label='Abrir Estado de la memoria']");
@@ -312,6 +338,214 @@ describe("MemorySyncStatusPanel", () => {
     expect(screen.querySelector("details")?.hasAttribute("open")).toBe(true);
   });
 
+  it("shows a useful local-only resolver state when the remote snapshot is missing", async () => {
+    mocks.loadMemorySyncSnapshot.mockResolvedValue(snapshotFixture({
+      status: "DIVERGED",
+      conflictMutations: 1,
+      conflictEntityCounts: {
+        captures: 1,
+        concepts: 0,
+        captureConcepts: 0,
+      },
+    }));
+    mocks.listCaptureConflicts.mockResolvedValue([
+      captureConflictFixture({
+        localContent: "Version local disponible",
+        remoteContent: null,
+        remoteVersion: 26,
+      }),
+    ]);
+    const screen = await renderPanel();
+
+    await click(screen.querySelector("button[aria-label='Abrir Estado de la memoria']"));
+    await click(getButton(screen, "Resolver"));
+
+    expect(screen.textContent).toContain("Versión de este dispositivo");
+    expect(screen.textContent).toContain("Version local disponible");
+    expect(screen.textContent).toContain("No fue posible cargar la versión sincronizada.");
+    expect(screen.textContent).toContain("Reintentar cargar");
+    expect(screen.textContent).toContain("Cancelar");
+    expect(screen.textContent).not.toContain("Conservar versión sincronizada");
+    expect(screen.textContent).not.toContain("Fusionar manualmente");
+  });
+
+  it("shows the missing synced capture message for a 404 remote load", async () => {
+    mocks.loadMemorySyncSnapshot.mockResolvedValue(snapshotFixture({
+      status: "DIVERGED",
+      conflictMutations: 1,
+      conflictEntityCounts: {
+        captures: 1,
+        concepts: 0,
+        captureConcepts: 0,
+      },
+    }));
+    mocks.listCaptureConflicts.mockResolvedValue([
+      captureConflictFixture({
+        localContent: "Version local disponible",
+        remoteContent: null,
+        remoteVersion: 26,
+        remoteLoadStatus: "ENTITY_NOT_FOUND",
+      }),
+    ]);
+    const screen = await renderPanel();
+
+    await click(screen.querySelector("button[aria-label='Abrir Estado de la memoria']"));
+    await click(getButton(screen, "Resolver"));
+
+    expect(screen.textContent).toContain("La captura sincronizada ya no existe.");
+  });
+
+  it("shows the authorization message for 401 or 403 remote loads", async () => {
+    mocks.loadMemorySyncSnapshot.mockResolvedValue(snapshotFixture({
+      status: "DIVERGED",
+      conflictMutations: 1,
+      conflictEntityCounts: {
+        captures: 1,
+        concepts: 0,
+        captureConcepts: 0,
+      },
+    }));
+    mocks.listCaptureConflicts.mockResolvedValue([
+      captureConflictFixture({
+        localContent: "Version local disponible",
+        remoteContent: null,
+        remoteVersion: 26,
+        remoteLoadStatus: "AUTH_ERROR",
+      }),
+    ]);
+    const screen = await renderPanel();
+
+    await click(screen.querySelector("button[aria-label='Abrir Estado de la memoria']"));
+    await click(getButton(screen, "Resolver"));
+
+    expect(screen.textContent).toContain("No fue posible autorizar la consulta.");
+  });
+
+  it("shows the offline message for network remote loads", async () => {
+    mocks.loadMemorySyncSnapshot.mockResolvedValue(snapshotFixture({
+      status: "DIVERGED",
+      conflictMutations: 1,
+      conflictEntityCounts: {
+        captures: 1,
+        concepts: 0,
+        captureConcepts: 0,
+      },
+    }));
+    mocks.listCaptureConflicts.mockResolvedValue([
+      captureConflictFixture({
+        localContent: "Version local disponible",
+        remoteContent: null,
+        remoteVersion: 26,
+        remoteLoadStatus: "NETWORK_ERROR",
+      }),
+    ]);
+    const screen = await renderPanel();
+
+    await click(screen.querySelector("button[aria-label='Abrir Estado de la memoria']"));
+    await click(getButton(screen, "Resolver"));
+
+    expect(screen.textContent).toContain(
+      "Sin conexión. Reintenta cuando vuelvas a estar en línea.",
+    );
+  });
+
+  it("retries conflict loading by consulting the conflict loader again", async () => {
+    mocks.loadMemorySyncSnapshot.mockResolvedValue(snapshotFixture({
+      status: "DIVERGED",
+      conflictMutations: 1,
+      conflictEntityCounts: {
+        captures: 1,
+        concepts: 0,
+        captureConcepts: 0,
+      },
+    }));
+    mocks.listCaptureConflicts
+      .mockResolvedValueOnce([
+        captureConflictFixture({
+          localContent: "Version local disponible",
+          remoteContent: null,
+          remoteVersion: 26,
+        }),
+      ])
+      .mockResolvedValueOnce([
+        captureConflictFixture({
+          localContent: "Version local disponible",
+          remoteContent: "Version remota actual",
+          remoteVersion: 31,
+          remoteLoadStatus: "LOADED",
+        }),
+      ]);
+    const screen = await renderPanel();
+
+    await click(screen.querySelector("button[aria-label='Abrir Estado de la memoria']"));
+    await click(getButton(screen, "Resolver"));
+    await click(getButton(screen, "Reintentar cargar"));
+
+    expect(mocks.listCaptureConflicts).toHaveBeenCalledTimes(2);
+    expect(screen.textContent).toContain("Version remota actual");
+    expect(screen.textContent).toContain("Conservar versión sincronizada");
+  });
+
+  it("shows a useful remote-only resolver state when the local snapshot is missing", async () => {
+    mocks.loadMemorySyncSnapshot.mockResolvedValue(snapshotFixture({
+      status: "DIVERGED",
+      conflictMutations: 1,
+      conflictEntityCounts: {
+        captures: 1,
+        concepts: 0,
+        captureConcepts: 0,
+      },
+    }));
+    mocks.listCaptureConflicts.mockResolvedValue([
+      captureConflictFixture({
+        localContent: null,
+        remoteContent: "Version remota disponible",
+        remoteVersion: 26,
+      }),
+    ]);
+    const screen = await renderPanel();
+
+    await click(screen.querySelector("button[aria-label='Abrir Estado de la memoria']"));
+    await click(getButton(screen, "Resolver"));
+
+    expect(screen.textContent).toContain("Versión sincronizada");
+    expect(screen.textContent).toContain("Version remota disponible");
+    expect(screen.textContent).toContain("No fue posible cargar la versión local.");
+    expect(screen.textContent).toContain("Reintentar cargar");
+    expect(screen.textContent).toContain("Cancelar");
+    expect(screen.textContent).not.toContain("Conservar esta versión");
+    expect(screen.textContent).not.toContain("Fusionar manualmente");
+  });
+
+  it("shows an empty resolver fallback when neither snapshot is available", async () => {
+    mocks.loadMemorySyncSnapshot.mockResolvedValue(snapshotFixture({
+      status: "DIVERGED",
+      conflictMutations: 1,
+      conflictEntityCounts: {
+        captures: 1,
+        concepts: 0,
+        captureConcepts: 0,
+      },
+    }));
+    mocks.listCaptureConflicts.mockResolvedValue([
+      captureConflictFixture({
+        localContent: null,
+        remoteContent: null,
+        remoteVersion: null,
+      }),
+    ]);
+    const screen = await renderPanel();
+
+    await click(screen.querySelector("button[aria-label='Abrir Estado de la memoria']"));
+    await click(getButton(screen, "Resolver"));
+
+    expect(screen.textContent).toContain(
+      "No fue posible cargar las versiones de esta captura.",
+    );
+    expect(screen.textContent).toContain("Reintentar");
+    expect(screen.textContent).toContain("Cancelar");
+  });
+
   it("keeps verification loading only while reconciliation is active", async () => {
     let resolveReconcile: ((value: unknown) => void) | null = null;
     mocks.reconcile.mockReturnValue(new Promise((resolve) => {
@@ -440,7 +674,28 @@ function reconciliationFixture() {
   };
 }
 
-function captureConflictFixture() {
+type TestCaptureConflict = {
+  workspaceId: string;
+  entityId: string;
+  localContent: string | null;
+  remoteContent: string | null;
+  localVersion: number | null;
+  remoteVersion: number | null;
+  remoteLoadStatus: "LOADED" | "MISSING" | "ENTITY_NOT_FOUND" | "AUTH_ERROR" | "NETWORK_ERROR" | "ERROR";
+  mutationIds: string[];
+  occurrenceCount: number;
+};
+
+function captureConflictFixture(
+  overrides: Partial<TestCaptureConflict> = {},
+): TestCaptureConflict {
+  return {
+    ...captureConflictFixtureBase(),
+    ...overrides,
+  };
+}
+
+function captureConflictFixtureBase(): TestCaptureConflict {
   return {
     workspaceId: "workspace-1",
     entityId: "capture-1",
@@ -448,6 +703,7 @@ function captureConflictFixture() {
     remoteContent: "Version sincronizada",
     localVersion: 2,
     remoteVersion: 1,
+    remoteLoadStatus: "LOADED",
     mutationIds: ["mutation-1"],
     occurrenceCount: 1,
   };

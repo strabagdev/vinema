@@ -410,6 +410,29 @@ function createControllableSyncClient(
       await remoteStore.health();
       return { status: "ok", database: "connected" };
     },
+    async getCapture(input) {
+      const stored = await remoteStore.getEntity(
+        input.workspaceId,
+        "capture",
+        input.entityId,
+      );
+      if (!stored || stored.entityType !== "capture") {
+        throw new SyncClientError({
+          code: "UNKNOWN_ERROR",
+          status: 404,
+          message: "La captura no existe.",
+        });
+      }
+
+      return {
+        entityType: "capture",
+        entityId: stored.entity.id,
+        version: stored.entity.version,
+        content: stored.entity.content,
+        archivedAt: stored.entity.archivedAt,
+        updatedAt: stored.entity.updatedAt,
+      };
+    },
     async push(input: PushRequest & { signal?: AbortSignal }): Promise<PushResponse> {
       await maybeBlockUntilAbort(input.signal, blockPush);
       blockPush = false;

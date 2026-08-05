@@ -352,6 +352,11 @@ describe("pull coordinator", () => {
       status: "CONFLICT",
       conflictData: {
         reason: "REMOTE_CHANGE_CONFLICT",
+        serverEntity: expect.objectContaining({
+          id: captureId,
+          content: "Remote v2",
+          version: 2,
+        }),
         remoteChange: { entityId: captureId, version: 2 },
       },
     });

@@ -166,6 +166,7 @@ export function reduceSyncState(
         phase: "PUSHING",
         lastRunStartedAt: event.at,
         nextRunAt: null,
+        lastError: null,
       };
     case "PUSH_STARTED":
       return {
@@ -173,6 +174,7 @@ export function reduceSyncState(
         phase: "PUSHING",
         lastRunStartedAt: state.lastRunStartedAt ?? event.at,
         nextRunAt: null,
+        lastError: null,
       };
     case "PUSH_FINISHED":
       if (event.status === "SUCCESS") {
