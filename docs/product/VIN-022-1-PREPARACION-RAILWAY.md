@@ -35,8 +35,12 @@ Fastify escucha `process.env.PORT ?? 3001` en `0.0.0.0`. Produccion usa
 JavaScript compilado con `node dist/index.js`.
 
 Se agrego CORS explicito mediante `VINEMA_ALLOWED_ORIGINS`. Requests sin
-`Origin`, como algunos entornos Tauri, se aceptan. `*` queda permitido solo como
-opcion temporal para desarrollo privado.
+`Origin` se aceptan, pero Tauri 2 en produccion si puede emitir origen desde el
+WebView. En Windows el origen normal del frontend estatico es
+`http://tauri.localhost`; en Linux/macOS puede ser `tauri://localhost`, y
+`https://tauri.localhost` queda reservado para builds que activen esquema HTTPS.
+Esos origenes desktop se permiten explicitamente junto a la web desplegada. `*`
+queda permitido solo como opcion temporal para desarrollo privado.
 
 ## Prisma
 

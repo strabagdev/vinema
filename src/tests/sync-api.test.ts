@@ -129,6 +129,45 @@ describe("Vinema sync API", () => {
     }
   });
 
+  it("allows Tauri production origins through auth CORS preflight", async () => {
+    const originalAllowedOrigins = process.env.VINEMA_ALLOWED_ORIGINS;
+    process.env.VINEMA_ALLOWED_ORIGINS = "https://vinema-web.up.railway.app";
+    const app = createVinemaApiServer({
+      store: new InMemorySyncStore([workspaceId]),
+      apiKey,
+    });
+
+    try {
+      for (const origin of [
+        "http://tauri.localhost",
+        "https://tauri.localhost",
+        "tauri://localhost",
+      ]) {
+        const response = await app.inject({
+          method: "OPTIONS",
+          url: "/auth/login",
+          headers: {
+            Origin: origin,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+          },
+        });
+
+        expect(response.statusCode).toBe(204);
+        expect(response.headers["access-control-allow-origin"]).toBe(origin);
+        expect(response.headers["access-control-allow-headers"]).toContain(
+          "Content-Type",
+        );
+      }
+    } finally {
+      if (originalAllowedOrigins === undefined) {
+        delete process.env.VINEMA_ALLOWED_ORIGINS;
+      } else {
+        process.env.VINEMA_ALLOWED_ORIGINS = originalAllowedOrigins;
+      }
+    }
+  });
+
   it("does not open CORS to unexpected browser origins", async () => {
     const app = createVinemaApiServer({
       store: new InMemorySyncStore([workspaceId]),

@@ -251,7 +251,9 @@ async function requestJson(
   } catch (error) {
     logger?.warn?.("auth request network failure", {
       url: safeUrlForLog(url),
+      method: init.method ?? "GET",
       error: error instanceof Error ? error.name : "Unknown",
+      message: error instanceof Error ? safeErrorMessage(error.message) : undefined,
     });
     throw new AuthClientError(
       "NETWORK_ERROR",
@@ -332,4 +334,8 @@ function buildUrl(baseUrl: string, path: string) {
 
 function safeUrlForLog(url: URL) {
   return `${url.origin}${url.pathname}`;
+}
+
+function safeErrorMessage(message: string) {
+  return message.slice(0, 160);
 }

@@ -75,7 +75,7 @@ DATABASE_URL=${{Postgres.DATABASE_URL}}
 VINEMA_SYNC_API_KEY=<secreto>
 VINEMA_SEED_EMAIL=<email>
 VINEMA_SEED_WORKSPACE_NAME=Personal
-VINEMA_ALLOWED_ORIGINS=https://vinema-web.up.railway.app
+VINEMA_ALLOWED_ORIGINS=https://vinema-web.up.railway.app,http://tauri.localhost,tauri://localhost
 PORT=<inyectado por Railway>
 ```
 
@@ -106,6 +106,22 @@ Tauri usa `http://localhost:3000` en desarrollo segun `src-tauri/tauri.conf.json
 En produccion, Tauri empaqueta `../out`, por lo que `next.config.ts` debe
 mantener `output: "export"` y `npm run build` debe regenerar `out/` antes de
 `npm run tauri:build`.
+
+El ejecutable desktop debe compilarse con
+`NEXT_PUBLIC_API_URL=https://vinema-api.up.railway.app` presente durante el
+build; esa URL queda embebida en los assets de `out/_next/static`. Para
+verificar un build Windows, buscar `vinema-api.up.railway.app` en el directorio
+`out/` antes de ejecutar `npm run tauri:build`.
+
+En Tauri 2, el frontend estatico de produccion usa origen
+`http://tauri.localhost` en Windows por defecto. En Linux/macOS puede aparecer
+como `tauri://localhost`, y `https://tauri.localhost` queda reservado para builds
+que activen esquema HTTPS. La API debe permitir esos origenes en CORS; Vinema los
+mantiene como origenes desktop explicitos y no usa `origin: true`.
+
+`src-tauri/tauri.conf.json` mantiene `csp: null`, por lo que no hay una
+directiva `connect-src` bloqueando `https://vinema-api.up.railway.app`. Si se
+agrega CSP en el futuro, debe incluir esa API en `connect-src`.
 
 WSL/Linux sirve para validar la integracion Linux y que Tauri consume el
 frontend estatico. El ejecutable e instalador Windows deben generarse desde

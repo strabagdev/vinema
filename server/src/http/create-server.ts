@@ -38,6 +38,11 @@ const DEFAULT_ALLOWED_ORIGINS = [
   "http://127.0.0.1:3000",
   "http://127.0.0.1:3456",
 ];
+const TAURI_ALLOWED_ORIGINS = [
+  "http://tauri.localhost",
+  "https://tauri.localhost",
+  "tauri://localhost",
+];
 
 export function createVinemaApiServer({
   store,
@@ -429,7 +434,14 @@ function parseAllowedOrigins(value: string | undefined) {
     .map((origin) => origin.trim())
     .filter(Boolean);
 
-  return origins.length > 0 ? origins : DEFAULT_ALLOWED_ORIGINS;
+  return uniqueOrigins([
+    ...(origins.length > 0 ? origins : DEFAULT_ALLOWED_ORIGINS),
+    ...TAURI_ALLOWED_ORIGINS,
+  ]);
+}
+
+function uniqueOrigins(origins: string[]) {
+  return Array.from(new Set(origins));
 }
 
 async function checkDatabaseHealth(

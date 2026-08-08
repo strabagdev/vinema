@@ -230,6 +230,30 @@ describe("auth client and state", () => {
     });
   });
 
+  it("AuthClient logs safe network diagnostics without request bodies or tokens", async () => {
+    const warn = vi.fn();
+    const client = createAuthClient({
+      baseUrl: "https://api.example.test?token=secret",
+      fetchFn: vi.fn(async () => {
+        throw new TypeError("Failed to fetch because CORS blocked the request");
+      }) as unknown as typeof fetch,
+      logger: { warn },
+    });
+
+    await expect(
+      client.login({ email: user.email, password: "password-123", device: deviceMetadata }),
+    ).rejects.toMatchObject({ code: "NETWORK_ERROR" });
+
+    expect(warn).toHaveBeenCalledWith("auth request network failure", {
+      url: "https://api.example.test/auth/login",
+      method: "POST",
+      error: "TypeError",
+      message: "Failed to fetch because CORS blocked the request",
+    });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("password-123");
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("token=secret");
+  });
+
   it("AuthClient preserves HTTP auth errors and does not classify them as network errors", async () => {
     const duplicate = createAuthClient({
       baseUrl: "https://api.example.test",
