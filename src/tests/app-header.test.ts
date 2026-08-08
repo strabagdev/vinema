@@ -2,6 +2,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppHeader } from "@/components/app-shell/app-header";
+import { KnowledgeManagementCenterMenuItem } from "@/components/app-shell/knowledge-management-center";
 
 const knowledgeMocks = vi.hoisted(() => ({
   downloadKnowledgeBackup: vi.fn(),
@@ -74,7 +75,9 @@ vi.mock("@/features/auth/public-api-url", () => ({
 
 vi.mock("@/features/feedback/visual-feedback-provider", () => ({
   VisualFeedbackWordmark: () =>
-    createElement("span", { "data-vinema-brand": "monogram" }),
+    createElement("span", {
+      "data-vinema-brand": "monogram",
+    }),
   useVisualFeedback: () => ({
     saving: vi.fn(),
     success: vi.fn(),
@@ -171,20 +174,43 @@ describe("AppHeader", () => {
     document.body.replaceChildren();
   });
 
-  it("separates knowledge navigation from administration in the session menu", async () => {
+  it("uses the shared canvas surface without visual separation", async () => {
+    const screen = await renderHeader();
+    const header = screen.querySelector("header");
+
+    expect(header?.className).toContain("bg-[var(--vinema-surface-background)]");
+    expect(header?.className).not.toContain("bg-zinc-50");
+    expect(header?.className).not.toContain("backdrop");
+    expect(header?.className).not.toContain("border-b");
+    expect(header?.className).not.toContain("shadow");
+    expect(header?.className).toContain("z-30");
+  });
+
+  it("does not expose removed calm attenuation attributes", async () => {
+    const screen = await renderHeader();
+    const memoryStatusTrigger = screen.querySelector(
+      "button[aria-label='Abrir Estado de la memoria']",
+    );
+    const menuTrigger = screen.querySelector("button[aria-label='Abrir menu']");
+
+    expect(screen.querySelector("[data-calm-logo]")).toBeNull();
+    expect(screen.querySelector("[data-calm-secondary]")).toBeNull();
+    expect(memoryStatusTrigger).toBeNull();
+    expect(menuTrigger).toBeTruthy();
+  });
+
+  it("keeps the top menu scoped to account actions", async () => {
     const screen = await renderHeader();
     const header = screen.querySelector("header");
     const wordmarkTrigger = screen.querySelector(
       "button[aria-label='Abrir Estado de la memoria']",
     );
 
-    expect(header?.className).toContain("grid-cols-[1fr_auto_1fr]");
-    expect(wordmarkTrigger?.getAttribute("data-memory-sync-trigger")).toBe("");
+    expect(header?.className).toContain("vinema-canvas-header-grid");
+    expect(wordmarkTrigger).toBeNull();
     expect(screen.querySelector("a[aria-label='Vinema']")?.getAttribute("href")).toBe("/");
     expect(screen.querySelector("[data-vinema-brand='monogram']")).toBeTruthy();
     expect(header?.textContent).not.toContain("VN");
-    expect(wordmarkTrigger?.textContent).not.toBe("V");
-    expect(wordmarkTrigger?.textContent).not.toContain("VA");
     expect(screen.querySelector("nav[aria-label='Navegacion principal']")).toBeNull();
     expect(screen.querySelector("a[aria-label='Explorar']")).toBeNull();
     expect(screen.textContent).not.toContain("Explorar");
@@ -192,16 +218,16 @@ describe("AppHeader", () => {
 
     await click(screen.querySelector("button[aria-label='Abrir menu']"));
 
-    expect(document.body.textContent).toContain("Conocimiento");
-    expect(document.body.querySelector("a[href='/']")).toBeTruthy();
-    expect(document.body.querySelector("a[href='/memory']")).toBeTruthy();
-    expect(document.body.querySelector("a[href='/concepts']")).toBeTruthy();
-    expect(document.body.textContent).toContain("Capturar");
-    expect(document.body.textContent).toContain("Memoria");
-    expect(document.body.textContent).toContain("Conceptos");
-    expect(document.body.textContent).toContain("Administrar");
+    expect(document.body.textContent).toContain("User");
+    expect(document.body.textContent).not.toContain("Conocimiento");
+    expect(document.body.textContent).not.toContain("Capturar");
+    expect(document.body.textContent).not.toContain("Memoria");
+    expect(document.body.textContent).not.toContain("Conceptos");
+    expect(document.body.textContent).not.toContain("Administrar");
     expect(document.body.textContent).not.toContain("Mi conocimiento");
     expect(document.body.textContent).toContain("Cerrar sesion");
+    expect(document.body.querySelector("a[href='/memory']")).toBeNull();
+    expect(document.body.querySelector("a[href='/concepts']")).toBeNull();
     expect(document.body.querySelector("a[href='/notes']")).toBeNull();
     expect(document.body.querySelector("a[href='/notes/archive']")).toBeNull();
     expect(document.body.querySelector("a[aria-label='Explorar']")).toBeNull();
@@ -209,38 +235,23 @@ describe("AppHeader", () => {
     expect(document.body.textContent).not.toContain("Importar memoria");
     expect(document.body.textContent).not.toContain("Vaciar memoria");
     expect(document.body.textContent).not.toContain("Sincronizacion futura");
-
-    await click(getByText("Administrar"));
-
-    expect(getDialog()).toBeTruthy();
-    expect(document.body.textContent).toContain("Conocimiento");
-    expect(document.body.textContent).toContain("Exportar memoria");
-    expect(document.body.textContent).toContain("Importar memoria");
-    expect(document.body.textContent).toContain("Vaciar memoria");
-    expect(document.body.textContent).not.toContain("22 capturas · 6 conceptos · 15 relaciones");
-    expect(document.body.querySelector("a[aria-label='Explorar']")).toBeNull();
-    expect(document.body.textContent).not.toContain("workspace");
   });
 
-  it("navigates directly to Capturar, Memoria and Conceptos from the knowledge menu", async () => {
+  it("does not duplicate knowledge navigation in the account menu", async () => {
     const screen = await renderHeader();
 
     await click(screen.querySelector("button[aria-label='Abrir menu']"));
 
-    expect(getLinkByText("/", "Capturar")).toBeTruthy();
-    expect(document.body.querySelector("a[href='/memory']")?.textContent).toContain(
-      "Memoria",
-    );
-    expect(document.body.querySelector("a[href='/concepts']")?.textContent).toContain(
-      "Conceptos",
-    );
+    expect(getLinkByText("/", "Capturar")).toBeUndefined();
+    expect(document.body.querySelector("a[href='/memory']")).toBeNull();
+    expect(document.body.querySelector("a[href='/concepts']")).toBeNull();
+    expect(queryByText("Administrar")).toBeUndefined();
   });
 
   it("renders the center as a responsive portal with internal scrolling", async () => {
-    const screen = await renderHeader();
+    const screen = await renderKnowledgeManagementCenterTrigger();
 
-    await click(screen.querySelector("button[aria-label='Abrir menu']"));
-    await click(getByText("Administrar"));
+    await click(screen.querySelector("button[aria-label='Administrar']"));
 
     const dialog = getDialog();
     expect(document.body.contains(dialog)).toBe(true);
@@ -251,10 +262,9 @@ describe("AppHeader", () => {
   });
 
   it("keeps export in the center and reuses the existing download flow", async () => {
-    const screen = await renderHeader();
+    const screen = await renderKnowledgeManagementCenterTrigger();
 
-    await click(screen.querySelector("button[aria-label='Abrir menu']"));
-    await click(getByText("Administrar"));
+    await click(screen.querySelector("button[aria-label='Administrar']"));
     await click(getByText("Exportar memoria"));
 
     expect(knowledgeMocks.exportKnowledgeBackup).toHaveBeenCalledTimes(1);
@@ -265,10 +275,9 @@ describe("AppHeader", () => {
   });
 
   it("opens restore confirmation inside the same center without stacking dialogs", async () => {
-    const screen = await renderHeader();
+    const screen = await renderKnowledgeManagementCenterTrigger();
 
-    await click(screen.querySelector("button[aria-label='Abrir menu']"));
-    await click(getByText("Administrar"));
+    await click(screen.querySelector("button[aria-label='Administrar']"));
     await click(getByText("Importar memoria"));
     await changeFileInput(new File(["{}"], "vinema-knowledge.json", {
       type: "application/json",
@@ -281,10 +290,9 @@ describe("AppHeader", () => {
   });
 
   it("opens reset confirmation responsively and requires VACIAR", async () => {
-    const screen = await renderHeader();
+    const screen = await renderKnowledgeManagementCenterTrigger();
 
-    await click(screen.querySelector("button[aria-label='Abrir menu']"));
-    await click(getByText("Administrar"));
+    await click(screen.querySelector("button[aria-label='Administrar']"));
     await click(getByText("Vaciar memoria"));
 
     expect(document.body.textContent).toContain(
@@ -301,21 +309,16 @@ describe("AppHeader", () => {
   });
 
   it("cleans transient reset state when the center is closed", async () => {
-    const screen = await renderHeader();
+    const screen = await renderKnowledgeManagementCenterTrigger();
 
-    await click(screen.querySelector("button[aria-label='Abrir menu']"));
-    await click(getByText("Administrar"));
+    await click(screen.querySelector("button[aria-label='Administrar']"));
     await click(getByText("Vaciar memoria"));
     await inputText(getConfirmationInput(), "VACIAR");
     await click(document.body.querySelector("button[aria-label='Cerrar Conocimiento']"));
 
     expect(document.body.querySelector("[role='dialog']")).toBeNull();
 
-    await click(screen.querySelector("button[aria-label='Abrir menu']"));
-    if (!document.body.textContent?.includes("Conocimiento")) {
-      await click(screen.querySelector("button[aria-label='Abrir menu']"));
-    }
-    await click(getByText("Administrar"));
+    await click(screen.querySelector("button[aria-label='Administrar']"));
     await click(getByText("Vaciar memoria"));
 
     expect(getConfirmationInput().value).toBe("");
@@ -332,6 +335,24 @@ async function renderHeader() {
       createElement(AppHeader, {
         pathname: "/",
         onFocusWriting: vi.fn(),
+      }),
+    );
+    await flushPromises();
+  });
+
+  return container;
+}
+
+async function renderKnowledgeManagementCenterTrigger() {
+  const container = document.createElement("div");
+  document.body.replaceChildren(container);
+
+  await act(async () => {
+    mountedRoot = createRoot(container);
+    mountedRoot.render(
+      createElement(KnowledgeManagementCenterMenuItem, {
+        label: "Administrar",
+        trigger: "rail",
       }),
     );
     await flushPromises();
@@ -407,14 +428,18 @@ function getDialog() {
 }
 
 function getByText(text: string) {
-  const element = Array.from(document.body.querySelectorAll("*")).find(
-    (candidate) => candidate.textContent === text,
-  );
+  const element = queryByText(text);
   if (!(element instanceof HTMLElement)) {
     throw new Error(`Could not find text: ${text}`);
   }
 
   return element;
+}
+
+function queryByText(text: string) {
+  return Array.from(document.body.querySelectorAll("*")).find(
+    (candidate) => candidate.textContent === text,
+  ) as HTMLElement | undefined;
 }
 
 function getLinkByText(href: string, text: string) {

@@ -178,6 +178,10 @@ Integración de producto:
 
 - la superficie principal agrupa sugerencias visibles como `Relacionado ahora`,
   `Podría faltar` y `Retomar`;
+- las sugerencias literales no necesitan explicación. Toda sugerencia no literal
+  debe mostrar de forma breve el origen disponible en el motor de Vinema;
+- hoy esa explicación viaja en los campos existentes `matchedAlias` y
+  `knowledgeSuggestionReasons`;
 - seleccionar una sugerencia reutiliza el flujo existente de aceptación de
   conceptos;
 - las sugerencias emergentes existentes continúan siendo locales a la captura y

@@ -625,7 +625,9 @@ function dedupeConceptSuggestions(suggestions: ConceptSuggestion[]) {
     const current = byLabel.get(key);
 
     if (!current || shouldReplaceSuggestion(current, suggestion)) {
-      byLabel.set(key, suggestion);
+      byLabel.set(key, current ? mergeConceptSuggestionMetadata(suggestion, current) : suggestion);
+    } else {
+      byLabel.set(key, mergeConceptSuggestionMetadata(current, suggestion));
     }
   }
 
@@ -636,6 +638,35 @@ function dedupeConceptSuggestions(suggestions: ConceptSuggestion[]) {
 
     return second.score - first.score;
   });
+}
+
+function mergeConceptSuggestionMetadata(
+  base: ConceptSuggestion,
+  source: ConceptSuggestion,
+): ConceptSuggestion {
+  if (base.kind !== "existing" || source.kind !== "existing") {
+    return base;
+  }
+
+  return {
+    ...base,
+    evidenceCaptureIds: mergeUniqueStrings(
+      base.evidenceCaptureIds,
+      source.evidenceCaptureIds,
+    ),
+    matchedTerms: mergeUniqueStrings(base.matchedTerms, source.matchedTerms),
+    matchedAlias: base.matchedAlias ?? source.matchedAlias,
+    knowledgeSuggestionKind:
+      base.knowledgeSuggestionKind ?? source.knowledgeSuggestionKind,
+    knowledgeSuggestionReasons: mergeUniqueStrings(
+      base.knowledgeSuggestionReasons ?? [],
+      source.knowledgeSuggestionReasons ?? [],
+    ),
+  };
+}
+
+function mergeUniqueStrings(first: string[], second: string[]) {
+  return Array.from(new Set([...first, ...second]));
 }
 
 function getPresentConceptIds({

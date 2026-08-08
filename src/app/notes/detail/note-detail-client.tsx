@@ -18,6 +18,10 @@ import {
   type CaptureSelectionResolution,
 } from "@/features/capture/capture-selection";
 import { CaptureSelectionAction } from "@/features/capture/capture-selection-action";
+import {
+  getCanvasEditorStyle,
+  useCanvasPreferences,
+} from "@/features/canvas/canvas-preferences";
 import { normalizeConceptDisplayLabel } from "@/features/concepts/concept-display-label";
 import { createContext } from "@/features/context/create-context";
 import { listContextsByType } from "@/features/context/list-contexts";
@@ -44,7 +48,9 @@ import {
   contextRepository,
   createLocalSyncRepositorySet,
   nodeContextRelationRepository,
+  storageAdapter,
 } from "@/infrastructure/repositories";
+import type { StorageAdapter } from "@/infrastructure/storage/storage-adapter";
 import { formatShortDate } from "@/components/app-shell/note-list-item";
 
 const AUTOSAVE_DEBOUNCE_MS = 700;
@@ -59,10 +65,22 @@ type Draft = {
   content: string;
 };
 
-export function NoteDetailClient() {
+export function NoteDetailClient({
+  embeddedNodeId,
+  embeddedReturnTo = null,
+  onBack,
+  onOpenConcept,
+}: {
+  embeddedNodeId?: string;
+  embeddedReturnTo?: string | null;
+  onBack?: () => void;
+  onOpenConcept?: (conceptId: string) => void;
+} = {}) {
   const searchParams = useSearchParams();
-  const nodeId = getNodeIdFromSearchParams(searchParams);
-  const returnTo = getReturnToFromSearchParams(searchParams);
+  const nodeId = embeddedNodeId ?? getNodeIdFromSearchParams(searchParams);
+  const returnTo = embeddedNodeId
+    ? embeddedReturnTo
+    : getReturnToFromSearchParams(searchParams);
 
   if (!nodeId) {
     return (
@@ -73,15 +91,29 @@ export function NoteDetailClient() {
     );
   }
 
-  return <NoteDetailLoader nodeId={nodeId} returnTo={returnTo} />;
+  return (
+    <NoteDetailLoader
+      nodeId={nodeId}
+      returnTo={returnTo}
+      embedded={Boolean(embeddedNodeId)}
+      onBack={onBack}
+      onOpenConcept={onOpenConcept}
+    />
+  );
 }
 
 function NoteDetailLoader({
   nodeId,
   returnTo,
+  embedded = false,
+  onBack,
+  onOpenConcept,
 }: {
   nodeId: string;
   returnTo: string | null;
+  embedded?: boolean;
+  onBack?: () => void;
+  onOpenConcept?: (conceptId: string) => void;
 }) {
   const router = useRouter();
   const context = useVinemaContext();
@@ -232,6 +264,11 @@ function NoteDetailLoader({
       }}
       onArchive={async () => {
         await archiveNode(localRepositories.nodeRepository, node.id, context.device);
+        if (embedded) {
+          onBack?.();
+          return;
+        }
+
         router.push(returnTo ?? "/memory");
       }}
       onRestore={async () => {
@@ -245,15 +282,19 @@ function NoteDetailLoader({
       }}
       onSaveContextRelations={async (selectedContextIds) => {
         const persistedContextIds = new Set(
-          relatedContexts.map((relatedContext) => relatedContext.id),
+          getPersistedSelectedContextIds({
+            nodeId: node.id,
+            relatedContexts,
+            relatedRelations,
+          }),
         );
         const nextContextIds = new Set(selectedContextIds);
         const toAttach = selectedContextIds.filter(
           (contextId) => !persistedContextIds.has(contextId),
         );
-        const toDetach = relatedContexts
-          .filter((relatedContext) => !nextContextIds.has(relatedContext.id))
-          .map((relatedContext) => relatedContext.id);
+        const toDetach = Array.from(persistedContextIds).filter(
+          (contextId) => !nextContextIds.has(contextId),
+        );
 
         await Promise.all([
           ...toAttach.map((contextId) =>
@@ -314,8 +355,14 @@ function NoteDetailLoader({
         };
       }}
       onBack={() => {
+        if (embedded) {
+          onBack?.();
+          return;
+        }
+
         router.push(returnTo ?? "/memory");
       }}
+      onOpenConcept={onOpenConcept}
     />
   );
 }
@@ -333,6 +380,8 @@ export function NoteDetailView({
   onArchive,
   onRestore,
   onBack,
+  onOpenConcept,
+  canvasPreferencesStorage = storageAdapter,
 }: {
   node: Node;
   relatedContexts?: Context[];
@@ -351,8 +400,11 @@ export function NoteDetailView({
   onArchive: () => Promise<void>;
   onRestore?: () => Promise<Node>;
   onBack?: () => void;
+  onOpenConcept?: (conceptId: string) => void;
+  canvasPreferencesStorage?: StorageAdapter;
 }) {
   const feedback = useVisualFeedback();
+  const canvasPreferences = useCanvasPreferences(canvasPreferencesStorage);
   const [persistedNode, setPersistedNode] = useState(node);
   const [mode, setMode] = useState<"read" | "edit">("read");
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -368,7 +420,11 @@ export function NoteDetailView({
     useState<CaptureSelectionResolution | null>(null);
   const [selectionProcessing, setSelectionProcessing] = useState(false);
   const [selectedContextIds, setSelectedContextIds] = useState<string[]>(
-    relatedContexts.map((context) => context.id),
+    getPersistedSelectedContextIds({
+      nodeId: node.id,
+      relatedContexts,
+      relatedRelations,
+    }),
   );
   const selectedContextIdsRef = useRef(selectedContextIds);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -401,8 +457,14 @@ export function NoteDetailView({
       return;
     }
 
-    setSelectedContexts(relatedContexts.map((context) => context.id));
-  }, [relatedContexts]);
+    setSelectedContexts(
+      getPersistedSelectedContextIds({
+        nodeId: persistedNodeRef.current.id,
+        relatedContexts,
+        relatedRelations,
+      }),
+    );
+  }, [relatedContexts, relatedRelations]);
 
   useEffect(() => {
     if (saveStatus === "saving") {
@@ -564,7 +626,13 @@ export function NoteDetailView({
     }
 
     setDraftState(toDraft(persistedNodeRef.current));
-    setSelectedContexts(relatedContexts.map((context) => context.id));
+    setSelectedContexts(
+      getPersistedSelectedContextIds({
+        nodeId: persistedNodeRef.current.id,
+        relatedContexts,
+        relatedRelations,
+      }),
+    );
     setSaveStatus("idle");
     setFormError(null);
     setModeState("edit");
@@ -575,7 +643,13 @@ export function NoteDetailView({
     saveAgainAfterCurrentRef.current = false;
     clearCapturedSelection();
     setDraftState(null);
-    setSelectedContexts(relatedContexts.map((context) => context.id));
+    setSelectedContexts(
+      getPersistedSelectedContextIds({
+        nodeId: persistedNodeRef.current.id,
+        relatedContexts,
+        relatedRelations,
+      }),
+    );
     setSaveStatus("idle");
     setFormError(null);
     setModeState("read");
@@ -835,7 +909,8 @@ export function NoteDetailView({
               <CaptureEmergentIdentityLabel
                 identity={emergentIdentity}
                 className="mt-2"
-                getConceptHref={getConceptExplorationPath}
+                getConceptHref={onOpenConcept ? undefined : getConceptExplorationPath}
+                onConceptClick={onOpenConcept}
               />
             ) : null}
             <CaptureDates node={persistedNode} />
@@ -916,7 +991,9 @@ export function NoteDetailView({
         </div>
       ) : null}
       {contextError ? (
-        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+        <p
+          className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700"
+        >
           {contextError}
         </p>
       ) : null}
@@ -927,7 +1004,10 @@ export function NoteDetailView({
               {persistedNode.content.trim() || "Sin contenido"}
             </div>
           </article>
-          <ReadConceptSection contexts={relatedContexts} />
+          <ReadConceptSection
+            contexts={relatedContexts}
+            onOpenConcept={onOpenConcept}
+          />
         </div>
       ) : (
         <div className="space-y-4 rounded-lg border border-zinc-200 bg-white p-4">
@@ -946,13 +1026,15 @@ export function NoteDetailView({
               }}
               placeholder="Contenido"
               aria-label="Contenido"
-              className="min-h-[420px] resize-y text-base leading-7"
+              className="min-h-[420px] resize-y"
+              style={getCanvasEditorStyle(canvasPreferences.preferences)}
             />
             <CaptureSelectionAction
               selection={capturedSelection}
               resolution={selectionResolution}
               processing={selectionProcessing}
               touch={!canUseSelectionPopover()}
+              anchorElement={textareaRef.current}
               onCapture={() => void captureSelectedText()}
               onConfirmNew={() => {
                 if (capturedSelection) {
@@ -983,7 +1065,13 @@ export function NoteDetailView({
   );
 }
 
-function ReadConceptSection({ contexts }: { contexts: Context[] }) {
+function ReadConceptSection({
+  contexts,
+  onOpenConcept,
+}: {
+  contexts: Context[];
+  onOpenConcept?: (conceptId: string) => void;
+}) {
   const groupedContexts = groupContextsByType(contexts);
   const visibleTypes = getContextTypes().filter(
     (type) => groupedContexts[type].length > 0,
@@ -997,19 +1085,51 @@ function ReadConceptSection({ contexts }: { contexts: Context[] }) {
     <section className="flex flex-wrap items-center gap-2">
       <h2 className="mr-1 text-sm font-medium text-zinc-700">Conceptos</h2>
       {visibleTypes.map((type) =>
-        groupedContexts[type].map((context) => (
-          <Link
-            key={context.id}
-            href={getConceptExplorationPath(context.id)}
-            className="rounded-full border border-zinc-200 px-3 py-1 text-sm text-zinc-700 hover:border-zinc-400 hover:text-zinc-950"
-          >
-            {context.name}
-            {context.archivedAt ? " · Archivado" : ""}
-          </Link>
-        )),
+        groupedContexts[type].map((context) =>
+          onOpenConcept ? (
+            <button
+              key={context.id}
+              type="button"
+              className="rounded-full border border-zinc-200 px-3 py-1 text-sm text-zinc-700 hover:border-zinc-400 hover:text-zinc-950"
+              onClick={() => onOpenConcept(context.id)}
+            >
+              {context.name}
+              {context.archivedAt ? " · Archivado" : ""}
+            </button>
+          ) : (
+            <Link
+              key={context.id}
+              href={getConceptExplorationPath(context.id)}
+              className="rounded-full border border-zinc-200 px-3 py-1 text-sm text-zinc-700 hover:border-zinc-400 hover:text-zinc-950"
+            >
+              {context.name}
+              {context.archivedAt ? " · Archivado" : ""}
+            </Link>
+          ),
+        ),
       )}
     </section>
   );
+}
+
+function getPersistedSelectedContextIds({
+  nodeId,
+  relatedContexts,
+  relatedRelations,
+}: {
+  nodeId: string;
+  relatedContexts: Context[];
+  relatedRelations: NodeContextRelation[];
+}) {
+  const relationContextIds = relatedRelations
+    .filter((relation) => relation.nodeId === nodeId)
+    .map((relation) => relation.contextId);
+
+  if (relationContextIds.length > 0) {
+    return Array.from(new Set(relationContextIds));
+  }
+
+  return relatedContexts.map((context) => context.id);
 }
 
 function EditContextSection({

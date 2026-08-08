@@ -47,12 +47,32 @@ const CONCEPT_EXPLORATION_INVALIDATION_TYPES = [
   "captureConcept",
 ] as const;
 
-export function ConceptExplorationClient() {
+export function ConceptExplorationClient({
+  embeddedContextId,
+  embeddedReturnTo = null,
+  workspaceMode = false,
+  onBack,
+  onOpenConcept,
+  onOpenMemory,
+  onOpenMemoryIndex,
+  onOpenMap,
+}: {
+  embeddedContextId?: string;
+  embeddedReturnTo?: string | null;
+  workspaceMode?: boolean;
+  onBack?: () => void;
+  onOpenConcept?: (conceptId: string) => void;
+  onOpenMemory?: (nodeId: string) => void;
+  onOpenMemoryIndex?: () => void;
+  onOpenMap?: (focusId: string) => void;
+} = {}) {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const contextId = getConceptIdFromSearchParams(searchParams);
+  const contextId = embeddedContextId ?? getConceptIdFromSearchParams(searchParams);
   const expansionSource = getConceptExpansionSourceFromSearchParams(searchParams);
-  const returnTo = getReturnToFromSearchParams(searchParams);
+  const returnTo = embeddedContextId
+    ? embeddedReturnTo
+    : getReturnToFromSearchParams(searchParams);
   const vinemaContext = useVinemaContext();
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [error, setError] = useState<string | null>(null);
@@ -216,13 +236,20 @@ export function ConceptExplorationClient() {
       <ConceptExplorationMessage
         heading="Falta el concepto"
         message="La URL no incluye un identificador de concepto valido."
+        workspaceMode={workspaceMode}
       />
     );
   }
 
   if (loadState === "loading" || vinemaContext.status === "loading") {
     return (
-      <section className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+      <section
+        className={
+          workspaceMode
+            ? "flex h-full min-h-0 items-center px-4 py-6"
+            : "mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8"
+        }
+      >
         <p className="text-sm text-zinc-500">Cargando conocimiento...</p>
       </section>
     );
@@ -233,6 +260,7 @@ export function ConceptExplorationClient() {
       <ConceptExplorationMessage
         heading="No se pudo cargar Vinema"
         message={vinemaContext.error}
+        workspaceMode={workspaceMode}
       />
     );
   }
@@ -242,6 +270,7 @@ export function ConceptExplorationClient() {
       <ConceptExplorationMessage
         heading="Concepto no encontrado"
         message={error ?? "No existe o no pertenece a este workspace."}
+        workspaceMode={workspaceMode}
       />
     );
   }
@@ -258,10 +287,20 @@ export function ConceptExplorationClient() {
 
       return nextHistory.slice(-24);
     });
+    if (embeddedContextId) {
+      onOpenConcept?.(nextContextId);
+      return;
+    }
+
     router.push(getConceptExplorationPath(nextContextId, { returnTo }));
   }
 
   function goBack() {
+    if (embeddedContextId) {
+      onBack?.();
+      return;
+    }
+
     const previousContextId = conceptHistory.at(-1);
 
     if (!previousContextId) {
@@ -275,16 +314,25 @@ export function ConceptExplorationClient() {
 
   return (
     <section
-      className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-10 px-4 py-6 opacity-100 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none sm:px-6 lg:px-8"
+      className={
+        workspaceMode
+          ? "vinema-scrollbar flex h-full min-h-0 w-full flex-col gap-6 overflow-y-auto px-4 py-4"
+          : "mx-auto flex w-full max-w-4xl flex-1 flex-col gap-10 px-4 py-6 opacity-100 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none sm:px-6 lg:px-8"
+      }
       data-knowledge-base-surface=""
+      data-concept-profile-workspace={workspaceMode ? "" : undefined}
       data-expansion-source={expansionSource ?? undefined}
     >
+      {workspaceMode ? (
+        <h2 className="text-sm font-medium text-zinc-500">Perfil</h2>
+      ) : null}
       <ConceptIdentityHeader
         center={center}
         profile={profile}
         relatedConceptCount={neighborhood?.relatedConcepts.length ?? 0}
         memoryCount={memories.length}
         onBack={goBack}
+        workspaceMode={workspaceMode}
       />
 
       <ConceptLivingProfile
@@ -298,6 +346,9 @@ export function ConceptExplorationClient() {
         nodesById={new Map(workspaceNodes.map((node) => [node.id, node]))}
         returnTo={getConceptExplorationPath(center.id, { returnTo })}
         onNavigateToConcept={navigateToConcept}
+        onOpenMemory={onOpenMemory}
+        onOpenMemoryIndex={onOpenMemoryIndex}
+        onOpenMap={onOpenMap}
       />
     </section>
   );
@@ -309,19 +360,26 @@ function ConceptIdentityHeader({
   relatedConceptCount,
   memoryCount,
   onBack,
+  workspaceMode = false,
 }: {
   center: Context;
   profile: ConceptProfile | null;
   relatedConceptCount: number;
   memoryCount: number;
   onBack: () => void;
+  workspaceMode?: boolean;
 }) {
   return (
-    <header className="space-y-6" aria-label="Identidad del concepto">
+    <header
+      className={workspaceMode ? "space-y-4" : "space-y-6"}
+      aria-label="Identidad del concepto"
+    >
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="sm" onClick={onBack}>
-          ← Volver
-        </Button>
+        {workspaceMode ? null : (
+          <Button variant="ghost" size="sm" onClick={onBack}>
+            ← Volver
+          </Button>
+        )}
         <span
           className={
             center.archivedAt
@@ -335,7 +393,13 @@ function ConceptIdentityHeader({
 
       <div className="space-y-4">
         <div>
-          <h1 className="text-3xl font-medium tracking-normal text-zinc-950 sm:text-4xl">
+          <h1
+            className={
+              workspaceMode
+                ? "text-2xl font-medium tracking-normal text-zinc-950"
+                : "text-3xl font-medium tracking-normal text-zinc-950 sm:text-4xl"
+            }
+          >
             {center.name}
           </h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-500" aria-live="polite">
@@ -396,6 +460,9 @@ function ConceptLivingProfile({
   nodesById,
   returnTo,
   onNavigateToConcept,
+  onOpenMemory,
+  onOpenMemoryIndex,
+  onOpenMap,
 }: {
   profile: ConceptProfile | null;
   memories: Node[];
@@ -407,6 +474,9 @@ function ConceptLivingProfile({
   nodesById: Map<string, Node>;
   returnTo: string;
   onNavigateToConcept: (contextId: string) => void;
+  onOpenMemory?: (nodeId: string) => void;
+  onOpenMemoryIndex?: () => void;
+  onOpenMap?: (focusId: string) => void;
 }) {
   if (!profile) {
     return (
@@ -414,6 +484,8 @@ function ConceptLivingProfile({
         memories={memories}
         identities={identities}
         returnTo={returnTo}
+        onOpenMemory={onOpenMemory}
+        onNavigateToConcept={onNavigateToConcept}
       />
     );
   }
@@ -435,6 +507,8 @@ function ConceptLivingProfile({
           connections={mainConnections}
           returnTo={returnTo}
           onNavigateToConcept={onNavigateToConcept}
+          onOpenMemory={onOpenMemory}
+          onOpenMap={onOpenMap}
         />
       ) : null}
 
@@ -443,6 +517,7 @@ function ConceptLivingProfile({
           signals={evolutionOnlySignals}
           nodesById={nodesById}
           returnTo={returnTo}
+          onOpenMemory={onOpenMemory}
         />
       ) : null}
 
@@ -451,6 +526,7 @@ function ConceptLivingProfile({
           statements={semanticStatements.slice(0, 5)}
           returnTo={returnTo}
           onNavigateToConcept={onNavigateToConcept}
+          onOpenMemory={onOpenMemory}
         />
       ) : null}
 
@@ -467,6 +543,7 @@ function ConceptLivingProfile({
         <RepresentativeMemories
           memories={profile.representativeMemories.slice(0, 4)}
           returnTo={returnTo}
+          onOpenMemory={onOpenMemory}
         />
       ) : null}
 
@@ -476,6 +553,9 @@ function ConceptLivingProfile({
           memories={recentMemories}
           identities={identities}
           returnTo={returnTo}
+          onOpenMemory={onOpenMemory}
+          onOpenMemoryIndex={onOpenMemoryIndex}
+          onNavigateToConcept={onNavigateToConcept}
         />
       ) : null}
     </div>
@@ -570,11 +650,15 @@ function MainConnections({
   connections,
   returnTo,
   onNavigateToConcept,
+  onOpenMemory,
+  onOpenMap,
 }: {
   conceptId: string;
   connections: ConceptProfile["relatedConcepts"];
   returnTo: string;
   onNavigateToConcept: (contextId: string) => void;
+  onOpenMemory?: (nodeId: string) => void;
+  onOpenMap?: (focusId: string) => void;
 }) {
   return (
     <section className="space-y-4" aria-label="Conexiones principales">
@@ -587,12 +671,22 @@ function MainConnections({
             Conceptos que aparecen junto a este en recuerdos aceptados.
           </p>
         </div>
-        <Link
-          href={getConceptKnowledgeExplorerPath({ focus: conceptId })}
-          className="text-sm font-medium text-zinc-700 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
-        >
-          Explorar conexiones
-        </Link>
+        {onOpenMap ? (
+          <button
+            type="button"
+            className="text-sm font-medium text-zinc-700 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
+            onClick={() => onOpenMap(conceptId)}
+          >
+            Explorar conexiones
+          </button>
+        ) : (
+          <Link
+            href={getConceptKnowledgeExplorerPath({ focus: conceptId })}
+            className="text-sm font-medium text-zinc-700 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
+          >
+            Explorar conexiones
+          </Link>
+        )}
       </div>
       <div className="divide-y divide-zinc-100">
         {connections.map((connection) => (
@@ -621,12 +715,22 @@ function MainConnections({
               </span>
             </button>
             {connection.evidence[0] ? (
-              <Link
-                href={getNodeDetailPath(connection.evidence[0].nodeId, { returnTo })}
-                className="mt-2 block border-l-2 border-zinc-200 pl-3 text-sm leading-6 text-zinc-500 outline-none hover:text-zinc-800 focus-visible:ring-2 focus-visible:ring-zinc-400"
-              >
-                {connection.evidence[0].excerpt}
-              </Link>
+              onOpenMemory ? (
+                <button
+                  type="button"
+                  className="mt-2 block w-full border-l-2 border-zinc-200 pl-3 text-left text-sm leading-6 text-zinc-500 outline-none hover:text-zinc-800 focus-visible:ring-2 focus-visible:ring-zinc-400"
+                  onClick={() => onOpenMemory(connection.evidence[0].nodeId)}
+                >
+                  {connection.evidence[0].excerpt}
+                </button>
+              ) : (
+                <Link
+                  href={getNodeDetailPath(connection.evidence[0].nodeId, { returnTo })}
+                  className="mt-2 block border-l-2 border-zinc-200 pl-3 text-sm leading-6 text-zinc-500 outline-none hover:text-zinc-800 focus-visible:ring-2 focus-visible:ring-zinc-400"
+                >
+                  {connection.evidence[0].excerpt}
+                </Link>
+              )
             ) : null}
           </article>
         ))}
@@ -655,10 +759,12 @@ function ObservedEvolution({
   signals,
   nodesById,
   returnTo,
+  onOpenMemory,
 }: {
   signals: MemoryEvolutionSignal[];
   nodesById: Map<string, Node>;
   returnTo: string;
+  onOpenMemory?: (nodeId: string) => void;
 }) {
   return (
     <div className="space-y-2">
@@ -681,16 +787,30 @@ function ObservedEvolution({
                 }
 
                 return (
-                  <Link
-                    key={`${signal.id}-${nodeId}`}
-                    href={getNodeDetailPath(nodeId, { returnTo })}
-                    className="block border-l-2 border-zinc-200 pl-2 outline-none hover:text-zinc-800 focus-visible:ring-2 focus-visible:ring-zinc-400"
-                  >
-                    <span className="block">{getCapturePreview(node.content, { maxLength: 120 })}</span>
-                    <time className="block text-[11px] text-zinc-400">
-                      {formatShortDate(getContentTimestamp(node))}
-                    </time>
-                  </Link>
+                  onOpenMemory ? (
+                    <button
+                      key={`${signal.id}-${nodeId}`}
+                      type="button"
+                      className="block w-full border-l-2 border-zinc-200 pl-2 text-left outline-none hover:text-zinc-800 focus-visible:ring-2 focus-visible:ring-zinc-400"
+                      onClick={() => onOpenMemory(nodeId)}
+                    >
+                      <span className="block">{getCapturePreview(node.content, { maxLength: 120 })}</span>
+                      <time className="block text-[11px] text-zinc-400">
+                        {formatShortDate(getContentTimestamp(node))}
+                      </time>
+                    </button>
+                  ) : (
+                    <Link
+                      key={`${signal.id}-${nodeId}`}
+                      href={getNodeDetailPath(nodeId, { returnTo })}
+                      className="block border-l-2 border-zinc-200 pl-2 outline-none hover:text-zinc-800 focus-visible:ring-2 focus-visible:ring-zinc-400"
+                    >
+                      <span className="block">{getCapturePreview(node.content, { maxLength: 120 })}</span>
+                      <time className="block text-[11px] text-zinc-400">
+                        {formatShortDate(getContentTimestamp(node))}
+                      </time>
+                    </Link>
+                  )
                 );
               })}
             </div>
@@ -724,10 +844,12 @@ function ObservedMeanings({
   statements,
   returnTo,
   onNavigateToConcept,
+  onOpenMemory,
 }: {
   statements: SemanticStatement[];
   returnTo: string;
   onNavigateToConcept: (contextId: string) => void;
+  onOpenMemory?: (nodeId: string) => void;
 }) {
   return (
     <section className="space-y-3" aria-label="Significados observados">
@@ -761,16 +883,30 @@ function ObservedMeanings({
             </div>
             <div className="mt-2 space-y-1">
               {statement.evidence.slice(0, 3).map((evidence) => (
-                <Link
-                  key={`${statement.id}-${evidence.nodeId}`}
-                  href={getNodeDetailPath(evidence.nodeId, { returnTo })}
-                  className="block rounded-md border-l-2 border-zinc-200 pl-2 text-xs leading-5 text-zinc-500 outline-none hover:text-zinc-800 focus-visible:ring-2 focus-visible:ring-zinc-400"
-                >
-                  <span className="block">{evidence.excerpt}</span>
-                  <time className="block text-[11px] text-zinc-400">
-                    {formatShortDate(evidence.createdAt.toISOString())}
-                  </time>
-                </Link>
+                onOpenMemory ? (
+                  <button
+                    key={`${statement.id}-${evidence.nodeId}`}
+                    type="button"
+                    className="block w-full rounded-md border-l-2 border-zinc-200 pl-2 text-left text-xs leading-5 text-zinc-500 outline-none hover:text-zinc-800 focus-visible:ring-2 focus-visible:ring-zinc-400"
+                    onClick={() => onOpenMemory(evidence.nodeId)}
+                  >
+                    <span className="block">{evidence.excerpt}</span>
+                    <time className="block text-[11px] text-zinc-400">
+                      {formatShortDate(evidence.createdAt.toISOString())}
+                    </time>
+                  </button>
+                ) : (
+                  <Link
+                    key={`${statement.id}-${evidence.nodeId}`}
+                    href={getNodeDetailPath(evidence.nodeId, { returnTo })}
+                    className="block rounded-md border-l-2 border-zinc-200 pl-2 text-xs leading-5 text-zinc-500 outline-none hover:text-zinc-800 focus-visible:ring-2 focus-visible:ring-zinc-400"
+                  >
+                    <span className="block">{evidence.excerpt}</span>
+                    <time className="block text-[11px] text-zinc-400">
+                      {formatShortDate(evidence.createdAt.toISOString())}
+                    </time>
+                  </Link>
+                )
               ))}
             </div>
           </article>
@@ -873,9 +1009,11 @@ function getStrengthClass(strength: RelationshipStrength) {
 function RepresentativeMemories({
   memories,
   returnTo,
+  onOpenMemory,
 }: {
   memories: ConceptProfile["representativeMemories"];
   returnTo: string;
+  onOpenMemory?: (nodeId: string) => void;
 }) {
   return (
     <section className="space-y-3" aria-label="Recuerdos representativos">
@@ -884,11 +1022,31 @@ function RepresentativeMemories({
       </h2>
       <div className="space-y-4">
         {memories.map((memory) => (
-          <Link
-            key={memory.nodeId}
-            href={getNodeDetailPath(memory.nodeId, { returnTo })}
-            className="block border-l-2 border-zinc-100 pl-3 outline-none hover:border-zinc-300 focus-visible:ring-2 focus-visible:ring-zinc-400"
-          >
+          onOpenMemory ? (
+            <button
+              key={memory.nodeId}
+              type="button"
+              className="block w-full border-l-2 border-zinc-100 pl-3 text-left outline-none hover:border-zinc-300 focus-visible:ring-2 focus-visible:ring-zinc-400"
+              onClick={() => onOpenMemory(memory.nodeId)}
+            >
+              {memory.identityLabels.length > 0 ? (
+                <span className="mb-1 block truncate text-xs text-zinc-500">
+                  {memory.identityLabels.join(" · ")}
+                </span>
+              ) : null}
+              <span className="block text-base leading-7 text-zinc-800">
+                {memory.excerpt}
+              </span>
+              <time className="mt-1 block text-xs text-zinc-500">
+                {formatShortDate(memory.createdAt.toISOString())}
+              </time>
+            </button>
+          ) : (
+            <Link
+              key={memory.nodeId}
+              href={getNodeDetailPath(memory.nodeId, { returnTo })}
+              className="block border-l-2 border-zinc-100 pl-3 outline-none hover:border-zinc-300 focus-visible:ring-2 focus-visible:ring-zinc-400"
+            >
             {memory.identityLabels.length > 0 ? (
               <span className="mb-1 block truncate text-xs text-zinc-500">
                 {memory.identityLabels.join(" · ")}
@@ -900,7 +1058,8 @@ function RepresentativeMemories({
             <time className="mt-1 block text-xs text-zinc-500">
               {formatShortDate(memory.createdAt.toISOString())}
             </time>
-          </Link>
+            </Link>
+          )
         ))}
       </div>
     </section>
@@ -912,11 +1071,17 @@ function RecentMemories({
   memories,
   identities,
   returnTo,
+  onOpenMemory,
+  onOpenMemoryIndex,
+  onNavigateToConcept,
 }: {
   conceptId: string;
   memories: Node[];
   identities: Map<string, CaptureEmergentIdentity>;
   returnTo: string;
+  onOpenMemory?: (nodeId: string) => void;
+  onOpenMemoryIndex?: () => void;
+  onNavigateToConcept?: (contextId: string) => void;
 }) {
   return (
     <section className="space-y-4" aria-label="Recuerdos recientes">
@@ -927,14 +1092,30 @@ function RecentMemories({
             Últimas capturas donde este concepto aparece.
           </p>
         </div>
-        <Link
-          href={`/memory?concept=${encodeURIComponent(conceptId)}`}
-          className="text-sm font-medium text-zinc-700 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
-        >
-          Memoria
-        </Link>
+        {onOpenMemoryIndex ? (
+          <button
+            type="button"
+            className="text-sm font-medium text-zinc-700 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
+            onClick={onOpenMemoryIndex}
+          >
+            Memoria
+          </button>
+        ) : (
+          <Link
+            href={`/memory?concept=${encodeURIComponent(conceptId)}`}
+            className="text-sm font-medium text-zinc-700 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
+          >
+            Memoria
+          </Link>
+        )}
       </div>
-      <MemoryList memories={memories} identities={identities} returnTo={returnTo} />
+      <MemoryList
+        memories={memories}
+        identities={identities}
+        returnTo={returnTo}
+        onOpenMemory={onOpenMemory}
+        onNavigateToConcept={onNavigateToConcept}
+      />
     </section>
   );
 }
@@ -943,10 +1124,14 @@ function MemoryList({
   memories,
   identities,
   returnTo,
+  onOpenMemory,
+  onNavigateToConcept,
 }: {
   memories: Node[];
   identities: Map<string, CaptureEmergentIdentity>;
   returnTo: string;
+  onOpenMemory?: (nodeId: string) => void;
+  onNavigateToConcept?: (contextId: string) => void;
 }) {
   if (memories.length === 0) {
     return (
@@ -967,6 +1152,8 @@ function MemoryList({
           node={node}
           identity={identities.get(node.id) ?? null}
           returnTo={returnTo}
+          onOpenMemory={onOpenMemory}
+          onNavigateToConcept={onNavigateToConcept}
         />
       ))}
     </div>
@@ -977,10 +1164,14 @@ function MemoryItem({
   node,
   identity,
   returnTo,
+  onOpenMemory,
+  onNavigateToConcept,
 }: {
   node: Node;
   identity: CaptureEmergentIdentity | null;
   returnTo: string;
+  onOpenMemory?: (nodeId: string) => void;
+  onNavigateToConcept?: (contextId: string) => void;
 }) {
   const preview = getCapturePreview(node.content, { maxLength: 220 });
 
@@ -989,15 +1180,30 @@ function MemoryItem({
       {identity?.displayText ? (
         <CaptureEmergentIdentityLabel
           identity={identity}
-          getConceptHref={(contextId) => getConceptExplorationPath(contextId, { returnTo })}
+          getConceptHref={
+            onNavigateToConcept
+              ? undefined
+              : (contextId) => getConceptExplorationPath(contextId, { returnTo })
+          }
+          onConceptClick={onNavigateToConcept}
         />
       ) : null}
-      <Link
-        href={getNodeDetailPath(node.id, { returnTo })}
-        className="block rounded-sm text-base leading-7 text-zinc-800 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
-      >
-        {preview}
-      </Link>
+      {onOpenMemory ? (
+        <button
+          type="button"
+          className="block w-full rounded-sm text-left text-base leading-7 text-zinc-800 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
+          onClick={() => onOpenMemory(node.id)}
+        >
+          {preview}
+        </button>
+      ) : (
+        <Link
+          href={getNodeDetailPath(node.id, { returnTo })}
+          className="block rounded-sm text-base leading-7 text-zinc-800 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
+        >
+          {preview}
+        </Link>
+      )}
       <time className="block text-xs text-zinc-500">
         {formatShortDate(getContentTimestamp(node))}
       </time>
@@ -1012,17 +1218,27 @@ function formatProfileDate(date: Date | null) {
 function ConceptExplorationMessage({
   heading,
   message,
+  workspaceMode = false,
 }: {
   heading: string;
   message: string;
+  workspaceMode?: boolean;
 }) {
   return (
-    <section className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 px-4 py-6 sm:px-6 lg:px-8">
+    <section
+      className={
+        workspaceMode
+          ? "flex h-full min-h-0 w-full flex-col justify-center gap-4 px-4 py-6"
+          : "mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 px-4 py-6 sm:px-6 lg:px-8"
+      }
+    >
       <h1 className="text-2xl font-medium text-zinc-950">{heading}</h1>
       <p className="text-sm text-zinc-600">{message}</p>
-      <Button asChild className="w-fit">
-        <Link href="/">Volver a Inicio</Link>
-      </Button>
+      {workspaceMode ? null : (
+        <Button asChild className="w-fit">
+          <Link href="/">Volver a Inicio</Link>
+        </Button>
+      )}
     </section>
   );
 }

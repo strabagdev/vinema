@@ -110,6 +110,11 @@ Seleccionar un concepto:
 - no cierra el borrador;
 - no crea datos inmediatamente;
 - conserva el comportamiento existente de persistir relaciones solo al capturar.
+- un concepto sugerido que ya fue capturado permanece visible y seleccionado en
+  la lista mientras siga asociado a la captura actual.
+- si una fila ya visible recibe despues `matchedAlias` o
+  `knowledgeSuggestionReasons` para el mismo concepto, el panel puede enriquecer
+  esa fila sin reconstruir la vista ni perder seleccion.
 
 No se muestran scores, confidence ni payloads internos.
 

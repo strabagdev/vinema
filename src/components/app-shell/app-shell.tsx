@@ -10,6 +10,7 @@ import { AuthProvider } from "@/features/auth/auth-provider";
 import { requestFullCaptureFocus } from "@/features/capture/capture-events";
 import {
   VisualFeedbackProvider,
+  VisualFeedbackPulse,
   VisualFeedbackViewport,
 } from "@/features/feedback/visual-feedback-provider";
 import { cn } from "@/lib/cn";
@@ -94,8 +95,9 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
       <AuthGuard>
         <div
           className={cn(
-            "bg-zinc-50 text-zinc-950",
+            "bg-[var(--vinema-surface-background)] text-zinc-950",
             canvasRoute ? "h-dvh overflow-hidden" : "min-h-screen",
+            canvasRoute ? "vinema-canvas-layout" : "",
           )}
           data-app-shell={canvasRoute ? "canvas" : "document"}
         >
@@ -118,6 +120,20 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
             >
               {children}
             </main>
+            {canvasRoute ? (
+              <footer
+                className="vinema-canvas-footer-grid grid min-h-[2.75rem] w-full shrink-0 bg-[var(--vinema-surface-background)] pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1"
+                data-app-footer=""
+                data-canvas-footer=""
+              >
+                <div
+                  className="col-[2] flex min-h-7 w-full max-w-[var(--vinema-canvas-max-width)] items-center justify-center px-[var(--vinema-canvas-padding-x)]"
+                  data-canvas-footer-pulse-slot=""
+                >
+                  <VisualFeedbackPulse />
+                </div>
+              </footer>
+            ) : null}
           </div>
         </div>
       </AuthGuard>

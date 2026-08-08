@@ -1,4 +1,5 @@
 import { act, createElement } from "react";
+import type { ComponentType, ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import MemoryArchivePage from "@/app/memory/archive/page";
@@ -530,6 +531,37 @@ describe("Knowledge Base", () => {
     expect(screen.querySelector("a[href='/memory/archive']")).toBeNull();
     expect(screen.textContent).not.toContain("Archivo");
   });
+
+  it("opens memory details through callbacks when embedded", async () => {
+    const openMemory = vi.fn();
+    setMockNodes([
+      createNode({
+        id: "embedded-memory",
+        content: "Captura para abrir dentro del workspace",
+      }),
+    ]);
+
+    const screen = await renderKnowledgeBase(
+      createElement(KnowledgeBaseClient as ComponentType<{
+        embedded?: boolean;
+        onOpenMemory?: (nodeId: string) => void;
+      }>, { embedded: true, onOpenMemory: openMemory }),
+    );
+    const memoryButton = Array.from(screen.querySelectorAll("button")).find(
+      (button) => button.getAttribute("aria-label")?.includes("Abrir captura"),
+    );
+
+    expect(memoryButton).toBeTruthy();
+    expect(screen.querySelector("a[href^='/memory/detail']")).toBeNull();
+
+    await click(memoryButton as HTMLButtonElement);
+
+    expect(openMemory).toHaveBeenCalledWith("embedded-memory");
+    expect(mocks.replace).not.toHaveBeenCalledWith(
+      expect.stringContaining("/memory/detail"),
+      expect.anything(),
+    );
+  });
 });
 
 describe("highlight text", () => {
@@ -544,12 +576,14 @@ describe("highlight text", () => {
   });
 });
 
-async function renderKnowledgeBase() {
+async function renderKnowledgeBase(
+  element: ReactElement = createElement(KnowledgeBaseClient),
+) {
   const container = document.createElement("div");
   document.body.replaceChildren(container);
 
   await act(async () => {
-    createRoot(container).render(createElement(KnowledgeBaseClient));
+    createRoot(container).render(element);
     await flushPromises();
   });
 

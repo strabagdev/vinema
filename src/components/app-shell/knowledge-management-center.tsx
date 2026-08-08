@@ -59,8 +59,10 @@ const emptySummary: KnowledgeResetCounts = {
 
 export function KnowledgeManagementCenterMenuItem({
   label = "Conocimiento",
+  trigger = "menu",
 }: {
   label?: string;
+  trigger?: "menu" | "rail";
 }) {
   const auth = useAuth();
   const vinemaContext = useVinemaContext();
@@ -278,17 +280,35 @@ export function KnowledgeManagementCenterMenuItem({
   return (
     <Dialog.Root open={open} onOpenChange={handleOpenChange}>
       <Dialog.Trigger asChild>
-        <DropdownMenuItem
-          disabled={!ready}
-          onSelect={(event) => {
-            event.preventDefault();
-            void refreshSummary();
-            setOpen(true);
-          }}
-        >
-          <Brain className="mr-2 h-4 w-4" aria-hidden="true" />
-          {label}
-        </DropdownMenuItem>
+        {trigger === "rail" ? (
+          <button
+            type="button"
+            aria-label={label}
+            title={label}
+            data-canvas-panel-trigger=""
+            data-knowledge-management-trigger=""
+            disabled={!ready}
+            className="inline-flex h-11 w-11 min-w-11 items-center justify-center rounded-full text-zinc-400 outline-none transition-[background-color,color,transform] duration-[180ms] hover:scale-105 hover:bg-zinc-100 hover:text-zinc-700 focus-visible:ring-2 focus-visible:ring-zinc-400 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:active:scale-100"
+            onClick={() => {
+              void refreshSummary();
+              setOpen(true);
+            }}
+          >
+            <Brain className="h-5 w-5" aria-hidden="true" />
+          </button>
+        ) : (
+          <DropdownMenuItem
+            disabled={!ready}
+            onSelect={(event) => {
+              event.preventDefault();
+              void refreshSummary();
+              setOpen(true);
+            }}
+          >
+            <Brain className="mr-2 h-4 w-4" aria-hidden="true" />
+            {label}
+          </DropdownMenuItem>
+        )}
       </Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-[70] bg-zinc-950/25 backdrop-blur-sm" />

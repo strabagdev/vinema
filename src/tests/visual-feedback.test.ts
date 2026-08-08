@@ -172,35 +172,31 @@ describe("VisualFeedbackViewport", () => {
     expect(screen.querySelector("[data-feedback-kind='idle']")).toBeTruthy();
   });
 
-  it("announces saving and makes the wordmark react", async () => {
+  it("announces saving while keeping the wordmark as identity", async () => {
     const service = createVisualFeedbackService();
     const screen = await renderFeedback(service, "saving");
 
     expect(
-      screen.querySelector(
-        "[data-feedback-wordmark][data-feedback-kind='saving']",
-      ),
+      screen.querySelector("[data-feedback-wordmark][data-feedback-kind='identity']"),
     ).toBeTruthy();
     expect(
       screen.querySelector("[data-feedback-wordmark] .animate-pulse"),
-    ).toBeTruthy();
+    ).toBeNull();
     expect(
       screen.querySelector("[data-visual-feedback-viewport]")?.textContent,
     ).toBe("Guardando.");
   });
 
-  it("announces local capture through the wordmark", async () => {
+  it("announces local capture without turning the wordmark into status", async () => {
     const service = createVisualFeedbackService();
     const screen = await renderFeedback(service, "capture");
 
     expect(
-      screen.querySelector(
-        "[data-feedback-wordmark][data-feedback-kind='capture']",
-      ),
+      screen.querySelector("[data-feedback-wordmark][data-feedback-kind='identity']"),
     ).toBeTruthy();
     expect(
       screen.querySelector("[data-feedback-wordmark] .text-emerald-600"),
-    ).toBeTruthy();
+    ).toBeNull();
     expect(
       screen.querySelector("[data-visual-feedback-viewport]")?.textContent,
     ).toBe("Captura creada.");
@@ -279,7 +275,10 @@ describe("VisualFeedbackViewport", () => {
     expect(screen.querySelector("[data-visual-feedback-viewport]")?.textContent).toBe(
       "Actualizando memoria...",
     );
-    expect(screen.querySelector(".animate-spin")).toBeTruthy();
+    expect(screen.querySelector("[data-feedback-wordmark] .animate-spin")).toBeNull();
+    expect(
+      screen.querySelector("[data-feedback-wordmark][data-feedback-kind='identity']"),
+    ).toBeTruthy();
 
     mocks.syncState = syncState({
       phase: "WAITING",
@@ -587,7 +586,7 @@ describe("VisualFeedbackViewport", () => {
     expect(screen.querySelector("[data-feedback-kind='synced']")).toBeNull();
   });
 
-  it("shows error text and keeps motion-reduce classes", async () => {
+  it("shows error text without assigning error state to the wordmark", async () => {
     const service = createVisualFeedbackService();
     const screen = await renderFeedback(service, "error");
 
@@ -595,7 +594,7 @@ describe("VisualFeedbackViewport", () => {
     expect(screen.textContent).toContain("No fue posible sincronizar.");
     expect(screen.querySelector("[role='alert']")).toBeTruthy();
     expect(
-      screen.querySelector("[data-feedback-wordmark][data-feedback-kind='error']")
+      screen.querySelector("[data-feedback-wordmark][data-feedback-kind='identity']")
         ?.className,
     ).toContain("motion-reduce:transition-none");
   });

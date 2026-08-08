@@ -3,6 +3,15 @@ import type { ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "@/components/app-shell/app-shell";
+import type { Device } from "@/domain/device/device";
+import { DevicePlatform } from "@/domain/device/device";
+import type { Workspace } from "@/domain/workspace/workspace";
+import { CANVAS_PREFERENCES_KEY } from "@/features/canvas/canvas-preferences";
+import { QuickCaptureSheet } from "@/features/capture/quick-capture-sheet";
+import type { StorageAdapter } from "@/infrastructure/storage/storage-adapter";
+import { InMemoryContextRepository } from "@/tests/fakes/in-memory-context-repository";
+import { InMemoryNodeContextRelationRepository } from "@/tests/fakes/in-memory-node-context-relation-repository";
+import { InMemoryNodeRepository } from "@/tests/fakes/in-memory-node-repository";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
   .IS_REACT_ACT_ENVIRONMENT = true;
@@ -14,6 +23,37 @@ const mocks = vi.hoisted(() => ({
   logout: vi.fn(async (): Promise<void> => undefined),
   syncConnectivity: "ONLINE",
 }));
+
+class MemoryStorageAdapter implements StorageAdapter {
+  readonly data = new Map<string, unknown>();
+
+  async get<T>(key: string): Promise<T | null> {
+    return (this.data.get(key) as T | undefined) ?? null;
+  }
+
+  async set<T>(key: string, value: T): Promise<void> {
+    this.data.set(key, value);
+  }
+
+  async remove(key: string): Promise<void> {
+    this.data.delete(key);
+  }
+}
+
+const workspace: Workspace = {
+  id: "workspace-1",
+  name: "Personal",
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+};
+
+const device: Device = {
+  id: "device-1",
+  name: "Web",
+  platform: DevicePlatform.WEB,
+  createdAt: "2026-01-01T00:00:00.000Z",
+  lastSeenAt: "2026-01-01T00:00:00.000Z",
+};
 
 vi.mock("next/navigation", () => ({
   usePathname: () => mocks.pathname,
@@ -77,12 +117,11 @@ describe("Global writing entry", () => {
     document.body.replaceChildren();
   });
 
-  it("sends the global action to the single writing surface", async () => {
+  it("keeps the removed global writing action out of the account header", async () => {
     const { container } = await renderAppShell();
 
-    await click(getWritingButton(container));
-
-    expect(mocks.push).toHaveBeenCalledWith("/#capture");
+    expect(container.querySelector("button[aria-label='Capturar']")).toBeNull();
+    expect(mocks.push).not.toHaveBeenCalled();
     expect(document.querySelector("[role='dialog']")).toBeNull();
     expect(document.querySelector("#quick-capture-editor")).toBeNull();
   });
@@ -99,7 +138,7 @@ describe("Global writing entry", () => {
     const memoryStatusTrigger = container.querySelector(
       "button[aria-label='Abrir Estado de la memoria']",
     );
-    expect(memoryStatusTrigger?.getAttribute("data-memory-sync-trigger")).toBe("");
+    expect(memoryStatusTrigger).toBeNull();
     expect(container.querySelector("a[aria-label='Vinema']")?.getAttribute("href")).toBe("/");
     expect(container.querySelector("[data-vinema-brand='monogram']")).toBeTruthy();
     expect(header?.textContent).not.toContain("VN");
@@ -170,6 +209,47 @@ describe("Global writing entry", () => {
 
     expect(mocks.push).toHaveBeenCalledTimes(1);
     expect(mocks.push).toHaveBeenCalledWith("/#capture");
+  });
+
+  it("applies canvas text size and the single canvas font to quick capture", async () => {
+    const storage = new MemoryStorageAdapter();
+    await storage.set(CANVAS_PREFERENCES_KEY, {
+      width: "compact",
+      textSize: 18,
+      fontFamily: "mono",
+      appearance: "system",
+    });
+    const container = document.createElement("div");
+    document.body.replaceChildren(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        createElement(QuickCaptureSheet, {
+          open: true,
+          onOpenChange: vi.fn(),
+          onOpenFullCapture: vi.fn(),
+          device,
+          workspace,
+          storage,
+          repositories: {
+            nodeRepository: new InMemoryNodeRepository(),
+            contextRepository: new InMemoryContextRepository(),
+            nodeContextRelationRepository:
+              new InMemoryNodeContextRelationRepository(),
+          },
+        }),
+      );
+      await flushPromises();
+    });
+    currentRoot = root;
+
+    const textarea = document.querySelector<HTMLTextAreaElement>(
+      "#quick-capture-editor",
+    );
+
+    expect(textarea?.style.fontSize).toBe("18px");
+    expect(textarea?.style.fontFamily).toContain("var(--font-geist-sans)");
   });
 
   it("ignores partial shortcut combinations and other keys", async () => {
@@ -269,20 +349,6 @@ async function renderAppShell(): Promise<{ container: HTMLDivElement; root: Root
 
   currentRoot = root;
   return { container, root };
-}
-
-function getWritingButton(container: HTMLElement) {
-  const button = Array.from(
-    container.querySelectorAll<HTMLButtonElement>(
-      "button[aria-label='Capturar']",
-    ),
-  )[0];
-
-  if (!button) {
-    throw new Error("Writing button not found");
-  }
-
-  return button;
 }
 
 async function click(button: HTMLElement) {

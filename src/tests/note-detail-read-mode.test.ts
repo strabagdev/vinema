@@ -13,6 +13,8 @@ import {
   createVisualFeedbackService,
   type VisualFeedbackService,
 } from "@/features/feedback/visual-feedback-service";
+import { CANVAS_PREFERENCES_KEY } from "@/features/canvas/canvas-preferences";
+import type { StorageAdapter } from "@/infrastructure/storage/storage-adapter";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
   .IS_REACT_ACT_ENVIRONMENT = true;
@@ -69,6 +71,22 @@ const archivedPersonContext: Context = {
   archivedAt: "2026-01-02T00:00:00.000Z",
 };
 
+class MemoryStorageAdapter implements StorageAdapter {
+  readonly data = new Map<string, unknown>();
+
+  async get<T>(key: string): Promise<T | null> {
+    return (this.data.get(key) as T | undefined) ?? null;
+  }
+
+  async set<T>(key: string, value: T): Promise<void> {
+    this.data.set(key, value);
+  }
+
+  async remove(key: string): Promise<void> {
+    this.data.delete(key);
+  }
+}
+
 describe("NoteDetailView read mode", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -113,6 +131,7 @@ describe("NoteDetailView read mode", () => {
 
   it("updates emergent identity when accepted relations change", async () => {
     const { container, root } = createContainer();
+    const canvasPreferencesStorage = new MemoryStorageAdapter();
 
     await act(async () => {
       root.render(
@@ -126,8 +145,10 @@ describe("NoteDetailView read mode", () => {
           onArchive: vi.fn(async () => undefined),
           onRestore: vi.fn(async () => baseNode),
           onBack: vi.fn(),
+          canvasPreferencesStorage,
         }),
       );
+      await flushPromises();
     });
 
     expect(container.textContent).toContain("Trabajo");
@@ -151,8 +172,10 @@ describe("NoteDetailView read mode", () => {
           onArchive: vi.fn(async () => undefined),
           onRestore: vi.fn(async () => baseNode),
           onBack: vi.fn(),
+          canvasPreferencesStorage,
         }),
       );
+      await flushPromises();
     });
 
     expect(container.textContent).toContain("Trabajo · Vinema");
@@ -260,6 +283,42 @@ describe("NoteDetailView read mode", () => {
     expect(getButton(screen, "Cancelar")).toBeTruthy();
   });
 
+  it("renders note edit elements without removed calm attributes", async () => {
+    const screen = await renderNoteDetail({
+      contextError: "No se pudieron cargar relaciones.",
+    });
+
+    await click(getButton(screen, "Editar"));
+
+    const textarea = screen.querySelector("textarea");
+
+    expect(textarea).toBeTruthy();
+    expect(screen.querySelector("[data-calm-primary]")).toBeNull();
+    expect(screen.querySelector("[data-calm-auxiliary]")).toBeNull();
+    expect(screen.querySelector("[data-calm-critical]")).toBeNull();
+    expect(screen.textContent).toContain("Ctrl+S");
+    expect(screen.textContent).toContain("No se pudieron cargar relaciones.");
+  });
+
+  it("applies persisted canvas text size to the real note editor", async () => {
+    const storage = new MemoryStorageAdapter();
+    await storage.set(CANVAS_PREFERENCES_KEY, {
+      width: "normal",
+      textSize: 18,
+      fontFamily: "serif",
+      appearance: "system",
+    });
+    const screen = await renderNoteDetail({ canvasPreferencesStorage: storage });
+
+    await click(getButton(screen, "Editar"));
+    await flushPromises();
+
+    expect(screen.querySelector("textarea")?.style.fontSize).toBe("18px");
+    expect(screen.querySelector("textarea")?.style.fontFamily).toContain(
+      "var(--font-geist-sans)",
+    );
+  });
+
   it("finishes editing by saving pending changes and returning to read mode", async () => {
     const onSave = vi.fn(async () => ({
       ...baseNode,
@@ -294,6 +353,7 @@ describe("NoteDetailView read mode", () => {
     const onSaveContextRelations = vi.fn(async () => undefined);
     const screen = await renderNoteDetail({
       relatedContexts: [areaContext],
+      relatedRelations: [createRelation({ contextId: areaContext.id })],
       contextOptions: [areaContext, projectContext],
       onSaveContextRelations,
     });
@@ -308,10 +368,28 @@ describe("NoteDetailView read mode", () => {
     expect(onSaveContextRelations).toHaveBeenCalledWith(["area-1", "project-1"]);
   });
 
+  it("uses persisted relations as the selected concept source in edit mode", async () => {
+    const screen = await renderNoteDetail({
+      relatedContexts: [areaContext, projectContext],
+      relatedRelations: [createRelation({ contextId: projectContext.id })],
+      contextOptions: [areaContext, projectContext],
+    });
+
+    await click(getButton(screen, "Editar"));
+
+    expect(getButton(screen, "Trabajo")?.getAttribute("aria-pressed")).toBe("false");
+    expect(getButton(screen, "Vinema")?.getAttribute("aria-pressed")).toBe("true");
+
+    await toggleChip(screen, "Vinema");
+
+    expect(getButton(screen, "Vinema")?.getAttribute("aria-pressed")).toBe("false");
+  });
+
   it("cancels contextual relation changes without persisting them", async () => {
     const onSaveContextRelations = vi.fn(async () => undefined);
     const screen = await renderNoteDetail({
       relatedContexts: [areaContext],
+      relatedRelations: [createRelation({ contextId: areaContext.id })],
       contextOptions: [areaContext, projectContext],
       onSaveContextRelations,
     });
@@ -720,6 +798,7 @@ async function renderNoteDetail({
   onResolveCaptureSelection,
   onApplyCaptureSelection,
   feedbackService,
+  canvasPreferencesStorage = new MemoryStorageAdapter(),
 }: {
   node?: Node;
   relatedContexts?: Context[];
@@ -734,6 +813,7 @@ async function renderNoteDetail({
   onResolveCaptureSelection?: Parameters<typeof NoteDetailView>[0]["onResolveCaptureSelection"];
   onApplyCaptureSelection?: Parameters<typeof NoteDetailView>[0]["onApplyCaptureSelection"];
   feedbackService?: VisualFeedbackService;
+  canvasPreferencesStorage?: StorageAdapter;
 } = {}) {
   const { container, root } = createContainer();
 
@@ -751,6 +831,7 @@ async function renderNoteDetail({
         onBack,
         onResolveCaptureSelection,
         onApplyCaptureSelection,
+        canvasPreferencesStorage,
       });
 
     root.render(
@@ -758,6 +839,7 @@ async function renderNoteDetail({
         ? createElement(VisualFeedbackProvider, { service: feedbackService }, detail)
         : detail,
     );
+    await flushPromises();
   });
 
   return container;
@@ -799,7 +881,14 @@ function createRelation(
 }
 
 function getButton(container: HTMLElement, name: string) {
-  return Array.from(container.querySelectorAll("button")).find(
+  const candidates = [
+    ...Array.from(container.querySelectorAll("button")),
+    ...Array.from(document.body.querySelectorAll("button")).filter(
+      (button) => !container.contains(button),
+    ),
+  ];
+
+  return candidates.find(
     (button) => button.textContent?.trim() === name,
   ) as HTMLButtonElement | undefined;
 }

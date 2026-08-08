@@ -692,6 +692,50 @@ describe("concept suggestions", () => {
     ).toBe(false);
   });
 
+  it("preserves existing knowledge reasons when equivalent concept suggestions are deduplicated", () => {
+    const nodes = [
+      node({
+        id: "memory-1",
+        content: "Mitcom y Tracking revisan continuidad operacional.",
+      }),
+      node({
+        id: "memory-2",
+        content: "Mitcom y Tracking preparan continuidad operacional.",
+      }),
+      node({
+        id: "memory-3",
+        content: "Mitcom y Tracking cierran continuidad operacional.",
+      }),
+    ];
+    const evaluation = evaluateCaptureInput({
+      text: "Mitcom continuidad operacional",
+      nodes,
+      contexts: [
+        context({ id: "mitcom", name: "Mitcom" }),
+        context({ id: "tracking", name: "Tracking" }),
+      ],
+      relations: [
+        contextRelation("memory-1", "mitcom"),
+        contextRelation("memory-1", "tracking"),
+        contextRelation("memory-2", "mitcom"),
+        contextRelation("memory-2", "tracking"),
+        contextRelation("memory-3", "mitcom"),
+        contextRelation("memory-3", "tracking"),
+      ],
+    });
+    const tracking = evaluation.conceptSuggestions.find(
+      (suggestion) => suggestion.kind === "existing" && suggestion.conceptId === "tracking",
+    );
+
+    expect(tracking).toMatchObject({
+      kind: "existing",
+      conceptId: "tracking",
+      knowledgeSuggestionReasons: expect.arrayContaining([
+        "Existe memoria previa que podría ser relevante",
+      ]),
+    });
+  });
+
   it("keeps selected concepts visible even when the query changes", () => {
     const suggestions = suggestConcepts({
       text: "Texto sin coincidencias suficientes",

@@ -54,7 +54,23 @@ const GRAPH_HEIGHT = 440;
 const CENTER_X = GRAPH_WIDTH / 2;
 const CENTER_Y = GRAPH_HEIGHT / 2;
 
-export function ConceptKnowledgeExplorerClient() {
+export function ConceptKnowledgeExplorerClient({
+  embedded = false,
+  workspaceMode = false,
+  initialFocusId = null,
+  selectedConceptId: controlledSelectedConceptId = null,
+  onBack,
+  onSelectConcept,
+  onOpenConcept,
+}: {
+  embedded?: boolean;
+  workspaceMode?: boolean;
+  initialFocusId?: string | null;
+  selectedConceptId?: string | null;
+  onBack?: () => void;
+  onSelectConcept?: (conceptId: string) => void;
+  onOpenConcept?: (conceptId: string) => void;
+} = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const focusId = searchParams.get("focus")?.trim() || null;
@@ -66,6 +82,7 @@ export function ConceptKnowledgeExplorerClient() {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [selectedConceptId, setSelectedConceptId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [zoom, setZoom] = useState(1);
 
   const loadExplorer = useCallback(async () => {
     if (vinemaContext.status !== "ready") {
@@ -113,7 +130,8 @@ export function ConceptKnowledgeExplorerClient() {
     });
   }, [loadExplorer]);
 
-  const activeFocusId = selectedConceptId ?? focusId;
+  const activeFocusId =
+    controlledSelectedConceptId ?? selectedConceptId ?? initialFocusId ?? focusId;
 
   const graph = useMemo(
     () =>
@@ -149,10 +167,20 @@ export function ConceptKnowledgeExplorerClient() {
 
   function focusConcept(conceptId: string) {
     setSelectedConceptId(conceptId);
+    onSelectConcept?.(conceptId);
+    if (embedded) {
+      return;
+    }
+
     router.push(getConceptKnowledgeExplorerPath({ focus: conceptId }));
   }
 
   function goBack() {
+    if (embedded) {
+      onBack?.();
+      return;
+    }
+
     if (window.history.length > 1) {
       router.back();
       return;
@@ -163,7 +191,11 @@ export function ConceptKnowledgeExplorerClient() {
 
   if (vinemaContext.status === "loading" || loadState === "loading") {
     return (
-      <ExplorerShell onBack={goBack}>
+      <ExplorerShell
+        onBack={goBack}
+        backLabel={embedded ? "Volver a conceptos" : "Volver"}
+        workspaceMode={workspaceMode}
+      >
         <p className="text-sm text-zinc-500">Cargando conexiones...</p>
       </ExplorerShell>
     );
@@ -171,7 +203,11 @@ export function ConceptKnowledgeExplorerClient() {
 
   if (vinemaContext.status === "error") {
     return (
-      <ExplorerShell onBack={goBack}>
+      <ExplorerShell
+        onBack={goBack}
+        backLabel={embedded ? "Volver a conceptos" : "Volver"}
+        workspaceMode={workspaceMode}
+      >
         <ExplorerMessage
           heading="No se pudo cargar Vinema"
           message={vinemaContext.error}
@@ -182,7 +218,11 @@ export function ConceptKnowledgeExplorerClient() {
 
   if (loadState === "error") {
     return (
-      <ExplorerShell onBack={goBack}>
+      <ExplorerShell
+        onBack={goBack}
+        backLabel={embedded ? "Volver a conceptos" : "Volver"}
+        workspaceMode={workspaceMode}
+      >
         <ExplorerMessage
           heading="No se pudo explorar conocimiento"
           message={error ?? "Intenta volver a Conceptos y abrirlo nuevamente."}
@@ -194,37 +234,80 @@ export function ConceptKnowledgeExplorerClient() {
   const hasEnoughConnections = graph.edges.length > 0 && graph.nodes.length > 1;
 
   return (
-    <ExplorerShell onBack={goBack}>
-      <div className="grid min-h-0 flex-1 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+    <ExplorerShell
+      onBack={goBack}
+      backLabel={embedded ? "Volver a conceptos" : "Volver"}
+      workspaceMode={workspaceMode}
+    >
+      <div
+        className={
+          workspaceMode
+            ? "flex h-full min-h-0 flex-col overflow-hidden"
+            : "grid min-h-0 flex-1 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]"
+        }
+      >
         <div className="flex min-h-0 min-w-0 flex-col gap-5">
-          <ConceptSearch
-            query={query}
-            results={searchResults}
-            onQueryChange={setQuery}
-            onFocusConcept={focusConcept}
-          />
-
-          {hasEnoughConnections ? (
-            <ConceptGraph
-              graph={graph}
-              selectedConceptId={selectedNode?.conceptId ?? null}
+          {workspaceMode ? null : (
+            <ConceptSearch
+              query={query}
+              results={searchResults}
+              onQueryChange={setQuery}
               onFocusConcept={focusConcept}
             />
+          )}
+
+          {hasEnoughConnections ? (
+            <div className="relative min-h-0 flex-1 overflow-hidden" data-concept-map-pane="">
+              {workspaceMode ? (
+                <div className="absolute right-3 top-3 z-10 flex rounded-md border border-zinc-200 bg-white/90">
+                  <button
+                    type="button"
+                    className="h-8 w-8 text-sm text-zinc-600 hover:text-zinc-950"
+                    aria-label="Alejar mapa"
+                    onClick={() => setZoom((current) => Math.max(0.75, current - 0.1))}
+                  >
+                    -
+                  </button>
+                  <button
+                    type="button"
+                    className="h-8 w-8 text-sm text-zinc-600 hover:text-zinc-950"
+                    aria-label="Acercar mapa"
+                    onClick={() => setZoom((current) => Math.min(1.4, current + 0.1))}
+                  >
+                    +
+                  </button>
+                </div>
+              ) : null}
+              <ConceptGraph
+                graph={graph}
+                selectedConceptId={selectedNode?.conceptId ?? null}
+                onFocusConcept={focusConcept}
+                zoom={workspaceMode ? zoom : 1}
+              />
+            </div>
           ) : (
-            <ExplorerEmptyState />
+            <ExplorerEmptyState embedded={embedded} onBack={goBack} />
           )}
         </div>
 
+        {workspaceMode ? null : (
         <aside className="vinema-scrollbar min-h-0 space-y-5 overflow-y-auto pr-1">
           {selectedNode ? (
-            <SelectedConceptSummary node={selectedNode} />
+            <SelectedConceptSummary
+              node={selectedNode}
+              embedded={embedded}
+              onOpenConcept={onOpenConcept}
+            />
           ) : null}
           <ConnectionList
             selectedConceptId={selectedNode?.conceptId ?? null}
             connections={selectedConnections}
             onFocusConcept={focusConcept}
+            embedded={embedded}
+            onOpenConcept={onOpenConcept}
           />
         </aside>
+        )}
       </div>
     </ExplorerShell>
   );
@@ -233,29 +316,40 @@ export function ConceptKnowledgeExplorerClient() {
 function ExplorerShell({
   children,
   onBack,
+  backLabel = "Volver",
+  workspaceMode = false,
 }: {
   children: React.ReactNode;
   onBack: () => void;
+  backLabel?: string;
+  workspaceMode?: boolean;
 }) {
   return (
     <section
-      className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-1 flex-col gap-6 overflow-hidden px-4 py-4 sm:px-6 lg:px-8"
+      className={
+        workspaceMode
+          ? "flex h-full min-h-0 w-full flex-col overflow-hidden"
+          : "mx-auto flex h-full min-h-0 w-full max-w-6xl flex-1 flex-col gap-6 overflow-hidden px-4 py-4 sm:px-6 lg:px-8"
+      }
       data-knowledge-explorer-canvas=""
+      data-concept-map-workspace={workspaceMode ? "" : undefined}
     >
-      <header className="shrink-0 space-y-5">
-        <Button variant="ghost" size="sm" onClick={onBack}>
-          <ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />
-          Volver
-        </Button>
-        <div>
-          <h1 className="text-2xl font-medium tracking-normal text-zinc-950 sm:text-3xl">
-            Explorar conocimiento
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-600">
-            ¿Cómo está conectada mi memoria?
-          </p>
-        </div>
-      </header>
+      {workspaceMode ? null : (
+        <header className="shrink-0 space-y-5">
+          <Button variant="ghost" size="sm" onClick={onBack}>
+            <ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />
+            {backLabel}
+          </Button>
+          <div>
+            <h1 className="text-2xl font-medium tracking-normal text-zinc-950 sm:text-3xl">
+              Explorar conocimiento
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-600">
+              ¿Cómo está conectada mi memoria?
+            </p>
+          </div>
+        </header>
+      )}
       {children}
     </section>
   );
@@ -309,21 +403,24 @@ function ConceptGraph({
   graph,
   selectedConceptId,
   onFocusConcept,
+  zoom = 1,
 }: {
   graph: ExplorerGraph;
   selectedConceptId: string | null;
   onFocusConcept: (conceptId: string) => void;
+  zoom?: number;
 }) {
   return (
     <div
-      className="vinema-scrollbar min-h-0 flex-1 overflow-auto overscroll-contain"
+      className="vinema-scrollbar h-full min-h-0 flex-1 overflow-auto overscroll-contain"
       aria-label="Mapa de conexiones"
     >
       <svg
         role="img"
         aria-label="Mapa de conceptos conectados"
         viewBox={`0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`}
-        className="h-full min-h-[22rem] w-full min-w-[34rem]"
+        className="h-full min-h-[22rem] w-full min-w-[34rem] origin-center"
+        style={{ transform: `scale(${zoom})` }}
       >
         <title>Mapa de conceptos conectados</title>
         {graph.edges.map((edge) => {
@@ -389,7 +486,15 @@ function ConceptGraph({
   );
 }
 
-function SelectedConceptSummary({ node }: { node: ConceptGraphNode }) {
+function SelectedConceptSummary({
+  node,
+  embedded = false,
+  onOpenConcept,
+}: {
+  node: ConceptGraphNode;
+  embedded?: boolean;
+  onOpenConcept?: (conceptId: string) => void;
+}) {
   return (
     <section className="space-y-2" aria-label="Concepto seleccionado">
       <h2 className="text-sm font-medium text-zinc-500">Foco</h2>
@@ -397,12 +502,22 @@ function SelectedConceptSummary({ node }: { node: ConceptGraphNode }) {
       <p className="text-sm leading-6 text-zinc-600">
         {node.memoryCount} {node.memoryCount === 1 ? "recuerdo relacionado" : "recuerdos relacionados"}
       </p>
-      <Link
-        href={getConceptExplorationPath(node.conceptId, { returnTo: "/concepts/explore" })}
-        className="inline-flex text-sm font-medium text-zinc-700 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
-      >
-        Ver perfil
-      </Link>
+      {embedded ? (
+        <button
+          type="button"
+          className="inline-flex text-sm font-medium text-zinc-700 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
+          onClick={() => onOpenConcept?.(node.conceptId)}
+        >
+          Ver perfil
+        </button>
+      ) : (
+        <Link
+          href={getConceptExplorationPath(node.conceptId, { returnTo: "/concepts/explore" })}
+          className="inline-flex text-sm font-medium text-zinc-700 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
+        >
+          Ver perfil
+        </Link>
+      )}
     </section>
   );
 }
@@ -411,10 +526,14 @@ function ConnectionList({
   selectedConceptId,
   connections,
   onFocusConcept,
+  embedded = false,
+  onOpenConcept,
 }: {
   selectedConceptId: string | null;
   connections: ReturnType<typeof deriveConceptRelationships>;
   onFocusConcept: (conceptId: string) => void;
+  embedded?: boolean;
+  onOpenConcept?: (conceptId: string) => void;
 }) {
   if (!selectedConceptId || connections.length === 0) {
     return (
@@ -441,14 +560,24 @@ function ConnectionList({
                 : "recuerdos compartidos"}
             </p>
             <div className="flex flex-wrap gap-3 text-sm">
-              <Link
-                href={getConceptExplorationPath(connection.targetConceptId, {
-                  returnTo: getConceptKnowledgeExplorerPath({ focus: selectedConceptId }),
-                })}
-                className="font-medium text-zinc-700 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
-              >
-                Ver perfil
-              </Link>
+              {embedded ? (
+                <button
+                  type="button"
+                  className="font-medium text-zinc-700 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
+                  onClick={() => onOpenConcept?.(connection.targetConceptId)}
+                >
+                  Ver perfil
+                </button>
+              ) : (
+                <Link
+                  href={getConceptExplorationPath(connection.targetConceptId, {
+                    returnTo: getConceptKnowledgeExplorerPath({ focus: selectedConceptId }),
+                  })}
+                  className="font-medium text-zinc-700 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
+                >
+                  Ver perfil
+                </Link>
+              )}
               <button
                 type="button"
                 className="font-medium text-zinc-600 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
@@ -464,7 +593,13 @@ function ConnectionList({
   );
 }
 
-function ExplorerEmptyState() {
+function ExplorerEmptyState({
+  embedded = false,
+  onBack,
+}: {
+  embedded?: boolean;
+  onBack?: () => void;
+}) {
   return (
     <div className="space-y-4 py-12">
       <div>
@@ -475,14 +610,20 @@ function ExplorerEmptyState() {
           El mapa aparece cuando varios conceptos comparten recuerdos aceptados.
         </p>
       </div>
-      <div className="flex flex-wrap gap-3">
-        <Button asChild>
-          <Link href="/">Volver a capturar</Link>
+      {embedded ? (
+        <Button type="button" variant="ghost" onClick={onBack}>
+          Volver a conceptos
         </Button>
-        <Button variant="ghost" asChild>
-          <Link href="/concepts">Conceptos</Link>
-        </Button>
-      </div>
+      ) : (
+        <div className="flex flex-wrap gap-3">
+          <Button asChild>
+            <Link href="/">Volver a capturar</Link>
+          </Button>
+          <Button variant="ghost" asChild>
+            <Link href="/concepts">Conceptos</Link>
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

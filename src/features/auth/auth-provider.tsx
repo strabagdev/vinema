@@ -177,6 +177,7 @@ export function AuthProvider({
     await runtime.controller.syncNow();
   }, [runtime]);
 
+  const hasLocalAuthenticatedSession = hasUsableLocalSession(state);
   const value = useMemo<AuthContextValue>(() => ({
     state,
     user: state.user,
@@ -187,23 +188,27 @@ export function AuthProvider({
     syncState,
     isAuthenticated:
       state.status === "AUTHENTICATED_ONLINE" ||
-      state.status === "AUTHENTICATED_OFFLINE",
-    isLoading:
-      state.status === "BOOT" ||
-      state.status === "CHECKING_LOCAL_SESSION" ||
-      state.status === "VALIDATING_REMOTE" ||
-      state.status === "LOGGING_IN" ||
-      state.status === "REFRESHING" ||
-      state.status === "REVALIDATING" ||
-      state.status === "LOGGING_OUT" ||
-      state.status === "DISPOSING",
+      state.status === "AUTHENTICATED_OFFLINE" ||
+      ((state.status === "REFRESHING" || state.status === "REVALIDATING") &&
+        hasLocalAuthenticatedSession),
+    isLoading: isBlockingAuthState(state, hasLocalAuthenticatedSession),
     error: state.error,
     register,
     refresh,
     syncNow,
     login,
     logout,
-  }), [accessToken, login, logout, refresh, register, state, syncNow, syncState]);
+  }), [
+    accessToken,
+    hasLocalAuthenticatedSession,
+    login,
+    logout,
+    refresh,
+    register,
+    state,
+    syncNow,
+    syncState,
+  ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
@@ -313,6 +318,35 @@ function createAuthRuntime(authSessionStorage?: AuthSessionStorage): AuthRuntime
   };
 
   return { controller, syncStateEngine };
+}
+
+function hasUsableLocalSession(state: AuthState) {
+  return Boolean(
+    state.user &&
+      state.workspaceId &&
+      state.deviceId &&
+      state.sessionId &&
+      state.refreshTokenExpiresAt,
+  );
+}
+
+function isBlockingAuthState(
+  state: AuthState,
+  hasLocalAuthenticatedSession: boolean,
+) {
+  switch (state.status) {
+    case "BOOT":
+    case "CHECKING_LOCAL_SESSION":
+    case "VALIDATING_REMOTE":
+      return true;
+    case "LOGGING_IN":
+      return !hasLocalAuthenticatedSession;
+    case "REFRESHING":
+    case "REVALIDATING":
+      return !hasLocalAuthenticatedSession;
+    default:
+      return false;
+  }
 }
 
 function createUnavailableAuthClient(error: PublicApiUrlError): AuthClient {

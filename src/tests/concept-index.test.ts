@@ -1,4 +1,5 @@
 import { act, createElement } from "react";
+import type { ComponentType, ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ConceptIndexClient } from "@/app/concepts/concept-index-client";
@@ -101,18 +102,72 @@ describe("ConceptIndexClient", () => {
     expect(railwayLink?.textContent).toContain("Railway");
     expect(screen.textContent).not.toContain("Captura sobre");
   });
+
+  it("exposes the concept map action when embedded without route navigation chrome", async () => {
+    const openMap = vi.fn();
+    const openConcept = vi.fn();
+    mocks.contexts.set("railway", context({ id: "railway", name: "Railway" }));
+
+    const screen = await renderConceptIndex(
+      createElement(ConceptIndexClient as ComponentType<{
+        embedded?: boolean;
+        onOpenMap?: () => void;
+        onOpenConcept?: (conceptId: string) => void;
+      }>, { embedded: true, onOpenMap: openMap, onOpenConcept: openConcept }),
+    );
+    const mapButton = getButton(screen, "Abrir mapa de conceptos");
+    const railwayButton = getButtonContaining(screen, "Railway");
+
+    expect(mapButton).toBeTruthy();
+    expect(railwayButton).toBeTruthy();
+    expect(screen.textContent).not.toContain("Volver");
+    expect(screen.querySelector("a[href^='/concepts/detail']")).toBeNull();
+    expect(
+      Array.from(screen.querySelectorAll("a")).some(
+        (link) => link.getAttribute("href") === "/concepts/explore",
+      ),
+    ).toBe(false);
+
+    await act(async () => {
+      mapButton?.click();
+      await flushPromises();
+    });
+
+    expect(openMap).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      railwayButton?.click();
+      await flushPromises();
+    });
+
+    expect(openConcept).toHaveBeenCalledWith("railway");
+  });
 });
 
-async function renderConceptIndex() {
+async function renderConceptIndex(
+  element: ReactElement = createElement(ConceptIndexClient),
+) {
   const container = document.createElement("div");
   document.body.replaceChildren(container);
 
   await act(async () => {
-    createRoot(container).render(createElement(ConceptIndexClient));
+    createRoot(container).render(element);
     await flushPromises();
   });
 
   return container;
+}
+
+function getButton(container: HTMLElement, name: string) {
+  return Array.from(container.querySelectorAll("button")).find(
+    (button) => button.textContent?.trim() === name,
+  ) as HTMLButtonElement | undefined;
+}
+
+function getButtonContaining(container: HTMLElement, text: string) {
+  return Array.from(container.querySelectorAll("button")).find((button) =>
+    button.textContent?.includes(text),
+  ) as HTMLButtonElement | undefined;
 }
 
 function context(overrides: Partial<Context>): Context {

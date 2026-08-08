@@ -1,15 +1,5 @@
 "use client";
 
-import {
-  AlertCircle,
-  Brain,
-  Check,
-  CircleDashed,
-  Lightbulb,
-  Link2,
-  LoaderCircle,
-  Sparkle,
-} from "lucide-react";
 import React, {
   createContext,
   useContext,
@@ -121,145 +111,81 @@ export function createTestVisualFeedbackService() {
 }
 
 export function VisualFeedbackWordmark() {
-  const service = useVisualFeedback();
-  const [state, setState] = useState<VisualFeedbackState>(() =>
-    service.getState(),
-  );
-  const visual = getVisualFeedbackPresentation(state.current);
-
-  useEffect(() => service.subscribe(setState), [service]);
-
   return (
     <span
-      className={cn(
-        "relative inline-flex min-h-8 items-center gap-1.5 text-sm font-semibold tracking-normal transition-colors duration-200 motion-reduce:transition-none",
-        visual.wordmarkClassName,
-      )}
+      className="relative inline-flex min-h-8 items-center gap-1.5 text-sm font-semibold tracking-normal text-zinc-900 transition-colors duration-200 motion-reduce:transition-none"
       data-feedback-wordmark=""
-      data-feedback-kind={state.current?.kind ?? "idle"}
+      data-feedback-kind="identity"
     >
       <VinemaBrandMark asset="monogram" className="h-6 w-7" decorative />
-      {visual.Icon ? (
-        <span
-          className={cn(
-            "inline-flex h-5 w-5 items-center justify-center rounded-full transition-[opacity,transform,color] duration-200 motion-reduce:transition-none",
-            visual.iconClassName,
-          )}
-          aria-hidden="true"
-        >
-          <visual.Icon
-            className={cn(
-              "h-3.5 w-3.5",
-              visual.spin ? "animate-spin motion-reduce:animate-none" : null,
-              visual.pulse ? "animate-pulse motion-reduce:animate-none" : null,
-            )}
-          />
-        </span>
-      ) : null}
-      {state.current?.kind === "error" && state.current.message ? (
-        <span className="hidden max-w-[18rem] truncate text-xs font-medium text-red-700 sm:inline">
-          {state.current.message}
-        </span>
-      ) : null}
     </span>
   );
 }
 
-function getVisualFeedbackPresentation(event: VisualFeedbackEvent | null) {
+export function VisualFeedbackPulse() {
+  const service = useVisualFeedback();
+  const [state, setState] = useState<VisualFeedbackState>(() =>
+    service.getState(),
+  );
+  const pulse = getPulsePresentation(state.current);
+
+  useEffect(() => service.subscribe(setState), [service]);
+
+  return (
+    <div
+      className={cn(
+        "group inline-flex h-7 max-w-[9rem] items-center justify-center overflow-hidden rounded-full text-xs font-medium text-zinc-500 transition-[color,opacity] duration-200 motion-reduce:transition-none",
+        pulse.active ? "text-zinc-700" : "text-zinc-400",
+      )}
+      role="status"
+      aria-label={pulse.label}
+      title={pulse.label}
+      data-canvas-pulse=""
+      data-visual-feedback-pulse=""
+      data-feedback-kind={state.current?.kind ?? "idle"}
+    >
+      <span
+        className={cn(
+          "h-2 w-2 shrink-0 rounded-full transition-colors duration-200 motion-reduce:transition-none",
+          pulse.active ? "bg-amber-500" : "bg-emerald-500",
+        )}
+        aria-hidden="true"
+      />
+      <span
+        className={cn(
+          "ml-0 max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-[max-width,opacity,margin] duration-200 group-hover:ml-2 group-hover:max-w-[8rem] group-hover:opacity-100 motion-reduce:transition-none",
+          pulse.active ? "ml-2 max-w-[8rem] opacity-100" : "",
+        )}
+      >
+        {pulse.label}
+      </span>
+    </div>
+  );
+}
+
+function getPulsePresentation(event: VisualFeedbackEvent | null) {
   if (!event) {
-    return {
-      Icon: null,
-      accessibleText: "Vinema en reposo.",
-      className: "",
-      iconClassName: "",
-      wordmarkClassName: "text-zinc-900",
-      pulse: false,
-      spin: false,
-    };
+    return { active: false, label: "Sincronizado" };
   }
 
-  const base = {
-    accessibleText: event.accessibleText,
-    pulse: false,
-    spin: false,
-  };
-
   switch (event.kind) {
+    case "error":
+      return { active: true, label: event.message ?? "Requiere atencion" };
+    case "offline":
+      return { active: true, label: "Trabajando sin conexion" };
+    case "syncing":
+      return { active: true, label: "Sincronizando..." };
+    case "saving":
+      return { active: true, label: "Guardando..." };
     case "capture":
     case "success":
-      return {
-        ...base,
-        Icon: Check,
-        className: "border-violet-100 text-violet-400",
-        iconClassName: "text-emerald-600",
-        wordmarkClassName: "text-emerald-700",
-        pulse: true,
-      };
-    case "saving":
-      return {
-        ...base,
-        Icon: Sparkle,
-        className: "border-violet-100 text-violet-400",
-        iconClassName: "text-violet-500",
-        wordmarkClassName: "text-violet-700",
-        pulse: true,
-      };
     case "concept":
-      return {
-        ...base,
-        Icon: Brain,
-        className: "border-indigo-100 text-indigo-400",
-        iconClassName: "text-indigo-500",
-        wordmarkClassName: "text-zinc-900",
-      };
     case "idea":
-      return {
-        ...base,
-        Icon: Lightbulb,
-        className: "border-amber-100 text-amber-500",
-        iconClassName: "text-amber-500",
-        wordmarkClassName: "text-zinc-900",
-      };
     case "relation":
-      return {
-        ...base,
-        Icon: Link2,
-        className: "border-sky-100 text-sky-500",
-        iconClassName: "text-sky-500",
-        wordmarkClassName: "text-zinc-900",
-      };
-    case "syncing":
-      return {
-        ...base,
-        Icon: LoaderCircle,
-        className: "border-amber-100 text-amber-500",
-        iconClassName: "text-amber-500",
-        wordmarkClassName: "text-zinc-900",
-        spin: true,
-      };
     case "synced":
       return {
-        ...base,
-        Icon: Check,
-        className: "border-emerald-100 text-emerald-500",
-        iconClassName: "text-emerald-500",
-        wordmarkClassName: "text-zinc-900",
-      };
-    case "offline":
-      return {
-        ...base,
-        Icon: CircleDashed,
-        className: "border-zinc-200 text-zinc-400",
-        iconClassName: "text-zinc-400",
-        wordmarkClassName: "text-zinc-700",
-      };
-    case "error":
-      return {
-        ...base,
-        Icon: AlertCircle,
-        className: "border-red-100 text-red-600",
-        iconClassName: "text-red-600",
-        wordmarkClassName: "text-red-700",
+        active: true,
+        label: event.message ?? event.accessibleText,
       };
   }
 }

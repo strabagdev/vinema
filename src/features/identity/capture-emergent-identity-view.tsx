@@ -6,10 +6,12 @@ export function CaptureEmergentIdentityLabel({
   identity,
   className,
   getConceptHref,
+  onConceptClick,
 }: {
   identity: CaptureEmergentIdentity;
   className?: string;
   getConceptHref?: (conceptId: string) => string;
+  onConceptClick?: (conceptId: string) => void;
 }) {
   if (!identity.displayText) {
     return null;
@@ -34,6 +36,21 @@ export function CaptureEmergentIdentityLabel({
             <span>{concept.label}</span>
           </>
         );
+
+        if (onConceptClick) {
+          return (
+            <span key={concept.id}>
+              {index > 0 ? <span aria-hidden="true"> · </span> : null}
+              <button
+                type="button"
+                className="rounded-sm outline-none hover:text-zinc-950 hover:underline focus-visible:ring-2 focus-visible:ring-zinc-400"
+                onClick={() => onConceptClick(concept.id)}
+              >
+                {concept.label}
+              </button>
+            </span>
+          );
+        }
 
         if (!href) {
           return <span key={concept.id}>{content}</span>;

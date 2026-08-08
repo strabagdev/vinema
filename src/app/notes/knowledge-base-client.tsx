@@ -48,11 +48,21 @@ const KNOWLEDGE_BASE_INVALIDATION_TYPES = [
 ] as const;
 const MEMORY_THREAD_INITIAL_CAPTURE_LIMIT = 2;
 
-export function KnowledgeBaseClient() {
+export function KnowledgeBaseClient({
+  embedded = false,
+  onOpenMemory,
+  onOpenConcept,
+}: {
+  embedded?: boolean;
+  onOpenMemory?: (nodeId: string) => void;
+  onOpenConcept?: (conceptId: string) => void;
+} = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const vinemaContext = useVinemaContext();
-  const query = searchParams.get("q")?.trim() ?? "";
+  const routeQuery = searchParams.get("q")?.trim() ?? "";
+  const [embeddedQuery, setEmbeddedQuery] = useState("");
+  const query = embedded ? embeddedQuery : routeQuery;
   const [draftQuery, setDraftQuery] = useState(query);
   const [expandedThreadIds, setExpandedThreadIds] = useState<Set<string>>(
     () => new Set(),
@@ -212,11 +222,16 @@ export function KnowledgeBaseClient() {
     }
 
     const timer = setTimeout(() => {
+      if (embedded) {
+        setEmbeddedQuery(normalizedDraft);
+        return;
+      }
+
       router.replace(getKnowledgeBasePath(normalizedDraft), { scroll: false });
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [activeQuery, draftQuery, router]);
+  }, [activeQuery, draftQuery, embedded, router]);
 
   useEffect(() => {
     if (window.location.hash === "#knowledge-search") {
@@ -228,11 +243,21 @@ export function KnowledgeBaseClient() {
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
+    if (embedded) {
+      setEmbeddedQuery(draftQuery.trim());
+      return;
+    }
+
     router.replace(getKnowledgeBasePath(draftQuery), { scroll: false });
   }
 
   function clearSearch() {
     setDraftQuery("");
+    if (embedded) {
+      setEmbeddedQuery("");
+      return;
+    }
+
     router.replace("/memory", { scroll: false });
   }
 
@@ -333,12 +358,17 @@ export function KnowledgeBaseClient() {
                   query={activeQuery}
                   expanded={expandedThreadIds.has(entry.thread.id)}
                   onToggle={() => toggleThread(entry.thread.id)}
+                  embedded={embedded}
+                  onOpenMemory={onOpenMemory}
                 />
               ) : (
                 <MemoryCaptureEntryItem
                   key={entry.capture.node.id}
                   capture={entry.capture}
                   query={activeQuery}
+                  embedded={embedded}
+                  onOpenMemory={onOpenMemory}
+                  onOpenConcept={onOpenConcept}
                 />
               ),
             )}
@@ -377,11 +407,15 @@ function MemoryThreadItem({
   query,
   expanded,
   onToggle,
+  embedded,
+  onOpenMemory,
 }: {
   thread: MemoryThread;
   query: string;
   expanded: boolean;
   onToggle: () => void;
+  embedded?: boolean;
+  onOpenMemory?: (nodeId: string) => void;
 }) {
   const visibleCaptures = expanded
     ? thread.captures
@@ -410,11 +444,13 @@ function MemoryThreadItem({
 
       <div className="mt-4 space-y-3">
         {visibleCaptures.map((capture) => (
-          <MemoryThreadCaptureItem
-            key={capture.node.id}
-            capture={capture}
-            query={query}
-          />
+        <MemoryThreadCaptureItem
+          key={capture.node.id}
+          capture={capture}
+          query={query}
+          embedded={embedded}
+          onOpenMemory={onOpenMemory}
+        />
         ))}
       </div>
 
@@ -440,11 +476,38 @@ function MemoryThreadItem({
 function MemoryThreadCaptureItem({
   capture,
   query,
+  embedded = false,
+  onOpenMemory,
 }: {
   capture: MemoryThreadCapture;
   query: string;
+  embedded?: boolean;
+  onOpenMemory?: (nodeId: string) => void;
 }) {
   const preview = getCapturePreview(capture.node.content, { maxLength: 160 });
+  const content = (
+    <>
+      <span className="line-clamp-2 text-sm leading-6 text-zinc-700">
+        <HighlightedText text={preview} query={query} />
+      </span>
+      <time className="mt-1 block text-xs text-zinc-500">
+        {formatCompactDate(capture.capturedAt.toISOString())}
+      </time>
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <button
+        type="button"
+        aria-label={`Abrir captura: ${getCapturePreview(preview, { maxLength: 80 })}`}
+        className="block w-full rounded-md border-l-2 border-zinc-200 py-1 pl-3 text-left outline-none transition-colors hover:border-zinc-400 focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2"
+        onClick={() => onOpenMemory?.(capture.node.id)}
+      >
+        {content}
+      </button>
+    );
+  }
 
   return (
     <Link
@@ -454,12 +517,7 @@ function MemoryThreadCaptureItem({
       aria-label={`Abrir captura: ${getCapturePreview(preview, { maxLength: 80 })}`}
       className="block rounded-md border-l-2 border-zinc-200 py-1 pl-3 outline-none transition-colors hover:border-zinc-400 focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2"
     >
-      <span className="line-clamp-2 text-sm leading-6 text-zinc-700">
-        <HighlightedText text={preview} query={query} />
-      </span>
-      <time className="mt-1 block text-xs text-zinc-500">
-        {formatCompactDate(capture.capturedAt.toISOString())}
-      </time>
+      {content}
     </Link>
   );
 }
@@ -467,9 +525,15 @@ function MemoryThreadCaptureItem({
 function MemoryCaptureEntryItem({
   capture,
   query,
+  embedded,
+  onOpenMemory,
+  onOpenConcept,
 }: {
   capture: MemoryThreadCapture;
   query: string;
+  embedded?: boolean;
+  onOpenMemory?: (nodeId: string) => void;
+  onOpenConcept?: (conceptId: string) => void;
 }) {
   return (
     <KnowledgeCaptureItem
@@ -477,6 +541,9 @@ function MemoryCaptureEntryItem({
       identity={capture.identity}
       query={query}
       returnTo={query ? getKnowledgeBasePath(query) : "/memory"}
+      embedded={embedded}
+      onOpenMemory={onOpenMemory}
+      onOpenConcept={onOpenConcept}
     />
   );
 }
@@ -486,11 +553,17 @@ function KnowledgeCaptureItem({
   identity,
   query = "",
   returnTo = "/memory",
+  embedded = false,
+  onOpenMemory,
+  onOpenConcept,
 }: {
   node: Node;
   identity: CaptureEmergentIdentity | null;
   query?: string;
   returnTo?: string;
+  embedded?: boolean;
+  onOpenMemory?: (nodeId: string) => void;
+  onOpenConcept?: (conceptId: string) => void;
 }) {
   return (
     <KnowledgeResultItem
@@ -500,6 +573,10 @@ function KnowledgeCaptureItem({
       identity={identity}
       updatedAt={getContentTimestamp(node)}
       query={query}
+      nodeId={node.id}
+      embedded={embedded}
+      onOpenMemory={onOpenMemory}
+      onOpenConcept={onOpenConcept}
     />
   );
 }
@@ -511,6 +588,10 @@ function KnowledgeResultItem({
   identity,
   updatedAt,
   query = "",
+  nodeId,
+  embedded = false,
+  onOpenMemory,
+  onOpenConcept,
 }: {
   href: string;
   preview: string;
@@ -518,8 +599,22 @@ function KnowledgeResultItem({
   identity: CaptureEmergentIdentity | null;
   updatedAt: string;
   query?: string;
+  nodeId: string;
+  embedded?: boolean;
+  onOpenMemory?: (nodeId: string) => void;
+  onOpenConcept?: (conceptId: string) => void;
 }) {
   const bodyText = getBodyTextForIdentity({ identity, preview, excerpt });
+  const title = (
+    <span className="block rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2">
+      <span className="line-clamp-3 text-base leading-7 text-zinc-800">
+        <HighlightedText
+          text={identity?.displayText ? bodyText : preview}
+          query={query}
+        />
+      </span>
+    </span>
+  );
 
   return (
     <article className="rounded-lg border border-zinc-200 bg-white p-4 transition-colors hover:border-zinc-300 hover:bg-zinc-50">
@@ -528,21 +623,28 @@ function KnowledgeResultItem({
           {identity?.displayText ? (
             <CaptureEmergentIdentityLabel
               identity={identity}
-              getConceptHref={getConceptExplorationPath}
+              getConceptHref={embedded ? undefined : getConceptExplorationPath}
+              onConceptClick={embedded ? onOpenConcept : undefined}
             />
           ) : null}
-          <Link
-            href={href}
-            aria-label={`Abrir captura: ${getCapturePreview(preview, { maxLength: 80 })}`}
-            className="block rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2"
-          >
-            <span className="line-clamp-3 text-base leading-7 text-zinc-800">
-              <HighlightedText
-                text={identity?.displayText ? bodyText : preview}
-                query={query}
-              />
-            </span>
-          </Link>
+          {embedded ? (
+            <button
+              type="button"
+              aria-label={`Abrir captura: ${getCapturePreview(preview, { maxLength: 80 })}`}
+              className="block w-full rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2"
+              onClick={() => onOpenMemory?.(nodeId)}
+            >
+              {title}
+            </button>
+          ) : (
+            <Link
+              href={href}
+              aria-label={`Abrir captura: ${getCapturePreview(preview, { maxLength: 80 })}`}
+              className="block rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2"
+            >
+              {title}
+            </Link>
+          )}
           {!identity?.displayText && bodyText ? (
             <p className="line-clamp-2 text-sm leading-6 text-zinc-600">
               <HighlightedText text={bodyText} query={query} />

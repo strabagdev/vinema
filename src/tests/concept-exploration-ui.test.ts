@@ -1,4 +1,5 @@
 import { act, createElement } from "react";
+import type { ComponentType, ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ConceptExplorationClient } from "@/app/concepts/detail/concept-exploration-client";
@@ -13,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   nodes: new Map<string, Node>(),
   relations: new Map<string, NodeContextRelation>(),
   push: vi.fn(),
+  back: vi.fn(),
   searchParams: new URLSearchParams("contextId=railway"),
   vinemaContext: {
     status: "ready",
@@ -25,6 +27,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
     push: mocks.push,
+    back: mocks.back,
   }),
   useSearchParams: () => mocks.searchParams,
 }));
@@ -75,6 +78,7 @@ describe("ConceptExplorationClient", () => {
     mocks.nodes.clear();
     mocks.relations.clear();
     mocks.push.mockReset();
+    mocks.back.mockReset();
     mocks.searchParams = new URLSearchParams("contextId=railway");
     seedConceptExploration();
   });
@@ -420,6 +424,55 @@ describe("ConceptExplorationClient", () => {
     expect(link?.getAttribute("href")).toBe("/memory?concept=railway");
   });
 
+  it("keeps concept profile navigation embedded through callbacks", async () => {
+    const openConcept = vi.fn();
+    const openMemory = vi.fn();
+    const openMemoryIndex = vi.fn();
+    const openMap = vi.fn();
+    const onBack = vi.fn();
+    const screen = await renderConceptExploration(
+      createElement(ConceptExplorationClient as ComponentType<{
+        embeddedContextId?: string;
+        onBack?: () => void;
+        onOpenConcept?: (conceptId: string) => void;
+        onOpenMemory?: (nodeId: string) => void;
+        onOpenMemoryIndex?: () => void;
+        onOpenMap?: (focusId: string) => void;
+      }>, {
+        embeddedContextId: "railway",
+        onBack,
+        onOpenConcept: openConcept,
+        onOpenMemory: openMemory,
+        onOpenMemoryIndex: openMemoryIndex,
+        onOpenMap: openMap,
+      }),
+    );
+
+    expect(screen.querySelector("a[href^='/concepts/explore']")).toBeNull();
+    expect(screen.querySelector("a[href^='/memory/detail']")).toBeNull();
+
+    await click(getButton(screen, "Explorar conexiones"));
+    expect(openMap).toHaveBeenCalledWith("railway");
+
+    await click(getButton(screen, "Memoria"));
+    expect(openMemoryIndex).toHaveBeenCalledTimes(1);
+
+    await click(getButton(screen, "← Volver"));
+    expect(onBack).toHaveBeenCalledTimes(1);
+
+    const syncButton = Array.from(screen.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("Sync"),
+    );
+    await click(syncButton as HTMLButtonElement);
+    expect(openConcept).toHaveBeenCalledWith("sync");
+
+    const memoryButton = Array.from(screen.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("Captura sobre Railway"),
+    );
+    await click(memoryButton as HTMLButtonElement);
+    expect(openMemory).toHaveBeenCalled();
+  });
+
   it("renders the global knowledge explorer focused from the query", async () => {
     mocks.searchParams = new URLSearchParams("focus=railway");
     const screen = await renderConceptExplorer();
@@ -453,6 +506,37 @@ describe("ConceptExplorationClient", () => {
     await click(syncNode as HTMLElement);
 
     expect(mocks.push).toHaveBeenCalledWith("/concepts/explore?focus=sync");
+  });
+
+  it("renders the global knowledge explorer embedded without route navigation", async () => {
+    mocks.searchParams = new URLSearchParams("focus=railway");
+    const onBack = vi.fn();
+    const openConcept = vi.fn();
+    const screen = await renderConceptExplorer(
+      createElement(ConceptKnowledgeExplorerClient as ComponentType<{
+        embedded?: boolean;
+        onBack?: () => void;
+        onOpenConcept?: (conceptId: string) => void;
+      }>, { embedded: true, onBack, onOpenConcept: openConcept }),
+    );
+    const syncNode = screen.querySelector("[aria-label='Enfocar Sync']");
+
+    expect(screen.textContent).toContain("Volver a conceptos");
+    expect(screen.querySelector("[data-knowledge-explorer-canvas]")).toBeTruthy();
+
+    await click(syncNode as HTMLElement);
+
+    expect(mocks.push).not.toHaveBeenCalled();
+    expect(screen.textContent).toContain("Sync");
+
+    await click(getButton(screen, "Ver perfil"));
+    expect(openConcept).toHaveBeenCalled();
+    expect(mocks.push).not.toHaveBeenCalled();
+
+    await click(getButton(screen, "Volver a conceptos"));
+
+    expect(onBack).toHaveBeenCalledTimes(1);
+    expect(mocks.back).not.toHaveBeenCalled();
   });
 
   it("uses concept search to focus an existing concept without creating alias nodes", async () => {
@@ -497,24 +581,28 @@ describe("ConceptExplorationClient", () => {
   });
 });
 
-async function renderConceptExploration() {
+async function renderConceptExploration(
+  element: ReactElement = createElement(ConceptExplorationClient),
+) {
   const container = document.createElement("div");
   document.body.replaceChildren(container);
 
   await act(async () => {
-    createRoot(container).render(createElement(ConceptExplorationClient));
+    createRoot(container).render(element);
     await flushPromises();
   });
 
   return container;
 }
 
-async function renderConceptExplorer() {
+async function renderConceptExplorer(
+  element: ReactElement = createElement(ConceptKnowledgeExplorerClient),
+) {
   const container = document.createElement("div");
   document.body.replaceChildren(container);
 
   await act(async () => {
-    createRoot(container).render(createElement(ConceptKnowledgeExplorerClient));
+    createRoot(container).render(element);
     await flushPromises();
   });
 

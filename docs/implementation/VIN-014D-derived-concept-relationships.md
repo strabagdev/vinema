@@ -130,6 +130,17 @@ El mapa visual no persiste posiciones ni introduce edicion manual. La lista
 alternativa `Conexiones del foco` mantiene la navegacion accesible, permite abrir
 perfiles y cambiar el foco sin depender del hover.
 
+## Workspace Modal de Conceptos
+
+Dentro de `ApplicationWorkspaceDialog`, Conceptos es un unico workspace navegable
+compuesto por indice, mapa y perfil. El usuario no navega paginas separadas para
+explorar conceptos: seleccionar un concepto desde el indice, desde un nodo del
+mapa o desde una relacion actualiza un unico `selectedConceptId` compartido.
+
+Las rutas externas `/concepts`, `/concepts/detail` y `/concepts/explore` se
+mantienen para compatibilidad, pero la experiencia modal conserva el canvas como
+pantalla base y evita cambios de URL.
+
 ## Base de Conocimiento
 
 `/concepts` incorpora una senal minima de conexiones derivadas. La lista sigue

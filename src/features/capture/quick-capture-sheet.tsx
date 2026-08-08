@@ -24,6 +24,10 @@ import {
   CAPTURE_DRAFT_DEBOUNCE_MS,
   commitCaptureText,
 } from "@/features/capture/capture-flow";
+import {
+  getCanvasEditorStyle,
+  useCanvasPreferences,
+} from "@/features/canvas/canvas-preferences";
 import type { CaptureEmergentIdentity } from "@/features/identity/capture-emergent-identity";
 import { loadCaptureEmergentIdentities } from "@/features/identity/load-capture-emergent-identities";
 import { useVisualFeedback } from "@/features/feedback/visual-feedback-provider";
@@ -57,6 +61,7 @@ export function QuickCaptureSheet({
   repositories,
 }: QuickCaptureSheetProps) {
   const feedback = useVisualFeedback();
+  const canvasPreferences = useCanvasPreferences(storage);
   const [content, setContent] = useState("");
   const [draftLoaded, setDraftLoaded] = useState(false);
   const [draftStatus, setDraftStatus] = useState<DraftStatus>("idle");
@@ -323,7 +328,8 @@ export function QuickCaptureSheet({
             <Textarea
               id="quick-capture-editor"
               ref={textareaRef}
-              className="min-h-56 flex-1 resize-y text-base leading-7"
+              className="min-h-56 flex-1 resize-y"
+              style={getCanvasEditorStyle(canvasPreferences.preferences)}
               placeholder="Escribe lo que quieras recordar..."
               value={content}
               onChange={(event) => {

@@ -135,6 +135,11 @@ muestra una linea secundaria segura:
 
 `Detectado como OC`
 
+La misma regla visual aplica a cualquier sugerencia no literal que ya traiga una
+razon desde el motor mediante `knowledgeSuggestionReasons`: la UI solo renderiza
+esa explicacion disponible. Las sugerencias literales no muestran explicacion y
+la interfaz no inventa motivos cuando el modelo no entrega uno.
+
 El detalle de concepto muestra `Tambien aparece como` solo cuando hay alias.
 
 No se implementa CRUD de alias en esta fase.

@@ -31,10 +31,17 @@ import {
 } from "@/features/sync/reconciliation";
 import { cn } from "@/lib/cn";
 
-export function MemorySyncStatusPanel() {
+export function MemorySyncStatusPanel({
+  variant = "standalone",
+  onClose,
+}: {
+  variant?: "standalone" | "rail-panel";
+  onClose?: () => void;
+} = {}) {
   const auth = useAuth();
   const feedback = useVisualFeedback();
-  const [open, setOpen] = useState(false);
+  const standalone = variant === "standalone";
+  const [standaloneOpen, setStandaloneOpen] = useState(false);
   const [snapshot, setSnapshot] = useState<MemorySyncSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [verifyingMemory, setVerifyingMemory] = useState(false);
@@ -77,11 +84,17 @@ export function MemorySyncStatusPanel() {
   }, [auth.deviceId, auth.syncState, auth.workspaceId]);
 
   const closePanel = useCallback(() => {
-    setOpen(false);
-    queueMicrotask(() => {
-      triggerRef.current?.focus();
-    });
-  }, []);
+    if (standalone) {
+      setStandaloneOpen(false);
+      queueMicrotask(() => {
+        triggerRef.current?.focus();
+      });
+      return;
+    }
+
+    onClose?.();
+  }, [onClose, standalone]);
+  const open = standalone ? standaloneOpen : true;
 
   useEffect(() => {
     if (!open) {
@@ -283,40 +296,53 @@ export function MemorySyncStatusPanel() {
   }
 
   return (
-    <div className="relative flex h-10 w-16 items-center justify-center" ref={panelRef}>
-      <Link
-        href="/"
-        className="inline-flex h-10 items-center justify-center rounded-md px-2 text-zinc-900 outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
-        aria-label="Vinema"
-      >
-        <VisualFeedbackWordmark />
-      </Link>
-      <button
-        ref={triggerRef}
-        type="button"
-        className="absolute left-1/2 ml-5 inline-flex h-6 w-6 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
-        aria-label="Abrir Estado de la memoria"
-        aria-expanded={open}
-        disabled={!canOpen}
-        data-memory-sync-trigger=""
-        onClick={() => {
-          if (canOpen && !open) {
-            setOpen(true);
-          }
-        }}
-      >
-        <span
-          className={cn(
-            "h-1.5 w-1.5 rounded-full",
-            getMemoryStatusDotClass(presentation.severity),
-          )}
-          title={presentation.ariaLabel}
-          aria-label={`Estado de la memoria: ${presentation.ariaLabel}`}
-          data-memory-sync-status-dot=""
-        />
-      </button>
+    <div
+      className={cn(
+        standalone
+          ? "relative flex h-10 w-16 items-center justify-center"
+          : "h-full",
+      )}
+      ref={panelRef}
+      data-memory-sync-status-panel={variant}
+    >
+      {standalone ? (
+        <>
+          <Link
+            href="/"
+            className="inline-flex h-10 items-center justify-center rounded-md px-2 text-zinc-900 outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+            aria-label="Vinema"
+          >
+            <VisualFeedbackWordmark />
+          </Link>
+          <button
+            ref={triggerRef}
+            type="button"
+            className="absolute left-1/2 ml-5 inline-flex h-6 w-6 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+            aria-label="Abrir Estado de la memoria"
+            aria-expanded={open}
+            disabled={!canOpen}
+            data-memory-sync-trigger=""
+            onClick={() => {
+              if (canOpen && !open) {
+                setStandaloneOpen(true);
+              }
+            }}
+          >
+            <span
+              className={cn(
+                "h-1.5 w-1.5 rounded-full",
+                getMemoryStatusDotClass(presentation.severity),
+              )}
+              title={presentation.ariaLabel}
+              aria-label={`Estado de la memoria: ${presentation.ariaLabel}`}
+              data-memory-sync-status-dot=""
+            />
+          </button>
+        </>
+      ) : null}
       {open && snapshot ? (
         <MemorySyncPanelContent
+          variant={variant}
           dialogRef={dialogRef}
           closeButtonRef={closeButtonRef}
           snapshot={snapshot}
@@ -349,6 +375,7 @@ export function MemorySyncStatusPanel() {
 }
 
 function MemorySyncPanelContent({
+  variant = "standalone",
   dialogRef,
   closeButtonRef,
   snapshot,
@@ -373,6 +400,7 @@ function MemorySyncPanelContent({
   onMergeContentChange,
   onShowMergeEditor,
 }: {
+  variant?: "standalone" | "rail-panel";
   dialogRef: RefObject<HTMLElement | null>;
   closeButtonRef: RefObject<HTMLButtonElement | null>;
   snapshot: MemorySyncSnapshot;
@@ -409,7 +437,12 @@ function MemorySyncPanelContent({
   return (
     <section
       ref={dialogRef}
-      className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-50 flex max-h-[min(82dvh,42rem)] flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white text-left text-sm shadow-xl md:absolute md:inset-auto md:left-1/2 md:top-full md:mt-2 md:w-96 md:max-w-[calc(100vw-1.5rem)] md:-translate-x-1/2"
+      className={cn(
+        "flex flex-col overflow-hidden bg-white text-left text-sm",
+        variant === "standalone"
+          ? "fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-50 max-h-[min(82dvh,42rem)] rounded-xl border border-zinc-200 shadow-xl md:absolute md:inset-auto md:left-1/2 md:top-full md:mt-2 md:w-96 md:max-w-[calc(100vw-1.5rem)] md:-translate-x-1/2"
+          : "h-full max-h-full bg-transparent",
+      )}
       aria-label="Estado de la memoria"
       aria-modal="true"
       role="dialog"
@@ -443,7 +476,9 @@ function MemorySyncPanelContent({
         </p>
 
         {localError ? (
-          <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <p
+            className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800"
+          >
             {localError}
           </p>
         ) : null}
