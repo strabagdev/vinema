@@ -18,7 +18,8 @@
     "prebuild": "npm run build --workspace @vinema/sync-contracts",
     "build": "next build",
     "server:build": "npm run build --workspace server",
-    "start": "next start",
+    "start": "npm run start:web",
+    "start:web": "serve out -l tcp://0.0.0.0:$PORT",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "pretest": "npm run build --workspace @vinema/sync-contracts",
@@ -53,6 +54,7 @@
     "next": "16.2.11",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "serve": "^14.2.5",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {

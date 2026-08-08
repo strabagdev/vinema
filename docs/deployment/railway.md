@@ -16,7 +16,7 @@ npm run db:generate && npm run build
 Start:
 
 ```bash
-npm run start -- --hostname 0.0.0.0 --port $PORT
+npm run start:web
 ```
 
 Target Port:
@@ -39,6 +39,17 @@ remota automatica desde el navegador.
 
 `NEXT_PUBLIC_API_URL` debe estar configurada en `vinema-web` durante el build.
 Cambiarla requiere redeploy del servicio web para generar un nuevo bundle.
+
+Vinema usa un unico export estatico de Next:
+
+```bash
+npm run build
+```
+
+Ese comando genera `out/`. El mismo directorio se sirve en `vinema-web` mediante
+`serve out -l tcp://0.0.0.0:$PORT` y se empaqueta en Tauri Desktop mediante
+`src-tauri/tauri.conf.json` (`frontendDist: "../out"`). No usar `next start`:
+Next lo rechaza cuando `next.config.ts` mantiene `output: "export"`.
 
 ---
 
@@ -103,9 +114,9 @@ Endpoints:
 ## Tauri
 
 Tauri usa `http://localhost:3000` en desarrollo segun `src-tauri/tauri.conf.json`.
-En produccion, Tauri empaqueta `../out`, por lo que `next.config.ts` debe
-mantener `output: "export"` y `npm run build` debe regenerar `out/` antes de
-`npm run tauri:build`.
+En produccion, Tauri empaqueta el mismo `../out` que Railway Web sirve como
+frontend estatico, por lo que `next.config.ts` debe mantener `output: "export"`
+y `npm run build` debe regenerar `out/` antes de `npm run tauri:build`.
 
 El ejecutable desktop debe compilarse con
 `NEXT_PUBLIC_API_URL=https://vinema-api.up.railway.app` presente durante el

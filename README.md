@@ -156,8 +156,12 @@ configuracion completa.
 
 ```bash
 npm run db:generate && npm run build
-npm run start -- --hostname 0.0.0.0 --port $PORT
+npm run start:web
 ```
+
+La web sirve el export estatico `out/`; no usa `next start` porque
+`next.config.ts` mantiene `output: "export"` para compartir el mismo build con
+Tauri Desktop.
 
 `vinema-api`:
 
