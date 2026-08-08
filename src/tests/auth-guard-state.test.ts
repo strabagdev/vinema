@@ -63,6 +63,21 @@ describe("AuthGuard state presentation", () => {
     expect(container.textContent).not.toContain("Protected");
   });
 
+  it("allows local-only authenticated sessions", async () => {
+    mocks.auth = {
+      isAuthenticated: true,
+      isLoading: false,
+      state: {
+        status: "AUTHENTICATED_LOCAL",
+      } as AuthState,
+    };
+
+    await renderGuard();
+
+    expect(container.textContent).toContain("Protected");
+    expect(mocks.replace).not.toHaveBeenCalled();
+  });
+
   async function renderGuard() {
     await act(async () => {
       root.render(

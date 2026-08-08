@@ -9,9 +9,12 @@ export type AuthStatus =
   | "LOGGING_OUT"
   | "AUTHENTICATED_ONLINE"
   | "AUTHENTICATED_OFFLINE"
+  | "AUTHENTICATED_LOCAL"
   | "REFRESHING"
   | "REVALIDATING"
   | "DISPOSING";
+
+export type AuthSessionMode = "remote" | "local";
 
 export type AuthStateError = {
   code?: string;
@@ -28,6 +31,7 @@ export type AuthState = {
   accessTokenExpiresAt: string | null;
   refreshTokenExpiresAt: string | null;
   lastAuthenticatedAt: string | null;
+  sessionMode?: AuthSessionMode | null;
   error: AuthStateError | null;
 };
 
@@ -60,6 +64,14 @@ export type AuthEvent =
       refreshTokenExpiresAt: string;
       message?: string;
     }
+  | {
+      type: "AUTHENTICATED_LOCAL";
+      at: string;
+      user: AuthenticatedUser;
+      workspaceId: string;
+      deviceId: string;
+      sessionId: string;
+    }
   | { type: "UNAUTHENTICATED"; at: string; error?: { code?: string; message: string } | null }
   | { type: "AUTH_RESET" }
   // Transitional event aliases retained for non-runtime tests and code paths during the refactor.
@@ -91,6 +103,7 @@ export const initialAuthState: AuthState = {
   accessTokenExpiresAt: null,
   refreshTokenExpiresAt: null,
   lastAuthenticatedAt: null,
+  sessionMode: null,
   error: null,
 };
 
@@ -138,6 +151,7 @@ export function reduceAuthState(state: AuthState, event: AuthEvent): AuthState {
         accessTokenExpiresAt: event.accessTokenExpiresAt,
         refreshTokenExpiresAt: event.refreshTokenExpiresAt,
         lastAuthenticatedAt: event.at,
+        sessionMode: "remote",
         error: null,
       };
     case "AUTHENTICATED_OFFLINE":
@@ -151,9 +165,23 @@ export function reduceAuthState(state: AuthState, event: AuthEvent): AuthState {
         accessTokenExpiresAt: event.accessTokenExpiresAt,
         refreshTokenExpiresAt: event.refreshTokenExpiresAt,
         lastAuthenticatedAt: state.lastAuthenticatedAt ?? event.at,
+        sessionMode: "remote",
         error: event.message
           ? { code: "NETWORK_ERROR", message: event.message, occurredAt: event.at }
           : null,
+      };
+    case "AUTHENTICATED_LOCAL":
+      return {
+        status: "AUTHENTICATED_LOCAL",
+        user: { ...event.user },
+        workspaceId: event.workspaceId,
+        deviceId: event.deviceId,
+        sessionId: event.sessionId,
+        accessTokenExpiresAt: null,
+        refreshTokenExpiresAt: null,
+        lastAuthenticatedAt: event.at,
+        sessionMode: "local",
+        error: null,
       };
     case "UNAUTHENTICATED":
       return unauthenticatedState(state, event.at, event.error);
@@ -231,6 +259,7 @@ function unauthenticatedState(
     accessTokenExpiresAt: null,
     refreshTokenExpiresAt: null,
     lastAuthenticatedAt: state.lastAuthenticatedAt,
+    sessionMode: null,
     error: error
       ? {
           code: error.code,

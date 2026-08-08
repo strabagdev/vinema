@@ -5,7 +5,14 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { AuthScreen } from "@/app/login/login-client";
+import {
+  AuthScreen,
+  getLocalKnowledgeIncorporationError,
+  LocalKnowledgeIncorporationDialog,
+} from "@/app/login/login-client";
+import type {
+  LocalKnowledgeIncorporationOffer,
+} from "@/features/auth/local-knowledge-incorporation";
 import {
   getAuthFormError,
   validateEmail,
@@ -15,23 +22,36 @@ import { useAuth } from "@/features/auth/auth-provider";
 
 export function RegisterClient() {
   const router = useRouter();
-  const { isAuthenticated, isLoading, state, register } = useAuth();
+  const {
+    isAuthenticated,
+    isLoading,
+    state,
+    register,
+    checkLocalKnowledgeIncorporation,
+    incorporateLocalKnowledge,
+  } = useAuth();
   const nameRef = useRef<HTMLInputElement>(null);
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [postAuthStatus, setPostAuthStatus] = useState<
+    "idle" | "checking" | "offered" | "migrating" | "done"
+  >("idle");
+  const [localKnowledgeOffer, setLocalKnowledgeOffer] =
+    useState<LocalKnowledgeIncorporationOffer | null>(null);
+  const [localKnowledgeError, setLocalKnowledgeError] = useState<string | null>(null);
 
   useEffect(() => {
     nameRef.current?.focus();
   }, []);
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && postAuthStatus === "idle") {
       router.replace("/");
     }
-  }, [isAuthenticated, router]);
+  }, [isAuthenticated, postAuthStatus, router]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -51,15 +71,49 @@ export function RegisterClient() {
     }
 
     setError(null);
+    setPostAuthStatus("checking");
     try {
       await register({
         displayName: displayName.trim() || undefined,
         email,
         password,
       });
+      const offer = await checkLocalKnowledgeIncorporation();
+      if (offer) {
+        setLocalKnowledgeOffer(offer);
+        setPostAuthStatus("offered");
+        return;
+      }
+
+      setPostAuthStatus("idle");
       router.replace("/");
     } catch (submitError) {
+      setPostAuthStatus("idle");
       setError(getAuthFormError(submitError));
+    }
+  }
+
+  function handleSkipLocalKnowledge() {
+    setLocalKnowledgeOffer(null);
+    setLocalKnowledgeError(null);
+    setPostAuthStatus("idle");
+    router.replace("/");
+  }
+
+  async function handleIncorporateLocalKnowledge() {
+    setLocalKnowledgeError(null);
+    setPostAuthStatus("migrating");
+    try {
+      await incorporateLocalKnowledge();
+      setLocalKnowledgeOffer(null);
+      setPostAuthStatus("done");
+      window.setTimeout(() => {
+        setPostAuthStatus("idle");
+        router.replace("/");
+      }, 350);
+    } catch (incorporationError) {
+      setPostAuthStatus("offered");
+      setLocalKnowledgeError(getLocalKnowledgeIncorporationError(incorporationError));
     }
   }
 
@@ -155,6 +209,14 @@ export function RegisterClient() {
           Iniciar sesion
         </Link>
       </p>
+      <LocalKnowledgeIncorporationDialog
+        offer={localKnowledgeOffer}
+        busy={postAuthStatus === "migrating"}
+        success={postAuthStatus === "done"}
+        error={localKnowledgeError}
+        onSkip={handleSkipLocalKnowledge}
+        onIncorporate={() => void handleIncorporateLocalKnowledge()}
+      />
     </AuthScreen>
   );
 }

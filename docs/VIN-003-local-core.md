@@ -10,6 +10,7 @@ almacenamiento local tras recargar.
 
 - Node como modelo interno de conocimiento.
 - Workspace local por defecto llamado `Personal`.
+- Modo local sin cuenta reutiliza ese workspace y no crea una base paralela.
 - Repositorios independientes del dominio.
 - Persistencia local mediante IndexedDB.
 - Rutas `/inbox`, `/notes`, `/notes/new` y `/notes/detail?nodeId=<id>`.
@@ -85,9 +86,32 @@ reescribe en el store nuevo al actualizarse.
 - `/notes/new`: creacion de nota.
 - `/notes/detail?nodeId=<id>`: detalle editable y archivado.
 
+## Modos de sesion
+
+- Modo con cuenta: identidad remota, refresh token local, sincronizacion,
+  multidispositivo y respaldo remoto.
+- Modo local: sin cuenta, sin API, sin sync remoto, datos solo en este
+  dispositivo y experiencia principal completa.
+- Modo offline de cuenta: cuenta remota existente restaurada temporalmente sin
+  conexion; vuelve a sincronizar cuando regresa la red.
+
+Modo local no equivale a sesion remota offline. Salir del modo local vuelve a
+login sin borrar conocimiento local; reingresar con `Usar sin cuenta` reutiliza
+la misma identidad/workspace local cuando existe y no ha sido incorporada a una
+cuenta.
+
+Despues de login o registro remoto, si Vinema detecta capturas, conceptos o
+relaciones en el workspace local, muestra una decision explicita para
+incorporarlas a la cuenta. `No por ahora` no modifica el contenido local. La
+incorporacion escribe en el workspace remoto mediante el flujo normal de
+outbox/sync, preserva timestamps y trazabilidad, deduplica equivalencias
+basicas y limpia el workspace local solo despues de verificar la sync remota.
+Un workspace local marcado como `LOCAL_MIGRATED` no vuelve a ofrecerse para otra
+cuenta.
+
 ## Limitaciones
 
-- SQLite, sincronizacion, autenticacion y backend siguen fuera de alcance.
+- SQLite nativo sigue fuera de alcance en este documento historico.
 - No hay papelera ni eliminacion definitiva.
 - No hay Markdown avanzado, tags, proyectos, relaciones ni IA.
 - En export estatico, `/notes/detail` forma parte del build y lee el `nodeId`

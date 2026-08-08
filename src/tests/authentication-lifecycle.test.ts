@@ -228,6 +228,16 @@ describe("AuthenticationLifecycle", () => {
     await lifecycle.login({ email: user.email, password: "password-123" });
     expect(syncStateEngine.getState().authentication).toBe("AUTHENTICATED_ONLINE");
 
+    authStateEngine.dispatch({
+      type: "AUTHENTICATED_LOCAL",
+      at: "2026-07-30T12:00:00.000Z",
+      user,
+      workspaceId,
+      deviceId,
+      sessionId,
+    });
+    expect(syncStateEngine.getState().authentication).toBe("AUTHENTICATED_LOCAL");
+
     await lifecycle.logout();
     expect(syncStateEngine.getState().authentication).toBe("UNAUTHENTICATED");
   });

@@ -67,6 +67,19 @@ describe("app resume lifecycle", () => {
     expect(setup.connectivity).toEqual(["OFFLINE"]);
   });
 
+  it("does not revalidate or sync local-only sessions on resume", async () => {
+    const setup = createSetup();
+    setup.state = authState("AUTHENTICATED_LOCAL");
+
+    setup.window.dispatch("focus");
+    setup.clock.flush();
+    await flush();
+
+    expect(setup.revalidate).not.toHaveBeenCalled();
+    expect(setup.syncNow).not.toHaveBeenCalled();
+    expect(setup.connectivity).toEqual([]);
+  });
+
   it("does not clear a temporary network session and avoids sync while auth is offline", async () => {
     const setup = createSetup({
       revalidate: vi.fn(async () => {
@@ -205,23 +218,27 @@ function createSetup({
 }
 
 function authState(status: AuthState["status"]): AuthState {
+  const authenticated = status !== "UNAUTHENTICATED";
+  const local = status === "AUTHENTICATED_LOCAL";
+
   return {
     status,
-    user: status === "UNAUTHENTICATED" ? null : user,
-    workspaceId: status === "UNAUTHENTICATED" ? null : workspaceId,
-    deviceId: status === "UNAUTHENTICATED" ? null : deviceId,
-    sessionId: status === "UNAUTHENTICATED"
+    user: authenticated ? user : null,
+    workspaceId: authenticated ? workspaceId : null,
+    deviceId: authenticated ? deviceId : null,
+    sessionId: !authenticated
       ? null
       : "44444444-4444-4444-8444-444444444444",
-    accessTokenExpiresAt: status === "UNAUTHENTICATED"
+    accessTokenExpiresAt: !authenticated || local
       ? null
       : "2099-07-30T12:15:00.000Z",
-    refreshTokenExpiresAt: status === "UNAUTHENTICATED"
+    refreshTokenExpiresAt: !authenticated || local
       ? null
       : "2099-08-29T12:00:00.000Z",
-    lastAuthenticatedAt: status === "UNAUTHENTICATED"
+    lastAuthenticatedAt: !authenticated
       ? null
       : "2026-07-30T12:00:00.000Z",
+    sessionMode: local ? "local" : authenticated ? "remote" : null,
     error: null,
   };
 }

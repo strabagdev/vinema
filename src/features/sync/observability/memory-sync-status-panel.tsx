@@ -433,6 +433,7 @@ function MemorySyncPanelContent({
 }) {
   const health = snapshot.health;
   const isOffline = presentation.status === "OFFLINE";
+  const isLocalOnly = presentation.status === "LOCAL";
   const hasProblem =
     presentation.status === "PENDING" ||
     presentation.status === "ERROR" ||
@@ -496,6 +497,11 @@ function MemorySyncPanelContent({
             Los cambios se guardaran y sincronizaran al volver.
           </p>
         ) : null}
+        {isLocalOnly ? (
+          <p className="mt-3 rounded-md bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
+            Tus datos permanecen en este dispositivo.
+          </p>
+        ) : null}
 
         <div className="mt-4 flex flex-wrap gap-2">
           {health.conflictMutations > 0 ? (
@@ -510,7 +516,7 @@ function MemorySyncPanelContent({
           <Button
             size="sm"
             onClick={onVerifyMemory}
-            disabled={verifyingMemory || loading || isOffline}
+            disabled={verifyingMemory || loading || isOffline || isLocalOnly}
           >
             <RefreshCw className={cn("mr-2 h-3.5 w-3.5", verifyingMemory ? "animate-spin" : null)} />
             Verificar memoria

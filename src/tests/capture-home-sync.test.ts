@@ -99,6 +99,18 @@ describe("CaptureHomeClient sync composition", () => {
     expect(mocks.syncNow).not.toHaveBeenCalled();
   });
 
+  it("keeps local captures local when using Vinema without an account", async () => {
+    mocks.authStatus = "AUTHENTICATED_LOCAL";
+    await renderCaptureHome();
+
+    await act(async () => {
+      await mocks.captureSurfaceProps?.onCaptureCommitted?.();
+      await flushPromises();
+    });
+
+    expect(mocks.syncNow).not.toHaveBeenCalled();
+  });
+
   async function renderCaptureHome() {
     const container = document.createElement("div");
     document.body.appendChild(container);

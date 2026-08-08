@@ -17,7 +17,14 @@ import {
   getPublicApiUrl,
   normalizePublicApiUrl,
 } from "@/features/auth/public-api-url";
-import { InMemoryAuthSessionStorage } from "@/features/auth/storage/in-memory-auth-session-storage";
+import {
+  InMemoryAuthSessionStorage,
+  InMemoryLocalAuthIdentityStorage,
+} from "@/features/auth/storage/in-memory-auth-session-storage";
+import type { StoredLocalAuthIdentity } from "@/features/auth/storage/auth-session-storage";
+import { IndexedDbContextRepository } from "@/infrastructure/context/indexed-db-context-repository";
+import { IndexedDbNodeContextRelationRepository } from "@/infrastructure/context/indexed-db-node-context-relation-repository";
+import { IndexedDbNodeRepository } from "@/infrastructure/node/indexed-db-node-repository";
 import { VINEMA_DB_NAME, resetVinemaDbConnectionForTests } from "@/infrastructure/storage/vinema-db";
 
 const routerReplace = vi.fn();
@@ -256,6 +263,85 @@ describe("minimal authentication UI", () => {
     expect(container.textContent).toContain("Email o contrasena incorrectos.");
   });
 
+  it("Login offers local mode without email, password, or AuthClient requests", async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse(session)) as unknown as typeof fetch;
+    pathname = "/login";
+
+    await render(
+      <AuthProvider>
+        <LoginClient />
+      </AuthProvider>,
+    );
+    await flush();
+
+    expect(container.textContent).toContain("Usar sin cuenta");
+    expect(container.textContent).toContain(
+      "Los datos permaneceran solo en este dispositivo y no se sincronizaran.",
+    );
+
+    await clickButton("Usar sin cuenta");
+    await flush();
+
+    expect(routerReplace).toHaveBeenCalledWith("/");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("Login offers to incorporate local knowledge before entering the remote account", async () => {
+    const localStorage = await createLocalIdentityWithKnowledge();
+    globalThis.fetch = createFetch([jsonResponse(session)]);
+    pathname = "/login";
+
+    await render(
+      <AuthProvider localAuthIdentityStorage={localStorage}>
+        <LoginClient />
+      </AuthProvider>,
+    );
+    await flush();
+
+    await setInput("#login-email", user.email);
+    await setInput("#login-password", "password-123");
+    await submit("form");
+    await flush();
+
+    expect(container.textContent).toContain("Tienes conocimiento guardado en este dispositivo");
+    expect(container.textContent).toContain(
+      "Puedes incorporarlo a tu cuenta para sincronizarlo con tus otros dispositivos.",
+    );
+    expect(container.textContent).toContain("Incorporar a mi cuenta");
+    expect(container.textContent).toContain("No por ahora");
+    expect(routerReplace).not.toHaveBeenCalledWith("/");
+  });
+
+  it("No por ahora enters the account without changing local knowledge", async () => {
+    const localStorage = await createLocalIdentityWithKnowledge();
+    globalThis.fetch = createFetch([jsonResponse(session)]);
+    pathname = "/login";
+
+    await render(
+      <AuthProvider localAuthIdentityStorage={localStorage}>
+        <LoginClient />
+      </AuthProvider>,
+    );
+    await flush();
+
+    await setInput("#login-email", user.email);
+    await setInput("#login-password", "password-123");
+    await submit("form");
+    await flush();
+    await clickButton("No por ahora");
+    await flush();
+
+    expect(routerReplace).toHaveBeenCalledWith("/");
+    await expect(countWorkspaceKnowledge("local-auth-workspace")).resolves.toEqual({
+      nodes: 1,
+      contexts: 1,
+      relations: 1,
+    });
+    await expect(localStorage.load()).resolves.toMatchObject({
+      migrationStatus: "LOCAL_PENDING",
+    });
+  });
+
   it("Register validates fields, password confirmation, duplicate email and redirects after success", async () => {
     globalThis.fetch = createFetch([
       jsonResponse({ error: { code: "EMAIL_ALREADY_EXISTS", message: "Exists" } }, 409),
@@ -305,6 +391,29 @@ describe("minimal authentication UI", () => {
 
     await submit("form");
     expect(routerReplace).toHaveBeenCalledWith("/");
+  });
+
+  it("Register offers the same local knowledge incorporation after account creation", async () => {
+    const localStorage = await createLocalIdentityWithKnowledge();
+    globalThis.fetch = createFetch([jsonResponse(session, 201)]);
+    pathname = "/register";
+
+    await render(
+      <AuthProvider localAuthIdentityStorage={localStorage}>
+        <RegisterClient />
+      </AuthProvider>,
+    );
+    await flush();
+
+    await setInput("#register-name", "User");
+    await setInput("#register-email", user.email);
+    await setInput("#register-password", "password-123");
+    await setInput("#register-confirm-password", "password-123");
+    await submit("form");
+    await flush();
+
+    expect(container.textContent).toContain("Tienes conocimiento guardado en este dispositivo");
+    expect(routerReplace).not.toHaveBeenCalledWith("/");
   });
 
   it("AuthGuard redirects anonymous users, allows authenticated users and does not guard auth routes", async () => {
@@ -834,6 +943,19 @@ describe("minimal authentication UI", () => {
     });
   }
 
+  async function clickButton(label: string) {
+    const button = Array.from(container.querySelectorAll("button")).find(
+      (candidate) => candidate.textContent?.trim() === label,
+    );
+    if (!button) {
+      throw new Error(`Missing button ${label}`);
+    }
+
+    await act(async () => {
+      button.click();
+    });
+  }
+
   async function submit(selector: string) {
     await act(async () => {
       query<HTMLFormElement>(selector).dispatchEvent(
@@ -861,6 +983,73 @@ describe("minimal authentication UI", () => {
 
   function text(selector: string) {
     return query<HTMLElement>(selector).textContent;
+  }
+
+  async function createLocalIdentityWithKnowledge() {
+    const storage = new InMemoryLocalAuthIdentityStorage();
+    const identity: StoredLocalAuthIdentity = {
+      sessionMode: "local",
+      active: false,
+      userId: "local-auth-user",
+      workspaceId: "local-auth-workspace",
+      deviceId: "local-auth-device",
+      sessionId: "local-auth-session",
+      migrationStatus: "LOCAL_PENDING",
+      createdAt: "2026-08-08T12:00:00.000Z",
+      updatedAt: "2026-08-08T12:00:00.000Z",
+    };
+    await storage.save(identity);
+    await new IndexedDbContextRepository().save({
+      id: "local-auth-context",
+      workspaceId: identity.workspaceId,
+      type: "AREA",
+      name: "Mitcom",
+      description: null,
+      aliases: [],
+      normalizedAliases: [],
+      version: 1,
+      createdAt: "2026-08-08T12:01:00.000Z",
+      updatedAt: "2026-08-08T12:01:00.000Z",
+      archivedAt: null,
+    });
+    await new IndexedDbNodeRepository().create({
+      id: "local-auth-node",
+      workspaceId: identity.workspaceId,
+      type: "NOTE",
+      content: "Captura local",
+      status: "ACTIVE",
+      organizationStatus: "ORGANIZED",
+      metadata: {},
+      version: 1,
+      createdAt: "2026-08-08T12:02:00.000Z",
+      updatedAt: "2026-08-08T12:02:00.000Z",
+      deletedAt: null,
+      createdByDeviceId: identity.deviceId,
+      lastModifiedByDeviceId: identity.deviceId,
+    });
+    await new IndexedDbNodeContextRelationRepository().save({
+      id: "local-auth-relation",
+      workspaceId: identity.workspaceId,
+      nodeId: "local-auth-node",
+      contextId: "local-auth-context",
+      relationType: "CONTEXT",
+      version: 1,
+      createdAt: "2026-08-08T12:03:00.000Z",
+    });
+    return storage;
+  }
+
+  async function countWorkspaceKnowledge(workspaceId: string) {
+    const [nodes, contexts, relations] = await Promise.all([
+      new IndexedDbNodeRepository().listByWorkspace(workspaceId),
+      new IndexedDbContextRepository().list({ workspaceId }),
+      new IndexedDbNodeContextRelationRepository().listByWorkspace(workspaceId),
+    ]);
+    return {
+      nodes: nodes.length,
+      contexts: contexts.length,
+      relations: relations.length,
+    };
   }
 });
 

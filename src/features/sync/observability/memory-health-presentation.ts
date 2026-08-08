@@ -3,6 +3,7 @@ import type { SyncState } from "@/features/sync/sync-state-engine";
 
 export type MemoryHealthPresentationStatus =
   | "INTEGRAL"
+  | "LOCAL"
   | "VERIFYING"
   | "PENDING"
   | "OFFLINE"
@@ -40,6 +41,16 @@ export function deriveMemoryHealthPresentation({
     ? health.pendingMutations + health.processingMutations
     : syncState.pendingMutations + syncState.processingMutations;
   const failedCount = health?.failedMutations ?? syncState.failedMutations;
+
+  if (syncState.authentication === "AUTHENTICATED_LOCAL") {
+    return createPresentation({
+      status: "LOCAL",
+      headline: "Local · Sin sincronización",
+      severity: "offline",
+      conflictCount,
+      pendingCount,
+    });
+  }
 
   if (localError || failedCount > 0 || health?.status === "ERROR" || syncState.lastError) {
     const headline = localError

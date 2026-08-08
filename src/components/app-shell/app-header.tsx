@@ -23,9 +23,11 @@ export type AppHeaderProps = {
 
 export function AppHeader({ pathname, onFocusWriting }: AppHeaderProps) {
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, logout, isLocalOnly } = useAuth();
   const [loggingOut, setLoggingOut] = useState(false);
-  const identity = user?.displayName || user?.email || "Sesion local";
+  const identity = isLocalOnly
+    ? "Modo local"
+    : user?.displayName || user?.email || "Sesion local";
   const canvasRoute = pathname === "/" || pathname === "/concepts/explore";
   void onFocusWriting;
 
@@ -76,7 +78,7 @@ export function AppHeader({ pathname, onFocusWriting }: AppHeaderProps) {
             <KnowledgeManagementCenterMenuItem label="Conocimiento" trigger="menu" />
             <div className="my-1 h-px bg-zinc-100" role="separator" />
             <DropdownMenuItem disabled={loggingOut} onClick={handleLogout}>
-              Cerrar sesion
+              {isLocalOnly ? "Salir del modo local" : "Cerrar sesion"}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

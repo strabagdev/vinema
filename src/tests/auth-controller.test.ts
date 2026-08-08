@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { AuthClient } from "@/features/auth/auth-client";
 import { AuthClientError } from "@/features/auth/auth-client";
 import { createAuthController } from "@/features/auth/auth-controller";
-import { InMemoryAuthSessionStorage } from "@/features/auth/storage/in-memory-auth-session-storage";
+import {
+  InMemoryAuthSessionStorage,
+  InMemoryLocalAuthIdentityStorage,
+} from "@/features/auth/storage/in-memory-auth-session-storage";
 import type { DeviceIdentityProvider } from "@/features/auth/device-identity-provider";
 
 const user = {
@@ -43,6 +46,95 @@ const session = {
 };
 
 describe("AuthController", () => {
+  it("enters local mode without remote auth and persists a reusable identity", async () => {
+    const authStorage = new InMemoryAuthSessionStorage();
+    const localStorage = new InMemoryLocalAuthIdentityStorage();
+    const client = createAuthClientMock();
+    const authenticatedSync = createAuthenticatedSyncMock();
+    const controller = createAuthController({
+      authClient: client,
+      authSessionStorage: authStorage,
+      localAuthIdentityStorage: localStorage,
+      deviceIdentityProvider: createDeviceIdentityProvider(),
+      ensureLocalWorkspaceId: async () => workspaceId,
+      authenticatedSync,
+      clock: () => "2026-08-08T12:00:00.000Z",
+    });
+
+    const state = await controller.enterLocalMode();
+
+    expect(state).toMatchObject({
+      status: "AUTHENTICATED_LOCAL",
+      workspaceId,
+      deviceId,
+      sessionMode: "local",
+    });
+    expect(controller.getAccessToken()).toBeUndefined();
+    expect(authStorage.snapshot()).toBeNull();
+    expect(localStorage.snapshot()).toMatchObject({
+      active: true,
+      workspaceId,
+      deviceId,
+    });
+    expect(client.login).not.toHaveBeenCalled();
+    expect(client.register).not.toHaveBeenCalled();
+    expect(client.refresh).not.toHaveBeenCalled();
+    expect(authenticatedSync.handleAuthState).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "AUTHENTICATED_LOCAL" }),
+    );
+
+    await controller.syncNow();
+    expect(authenticatedSync.syncNow).not.toHaveBeenCalled();
+  });
+
+  it("restores active local mode immediately and reuses it after local exit", async () => {
+    const authStorage = new InMemoryAuthSessionStorage();
+    const localStorage = new InMemoryLocalAuthIdentityStorage();
+    const client = createAuthClientMock();
+    const first = createAuthController({
+      authClient: client,
+      authSessionStorage: authStorage,
+      localAuthIdentityStorage: localStorage,
+      deviceIdentityProvider: createDeviceIdentityProvider(),
+      ensureLocalWorkspaceId: async () => workspaceId,
+    });
+
+    await first.enterLocalMode();
+    const initialIdentity = localStorage.snapshot();
+    await first.logout();
+
+    expect(localStorage.snapshot()).toMatchObject({
+      active: false,
+      workspaceId,
+    });
+    expect(client.logout).not.toHaveBeenCalled();
+
+    await first.enterLocalMode();
+    expect(localStorage.snapshot()).toMatchObject({
+      active: true,
+      userId: initialIdentity?.userId,
+      workspaceId: initialIdentity?.workspaceId,
+      sessionId: initialIdentity?.sessionId,
+    });
+
+    const restored = createAuthController({
+      authClient: client,
+      authSessionStorage: authStorage,
+      localAuthIdentityStorage: localStorage,
+      deviceIdentityProvider: createDeviceIdentityProvider(),
+      ensureLocalWorkspaceId: async () => "new-workspace",
+    });
+    await restored.initialize();
+
+    expect(restored.getState()).toMatchObject({
+      status: "AUTHENTICATED_LOCAL",
+      workspaceId,
+      deviceId,
+      sessionMode: "local",
+    });
+    expect(client.refresh).not.toHaveBeenCalled();
+  });
+
   it("logs out locally before a hanging remote logout can finish", async () => {
     const storage = new InMemoryAuthSessionStorage();
     let remoteLogoutStarted = false;

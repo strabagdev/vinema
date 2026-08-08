@@ -5,7 +5,10 @@ import { deleteDB } from "idb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthGuard } from "@/features/auth/auth-guard";
 import { AuthProvider, useAuth } from "@/features/auth/auth-provider";
-import { InMemoryAuthSessionStorage } from "@/features/auth/storage/in-memory-auth-session-storage";
+import {
+  InMemoryAuthSessionStorage,
+  InMemoryLocalAuthIdentityStorage,
+} from "@/features/auth/storage/in-memory-auth-session-storage";
 import {
   resetVinemaDbConnectionForTests,
   VINEMA_DB_NAME,
@@ -213,13 +216,17 @@ describe("auth focus lifecycle", () => {
   ) {
     const TestAuthProvider = AuthProvider as unknown as ComponentType<{
       authSessionStorage: InMemoryAuthSessionStorage;
+      localAuthIdentityStorage: InMemoryLocalAuthIdentityStorage;
     }>;
 
     await act(async () => {
       root.render(
         createElement(
           TestAuthProvider,
-          { authSessionStorage: storage },
+          {
+            authSessionStorage: storage,
+            localAuthIdentityStorage: new InMemoryLocalAuthIdentityStorage(),
+          },
           createElement(
             AuthGuard,
             null,

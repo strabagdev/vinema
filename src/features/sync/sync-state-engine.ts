@@ -14,6 +14,7 @@ export type SyncAuthentication =
   | "UNKNOWN"
   | "AUTHENTICATED_ONLINE"
   | "AUTHENTICATED_OFFLINE"
+  | "AUTHENTICATED_LOCAL"
   | "AUTHENTICATED"
   | "UNAUTHENTICATED";
 export type SyncErrorSource =
@@ -281,6 +282,8 @@ export function reduceSyncState(
         connectivity:
           event.authentication === "AUTHENTICATED_ONLINE"
             ? "ONLINE"
+            : event.authentication === "AUTHENTICATED_LOCAL"
+              ? "UNKNOWN"
             : state.connectivity,
       };
     case "ERROR_CLEARED":

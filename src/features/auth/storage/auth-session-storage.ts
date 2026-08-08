@@ -1,6 +1,7 @@
 import type { AuthenticatedUser } from "@vinema/sync-contracts";
 
 export interface StoredAuthSession {
+  sessionMode?: "remote";
   refreshToken: string;
   sessionId: string;
   deviceId: string;
@@ -11,10 +12,37 @@ export interface StoredAuthSession {
   refreshTokenExpiresAt?: string;
 }
 
+export interface StoredLocalAuthIdentity {
+  sessionMode: "local";
+  active: boolean;
+  userId: string;
+  workspaceId: string;
+  deviceId: string;
+  sessionId: string;
+  migrationStatus?: LocalAuthMigrationStatus;
+  migrationStartedAt?: string;
+  migratedAt?: string;
+  migratedToUserId?: string;
+  migratedToWorkspaceId?: string;
+  migrationRunId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type LocalAuthMigrationStatus =
+  | "LOCAL_PENDING"
+  | "LOCAL_MIGRATING"
+  | "LOCAL_MIGRATED";
+
 export interface AuthSessionStorage {
   load(): Promise<StoredAuthSession | null>;
   save(session: StoredAuthSession): Promise<void>;
   clear(): Promise<void>;
+}
+
+export interface LocalAuthIdentityStorage {
+  load(): Promise<StoredLocalAuthIdentity | null>;
+  save(identity: StoredLocalAuthIdentity): Promise<void>;
 }
 
 export class AuthSessionStorageError extends Error {
@@ -59,6 +87,58 @@ export function parseStoredAuthSession(value: unknown): StoredAuthSession | null
   };
 }
 
+export function parseStoredLocalAuthIdentity(value: unknown): StoredLocalAuthIdentity | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const sessionMode = record.sessionMode;
+  const userId = readNonEmptyString(record.userId);
+  const workspaceId = readNonEmptyString(record.workspaceId);
+  const deviceId = readNonEmptyString(record.deviceId);
+  const sessionId = readNonEmptyString(record.sessionId);
+  const createdAt = readIsoString(record.createdAt);
+  const updatedAt = readIsoString(record.updatedAt);
+  const migrationStatus = parseMigrationStatus(record.migrationStatus);
+  const migrationStartedAt = readIsoString(record.migrationStartedAt) ?? undefined;
+  const migratedAt = readIsoString(record.migratedAt) ?? undefined;
+  const migratedToUserId = readNonEmptyString(record.migratedToUserId) ?? undefined;
+  const migratedToWorkspaceId = readNonEmptyString(record.migratedToWorkspaceId) ?? undefined;
+  const migrationRunId = readNonEmptyString(record.migrationRunId) ?? undefined;
+
+  if (
+    sessionMode !== "local" ||
+    !userId ||
+    !workspaceId ||
+    !deviceId ||
+    !sessionId ||
+    !createdAt ||
+    !updatedAt
+  ) {
+    return null;
+  }
+
+  return {
+    sessionMode: "local",
+    active: record.active === true,
+    userId,
+    workspaceId,
+    deviceId,
+    sessionId,
+    migrationStatus:
+      migrationStatus ??
+      (migratedAt && migratedToWorkspaceId ? "LOCAL_MIGRATED" : "LOCAL_PENDING"),
+    migrationStartedAt,
+    migratedAt,
+    migratedToUserId,
+    migratedToWorkspaceId,
+    migrationRunId,
+    createdAt,
+    updatedAt,
+  };
+}
+
 export function cloneStoredAuthSession(session: StoredAuthSession): StoredAuthSession {
   return {
     refreshToken: session.refreshToken,
@@ -70,6 +150,17 @@ export function cloneStoredAuthSession(session: StoredAuthSession): StoredAuthSe
     accessTokenExpiresAt: session.accessTokenExpiresAt,
     refreshTokenExpiresAt: session.refreshTokenExpiresAt,
   };
+}
+
+export function cloneStoredLocalAuthIdentity(
+  identity: StoredLocalAuthIdentity,
+): StoredLocalAuthIdentity {
+  return { ...identity, sessionMode: "local" };
+}
+
+export function isMigratedLocalAuthIdentity(identity: StoredLocalAuthIdentity) {
+  return identity.migrationStatus === "LOCAL_MIGRATED" ||
+    Boolean(identity.migratedAt && identity.migratedToWorkspaceId);
 }
 
 function readNonEmptyString(value: unknown) {
@@ -85,6 +176,14 @@ function readIsoString(value: unknown) {
   const text = readNonEmptyString(value);
 
   return text && isIsoDate(text) ? text : null;
+}
+
+function parseMigrationStatus(value: unknown): LocalAuthMigrationStatus | undefined {
+  return value === "LOCAL_PENDING" ||
+    value === "LOCAL_MIGRATING" ||
+    value === "LOCAL_MIGRATED"
+    ? value
+    : undefined;
 }
 
 function parseStoredUser(value: unknown): AuthenticatedUser | undefined {

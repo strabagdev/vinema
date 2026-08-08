@@ -331,6 +331,29 @@ describe("auth client and state", () => {
     expect(cleared).toMatchObject({ status: "UNAUTHENTICATED", user: null });
   });
 
+  it("AuthStateEngine represents local-only sessions without token expirations", () => {
+    const local = reduceAuthState(initialAuthState, {
+      type: "AUTHENTICATED_LOCAL",
+      at: "2026-08-08T12:00:00.000Z",
+      user,
+      workspaceId,
+      deviceId,
+      sessionId,
+    });
+
+    expect(local).toMatchObject({
+      status: "AUTHENTICATED_LOCAL",
+      user,
+      workspaceId,
+      deviceId,
+      sessionId,
+      accessTokenExpiresAt: null,
+      refreshTokenExpiresAt: null,
+      sessionMode: "local",
+      error: null,
+    });
+  });
+
   it("AuthStateEngine supports subscribe, unsubscribe, listener isolation and defensive getState", () => {
     const engine = createAuthStateEngine();
     const good = vi.fn();

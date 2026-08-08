@@ -66,6 +66,28 @@ describe("deriveMemoryHealthPresentation", () => {
     });
   });
 
+  it("presents local-only mode as a valid non-syncing state", () => {
+    const presentation = deriveMemoryHealthPresentation({
+      health: healthFixture({
+        pendingMutations: 2,
+      }),
+      syncState: {
+        ...initialSyncState,
+        authentication: "AUTHENTICATED_LOCAL",
+        pendingMutations: 2,
+      },
+      verifying: false,
+      localError: null,
+    });
+
+    expect(presentation).toMatchObject({
+      status: "LOCAL",
+      headline: "Local · Sin sincronización",
+      severity: "offline",
+      pendingCount: 2,
+    });
+  });
+
   it("keeps offline above verification and pending states", () => {
     const presentation = deriveMemoryHealthPresentation({
       health: healthFixture({

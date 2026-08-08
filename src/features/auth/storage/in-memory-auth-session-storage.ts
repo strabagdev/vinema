@@ -1,7 +1,11 @@
 import {
   cloneStoredAuthSession,
+  cloneStoredLocalAuthIdentity,
   parseStoredAuthSession,
+  parseStoredLocalAuthIdentity,
   type AuthSessionStorage,
+  type LocalAuthIdentityStorage,
+  type StoredLocalAuthIdentity,
   type StoredAuthSession,
 } from "@/features/auth/storage/auth-session-storage";
 
@@ -27,5 +31,26 @@ export class InMemoryAuthSessionStorage implements AuthSessionStorage {
 
   snapshot(): StoredAuthSession | null {
     return this.session ? cloneStoredAuthSession(this.session) : null;
+  }
+}
+
+export class InMemoryLocalAuthIdentityStorage implements LocalAuthIdentityStorage {
+  private identity: StoredLocalAuthIdentity | null = null;
+
+  async load(): Promise<StoredLocalAuthIdentity | null> {
+    return this.identity ? cloneStoredLocalAuthIdentity(this.identity) : null;
+  }
+
+  async save(identity: StoredLocalAuthIdentity): Promise<void> {
+    const parsed = parseStoredLocalAuthIdentity(identity);
+    if (!parsed) {
+      throw new Error("Stored local auth identity is invalid.");
+    }
+
+    this.identity = cloneStoredLocalAuthIdentity(parsed);
+  }
+
+  snapshot(): StoredLocalAuthIdentity | null {
+    return this.identity ? cloneStoredLocalAuthIdentity(this.identity) : null;
   }
 }

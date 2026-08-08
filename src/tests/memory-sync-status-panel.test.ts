@@ -227,6 +227,26 @@ describe("MemorySyncStatusPanel", () => {
     expect(screen.textContent).toContain("Los cambios se guardaran");
   });
 
+  it("presents local-only mode without remote verification", async () => {
+    mocks.useAuth.mockReturnValue(authValue({
+      syncState: {
+        ...initialSyncState,
+        authentication: "AUTHENTICATED_LOCAL",
+        pendingMutations: 1,
+      },
+    }));
+    const screen = await renderPanel();
+
+    await click(screen.querySelector("button[aria-label='Abrir Estado de la memoria']"));
+    const verifyButton = getButton(screen, "Verificar memoria");
+    await click(verifyButton);
+
+    expect(screen.textContent).toContain("Local · Sin sincronización");
+    expect(screen.textContent).toContain("Tus datos permanecen en este dispositivo.");
+    expect(verifyButton.disabled).toBe(true);
+    expect(mocks.syncNow).not.toHaveBeenCalled();
+  });
+
   it("refreshes the visible health from the post-reconciliation snapshot", async () => {
     mocks.useAuth.mockReturnValue(authValue({
       syncState: {

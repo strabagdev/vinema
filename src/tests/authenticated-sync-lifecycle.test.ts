@@ -29,6 +29,7 @@ describe("authenticated sync lifecycle", () => {
 
     lifecycle.handleAuthState({ ...authenticatedState(), status: "CHECKING_LOCAL_SESSION" });
     lifecycle.handleAuthState({ ...authenticatedState(), status: "AUTHENTICATED_OFFLINE" });
+    lifecycle.handleAuthState({ ...authenticatedState(), status: "AUTHENTICATED_LOCAL" });
     lifecycle.handleAuthState({ ...authenticatedState(), workspaceId: null });
     lifecycle.handleAuthState({ ...authenticatedState(), deviceId: null });
 

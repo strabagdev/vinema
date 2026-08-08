@@ -12,6 +12,10 @@ const knowledgeMocks = vi.hoisted(() => ({
   replace: vi.fn(),
   resetKnowledge: vi.fn(),
   summarizeLocalKnowledge: vi.fn(),
+  auth: {
+    user: { email: "user@example.test", displayName: "User" },
+    isLocalOnly: false,
+  },
 }));
 
 vi.mock("next/navigation", () => ({
@@ -23,7 +27,8 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/features/auth/auth-provider", () => ({
   useAuth: () => ({
-    user: { email: "user@example.test", displayName: "User" },
+    user: knowledgeMocks.auth.user,
+    isLocalOnly: knowledgeMocks.auth.isLocalOnly,
     isAuthenticated: true,
     workspaceId: "workspace-1",
     deviceId: "device-1",
@@ -161,6 +166,10 @@ describe("AppHeader", () => {
       },
       local: { nodes: 22, contexts: 6, relations: 15 },
     });
+    knowledgeMocks.auth = {
+      user: { email: "user@example.test", displayName: "User" },
+      isLocalOnly: false,
+    };
   });
 
   afterEach(async () => {
@@ -235,6 +244,21 @@ describe("AppHeader", () => {
     expect(document.body.textContent).not.toContain("Importar memoria");
     expect(document.body.textContent).not.toContain("Vaciar memoria");
     expect(document.body.textContent).not.toContain("Sincronizacion futura");
+  });
+
+  it("shows local account wording without hiding local knowledge actions", async () => {
+    knowledgeMocks.auth = {
+      user: { email: "local@vinema.local", displayName: "Modo local" },
+      isLocalOnly: true,
+    };
+    const screen = await renderHeader();
+
+    await click(screen.querySelector("button[aria-label='Abrir menu']"));
+
+    expect(document.body.textContent).toContain("Modo local");
+    expect(document.body.textContent).toContain("Conocimiento");
+    expect(document.body.textContent).toContain("Salir del modo local");
+    expect(document.body.textContent).not.toContain("Cerrar sesion");
   });
 
   it("opens the existing knowledge administration center from the account menu", async () => {

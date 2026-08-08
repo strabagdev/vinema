@@ -29,6 +29,7 @@ import {
 import {
   createAuthStateEngine,
   initialAuthState,
+  type AuthSessionMode,
   type AuthState,
 } from "@/features/auth/auth-state-engine";
 import { createAuthSyncStateBridge } from "@/features/auth/auth-sync-state-bridge";
@@ -37,8 +38,15 @@ import {
   getPublicApiUrl,
   PublicApiUrlError,
 } from "@/features/auth/public-api-url";
-import type { AuthSessionStorage } from "@/features/auth/storage/auth-session-storage";
-import { createWebAuthSessionStorage } from "@/features/auth/storage/web-auth-session-storage";
+import type {
+  AuthSessionStorage,
+  LocalAuthIdentityStorage,
+} from "@/features/auth/storage/auth-session-storage";
+import {
+  createWebAuthSessionStorage,
+  createWebLocalAuthIdentityStorage,
+} from "@/features/auth/storage/web-auth-session-storage";
+import { getOrCreateDefaultWorkspace } from "@/features/workspace/get-or-create-default-workspace";
 import { createAutomaticSyncOrchestrator } from "@/features/sync/automatic-sync-orchestrator";
 import { createAuthenticatedSyncLifecycle } from "@/features/sync/authenticated-sync-lifecycle";
 import { createOrchestratorSyncStateBridge } from "@/features/sync/orchestrator-sync-state-bridge";
@@ -53,6 +61,13 @@ import {
   createSyncStateEngine,
   type SyncState,
 } from "@/features/sync/sync-state-engine";
+import {
+  detectLocalKnowledgeIncorporationOffer,
+  incorporateLocalKnowledgeToRemoteAccount,
+  type LocalKnowledgeIncorporationOffer,
+  type LocalKnowledgeIncorporationResult,
+} from "@/features/auth/local-knowledge-incorporation";
+import { workspaceRepository } from "@/infrastructure/repositories";
 
 const AUTHENTICATED_SYNC_INTERVAL_MS = 10_000;
 
@@ -64,11 +79,16 @@ export type AuthContextValue = {
   accessToken: string | undefined;
   authStatus: AuthState["status"];
   syncState: SyncState;
+  sessionMode: AuthSessionMode | null;
+  isLocalOnly: boolean;
   isAuthenticated: boolean;
   isLoading: boolean;
   error: AuthState["error"];
   register(input: AuthRegisterInput): Promise<void>;
   login(input: AuthLoginInput): Promise<void>;
+  enterLocalMode(): Promise<void>;
+  checkLocalKnowledgeIncorporation(): Promise<LocalKnowledgeIncorporationOffer | null>;
+  incorporateLocalKnowledge(): Promise<LocalKnowledgeIncorporationResult>;
   refresh(): Promise<void>;
   syncNow(): Promise<void>;
   logout(): Promise<void>;
@@ -77,6 +97,7 @@ export type AuthContextValue = {
 type AuthRuntime = {
   controller: AuthController;
   syncStateEngine: ReturnType<typeof createSyncStateEngine>;
+  localAuthIdentityStorage: LocalAuthIdentityStorage;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -84,11 +105,15 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({
   children,
   authSessionStorage,
+  localAuthIdentityStorage,
 }: {
   children: React.ReactNode;
   authSessionStorage?: AuthSessionStorage;
+  localAuthIdentityStorage?: LocalAuthIdentityStorage;
 }) {
-  const [runtime] = useState(() => createAuthRuntime(authSessionStorage));
+  const [runtime] = useState(() =>
+    createAuthRuntime({ authSessionStorage, localAuthIdentityStorage }),
+  );
   const [state, setState] = useState<AuthState>(() => runtime.controller.getState());
   const [syncState, setSyncState] = useState<SyncState>(() =>
     runtime.syncStateEngine.getState(),
@@ -163,6 +188,30 @@ export function AuthProvider({
     [runtime],
   );
 
+  const enterLocalMode = useCallback(async () => {
+    await runtime.controller.enterLocalMode();
+    setAccessToken(undefined);
+  }, [runtime]);
+
+  const checkLocalKnowledgeIncorporation = useCallback(
+    () =>
+      detectLocalKnowledgeIncorporationOffer({
+        localAuthIdentityStorage: runtime.localAuthIdentityStorage,
+      }),
+    [runtime],
+  );
+
+  const incorporateLocalKnowledge = useCallback(async () => {
+    const currentState = runtime.controller.getState();
+    return incorporateLocalKnowledgeToRemoteAccount({
+      localAuthIdentityStorage: runtime.localAuthIdentityStorage,
+      remoteUserId: currentState.user?.id,
+      remoteWorkspaceId: currentState.workspaceId,
+      remoteDeviceId: currentState.deviceId,
+      syncNow: () => runtime.controller.syncNow(),
+    });
+  }, [runtime]);
+
   const refresh = useCallback(async () => {
     await runtime.controller.refresh();
     setAccessToken(runtime.controller.getAccessToken());
@@ -186,13 +235,19 @@ export function AuthProvider({
     accessToken,
     authStatus: state.status,
     syncState,
+    sessionMode: state.sessionMode ?? null,
+    isLocalOnly: state.status === "AUTHENTICATED_LOCAL",
     isAuthenticated:
       state.status === "AUTHENTICATED_ONLINE" ||
       state.status === "AUTHENTICATED_OFFLINE" ||
+      state.status === "AUTHENTICATED_LOCAL" ||
       ((state.status === "REFRESHING" || state.status === "REVALIDATING") &&
         hasLocalAuthenticatedSession),
     isLoading: isBlockingAuthState(state, hasLocalAuthenticatedSession),
     error: state.error,
+    enterLocalMode,
+    checkLocalKnowledgeIncorporation,
+    incorporateLocalKnowledge,
     register,
     refresh,
     syncNow,
@@ -200,7 +255,10 @@ export function AuthProvider({
     logout,
   }), [
     accessToken,
+    checkLocalKnowledgeIncorporation,
+    enterLocalMode,
     hasLocalAuthenticatedSession,
+    incorporateLocalKnowledge,
     login,
     logout,
     refresh,
@@ -222,12 +280,20 @@ export function useAuth() {
   return value;
 }
 
-function createAuthRuntime(authSessionStorage?: AuthSessionStorage): AuthRuntime {
+function createAuthRuntime({
+  authSessionStorage,
+  localAuthIdentityStorage,
+}: {
+  authSessionStorage?: AuthSessionStorage;
+  localAuthIdentityStorage?: LocalAuthIdentityStorage;
+} = {}): AuthRuntime {
   const authStateEngine = createAuthStateEngine(initialAuthState);
   const syncStateEngine = createSyncStateEngine();
 
   let configError: PublicApiUrlError | null = null;
   let apiBaseUrl: string | null = null;
+  const resolvedLocalAuthIdentityStorage =
+    localAuthIdentityStorage ?? createWebLocalAuthIdentityStorage();
   let authClient: AuthClient;
   try {
     const baseUrl = getPublicApiUrl();
@@ -299,8 +365,13 @@ function createAuthRuntime(authSessionStorage?: AuthSessionStorage): AuthRuntime
   const controller = createAuthController({
     authClient,
     authSessionStorage: authSessionStorage ?? createWebAuthSessionStorage(),
+    localAuthIdentityStorage: resolvedLocalAuthIdentityStorage,
     authStateEngine,
     deviceIdentityProvider: createDeviceIdentityProvider(),
+    ensureLocalWorkspaceId: async () => {
+      const workspace = await getOrCreateDefaultWorkspace(workspaceRepository);
+      return workspace.id;
+    },
     authenticatedSync,
     logger: process.env.NODE_ENV === "development" ? console : undefined,
   });
@@ -317,7 +388,11 @@ function createAuthRuntime(authSessionStorage?: AuthSessionStorage): AuthRuntime
     originalDispose();
   };
 
-  return { controller, syncStateEngine };
+  return {
+    controller,
+    syncStateEngine,
+    localAuthIdentityStorage: resolvedLocalAuthIdentityStorage,
+  };
 }
 
 function hasUsableLocalSession(state: AuthState) {
@@ -326,7 +401,7 @@ function hasUsableLocalSession(state: AuthState) {
       state.workspaceId &&
       state.deviceId &&
       state.sessionId &&
-      state.refreshTokenExpiresAt,
+      (state.sessionMode === "local" || state.refreshTokenExpiresAt),
   );
 }
 

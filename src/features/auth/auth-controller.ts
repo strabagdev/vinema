@@ -1,4 +1,4 @@
-import type { AuthenticatedSession } from "@vinema/sync-contracts";
+import type { AuthenticatedSession, AuthenticatedUser } from "@vinema/sync-contracts";
 import { AuthClientError, type AuthClient } from "@/features/auth/auth-client";
 import type { AuthLoginInput, AuthRegisterInput } from "@/features/auth/auth-service";
 import {
@@ -10,8 +10,11 @@ import {
 import type { DeviceIdentityProvider } from "@/features/auth/device-identity-provider";
 import type {
   AuthSessionStorage,
+  LocalAuthIdentityStorage,
+  StoredLocalAuthIdentity,
   StoredAuthSession,
 } from "@/features/auth/storage/auth-session-storage";
+import { isMigratedLocalAuthIdentity } from "@/features/auth/storage/auth-session-storage";
 import type { AccessTokenProvider } from "@/features/auth/access-token-provider";
 import type { AuthenticatedSyncLifecycle } from "@/features/sync/authenticated-sync-lifecycle";
 
@@ -24,6 +27,7 @@ type AuthControllerIntent =
   | "RESTORE"
   | "LOGIN"
   | "REGISTER"
+  | "ENTER_LOCAL"
   | "REFRESH"
   | "REVALIDATE"
   | "LOGOUT"
@@ -33,6 +37,7 @@ export type AuthController = AccessTokenProvider & {
   initialize(): Promise<AuthenticatedSession | null>;
   login(input: AuthLoginInput): Promise<AuthenticatedSession>;
   register(input: AuthRegisterInput): Promise<AuthenticatedSession>;
+  enterLocalMode(): Promise<AuthState>;
   refresh(): Promise<AuthenticatedSession>;
   revalidate(): Promise<AuthenticatedSession | null>;
   logout(): Promise<void>;
@@ -45,7 +50,9 @@ export type AuthController = AccessTokenProvider & {
 export type AuthControllerConfig = {
   authClient: AuthClient;
   authSessionStorage: AuthSessionStorage;
+  localAuthIdentityStorage?: LocalAuthIdentityStorage;
   deviceIdentityProvider: DeviceIdentityProvider;
+  ensureLocalWorkspaceId?: () => Promise<string>;
   authStateEngine?: AuthStateEngine;
   authenticatedSync?: Pick<
     AuthenticatedSyncLifecycle,
@@ -64,7 +71,9 @@ export type AuthControllerConfig = {
 export function createAuthController({
   authClient,
   authSessionStorage,
+  localAuthIdentityStorage = createVolatileLocalAuthIdentityStorage(),
   deviceIdentityProvider,
+  ensureLocalWorkspaceId = async () => createId(),
   authStateEngine = createAuthStateEngine(initialAuthState),
   authenticatedSync,
   clock = () => new Date().toISOString(),
@@ -131,8 +140,57 @@ export function createAuthController({
     );
   }
 
+  async function enterLocalMode() {
+    assertActive();
+    const operationId = beginIntent("ENTER_LOCAL");
+    authStateEngine.dispatch({ type: "LOGIN_STARTED", at: clock() });
+
+    try {
+      authenticatedSync?.stop();
+      accessToken = undefined;
+      refreshToken = undefined;
+      await clearStoredSession();
+      const identity = await getOrCreateLocalIdentity();
+      if (!isCurrent(operationId, "ENTER_LOCAL")) {
+        throw new AuthCancelledError();
+      }
+
+      const activeIdentity: StoredLocalAuthIdentity = {
+        ...identity,
+        active: true,
+        updatedAt: clock(),
+      };
+      await localAuthIdentityStorage.save(activeIdentity);
+      if (!isCurrent(operationId, "ENTER_LOCAL")) {
+        throw new AuthCancelledError();
+      }
+
+      activateLocalSession(activeIdentity);
+      activeIntent = "IDLE";
+      return authStateEngine.getState();
+    } catch (error) {
+      if (error instanceof AuthCancelledError || !isCurrent(operationId, "ENTER_LOCAL")) {
+        throw error;
+      }
+
+      accessToken = undefined;
+      refreshToken = undefined;
+      authStateEngine.dispatch({
+        type: "UNAUTHENTICATED",
+        at: clock(),
+        error: { message: "No se pudo iniciar el modo local." },
+      });
+      activeIntent = "IDLE";
+      throw error;
+    }
+  }
+
   async function refresh() {
     assertActive();
+    if (authStateEngine.getState().status === "AUTHENTICATED_LOCAL") {
+      throw new AuthClientError("TOKEN_MISSING", "El modo local no usa tokens remotos.");
+    }
+
     if (inFlightRefresh) {
       return inFlightRefresh;
     }
@@ -145,6 +203,10 @@ export function createAuthController({
 
   async function revalidate() {
     assertActive();
+    if (authStateEngine.getState().status === "AUTHENTICATED_LOCAL") {
+      return null;
+    }
+
     if (inFlightRefresh) {
       try {
         return await inFlightRefresh;
@@ -169,19 +231,37 @@ export function createAuthController({
       return;
     }
 
-    const remoteRefreshToken = refreshToken;
+    const currentState = authStateEngine.getState();
+    const localIdentity = currentState.status === "AUTHENTICATED_LOCAL"
+      ? await localAuthIdentityStorage.load().catch(() => null)
+      : null;
+    const remoteRefreshToken = currentState.status === "AUTHENTICATED_LOCAL"
+      ? undefined
+      : refreshToken;
     beginIntent("LOGOUT");
     authStateEngine.dispatch({ type: "LOGOUT_STARTED", at: clock() });
     authenticatedSync?.stop();
     accessToken = undefined;
     refreshToken = undefined;
 
-    try {
-      await authSessionStorage.clear();
-    } catch (error) {
-      logger?.warn?.("auth logout local clear failed", {
-        error: error instanceof Error ? error.name : "Unknown",
+    if (localIdentity) {
+      await localAuthIdentityStorage.save({
+        ...localIdentity,
+        active: false,
+        updatedAt: clock(),
+      }).catch((error) => {
+        logger?.warn?.("local mode deactivate failed", {
+          error: error instanceof Error ? error.name : "Unknown",
+        });
       });
+    } else {
+      try {
+        await authSessionStorage.clear();
+      } catch (error) {
+        logger?.warn?.("auth logout local clear failed", {
+          error: error instanceof Error ? error.name : "Unknown",
+        });
+      }
     }
 
     authStateEngine.dispatch({ type: "UNAUTHENTICATED", at: clock(), error: null });
@@ -197,6 +277,10 @@ export function createAuthController({
   }
 
   async function syncNow() {
+    if (authStateEngine.getState().status === "AUTHENTICATED_LOCAL") {
+      return;
+    }
+
     await authenticatedSync?.syncNow();
   }
 
@@ -268,7 +352,16 @@ export function createAuthController({
 
     try {
       const storedSession = await authSessionStorage.load();
+      const localIdentity = await localAuthIdentityStorage.load().catch(() => null);
       if (!isCurrent(operationId, "RESTORE")) {
+        return null;
+      }
+
+      if (localIdentity?.active) {
+        accessToken = undefined;
+        refreshToken = undefined;
+        activateLocalSession(localIdentity);
+        activeIntent = "IDLE";
         return null;
       }
 
@@ -469,6 +562,43 @@ export function createAuthController({
     });
   }
 
+  async function getOrCreateLocalIdentity() {
+    const existing = await localAuthIdentityStorage.load();
+    if (existing && !isMigratedLocalAuthIdentity(existing)) {
+      return existing;
+    }
+
+    const now = clock();
+    const [workspaceId, deviceId] = await Promise.all([
+      ensureLocalWorkspaceId(),
+      deviceIdentityProvider.getClientDeviceId(),
+    ]);
+
+    return {
+      sessionMode: "local" as const,
+      active: true,
+      userId: createId(),
+      workspaceId,
+      deviceId,
+      sessionId: createId(),
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+
+  function activateLocalSession(identity: StoredLocalAuthIdentity) {
+    accessToken = undefined;
+    refreshToken = undefined;
+    authStateEngine.dispatch({
+      type: "AUTHENTICATED_LOCAL",
+      at: clock(),
+      user: createLocalUser(identity.userId),
+      workspaceId: identity.workspaceId,
+      deviceId: identity.deviceId,
+      sessionId: identity.sessionId,
+    });
+  }
+
   async function refreshStoredSessionWithTimeout(refreshTokenInput: string) {
     const controller = createAbortController();
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -572,6 +702,7 @@ export function createAuthController({
     initialize,
     login,
     register,
+    enterLocalMode,
     refresh,
     revalidate,
     logout,
@@ -663,4 +794,33 @@ function defaultAddOnlineListener(listener: () => void) {
 
 function normalizedTimeoutMs(value: number) {
   return Number.isFinite(value) && value > 0 ? value : RESTORE_TIMEOUT_MS;
+}
+
+function createLocalUser(userId: string): AuthenticatedUser {
+  return {
+    id: userId,
+    email: "local@vinema.local",
+    displayName: "Modo local",
+  };
+}
+
+function createId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `local-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+function createVolatileLocalAuthIdentityStorage(): LocalAuthIdentityStorage {
+  let identity: StoredLocalAuthIdentity | null = null;
+
+  return {
+    async load() {
+      return identity ? { ...identity } : null;
+    },
+    async save(nextIdentity) {
+      identity = { ...nextIdentity };
+    },
+  };
 }

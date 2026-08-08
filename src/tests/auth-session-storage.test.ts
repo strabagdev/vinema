@@ -11,11 +11,18 @@ import {
 import {
   CURRENT_AUTH_SESSION_KEY,
   IndexedDbAuthSessionStorage,
+  IndexedDbLocalAuthIdentityStorage,
+  LOCAL_AUTH_IDENTITY_KEY,
 } from "@/features/auth/storage/indexed-db-auth-session-storage";
-import { InMemoryAuthSessionStorage } from "@/features/auth/storage/in-memory-auth-session-storage";
+import {
+  InMemoryAuthSessionStorage,
+  InMemoryLocalAuthIdentityStorage,
+} from "@/features/auth/storage/in-memory-auth-session-storage";
 import {
   AuthSessionStorageError,
+  parseStoredLocalAuthIdentity,
   parseStoredAuthSession,
+  type StoredLocalAuthIdentity,
   type StoredAuthSession,
 } from "@/features/auth/storage/auth-session-storage";
 
@@ -24,6 +31,17 @@ const session: StoredAuthSession = {
   sessionId: "session-id",
   deviceId: "device-id",
   storedAt: "2026-07-31T10:00:00.000Z",
+};
+const localIdentity: StoredLocalAuthIdentity = {
+  sessionMode: "local",
+  active: true,
+  userId: "local-user-id",
+  workspaceId: "local-workspace-id",
+  deviceId: "local-device-id",
+  sessionId: "local-session-id",
+  migrationStatus: "LOCAL_PENDING",
+  createdAt: "2026-08-08T10:00:00.000Z",
+  updatedAt: "2026-08-08T10:00:00.000Z",
 };
 
 describe("auth session storage", () => {
@@ -113,6 +131,45 @@ describe("auth session storage", () => {
     await expect(
       storage.save({ ...session, refreshToken: "" }),
     ).rejects.toThrow("Stored auth session is invalid.");
+  });
+
+  it("stores local-only identity separately from the remote session", async () => {
+    const remoteStorage = new IndexedDbAuthSessionStorage();
+    const localStorage = new IndexedDbLocalAuthIdentityStorage();
+
+    await remoteStorage.save(session);
+    await localStorage.save(localIdentity);
+
+    await expect(remoteStorage.load()).resolves.toEqual(session);
+    await expect(localStorage.load()).resolves.toEqual(localIdentity);
+
+    await localStorage.save({
+      ...localIdentity,
+      active: false,
+      updatedAt: "2026-08-08T10:01:00.000Z",
+    });
+
+    await expect(localStorage.load()).resolves.toMatchObject({
+      active: false,
+      workspaceId: localIdentity.workspaceId,
+    });
+
+    const db = await getVinemaDb();
+    await expect(db.get(AUTH_SESSION_STORE, CURRENT_AUTH_SESSION_KEY)).resolves.toBeTruthy();
+    await expect(db.get(AUTH_SESSION_STORE, LOCAL_AUTH_IDENTITY_KEY)).resolves.toBeTruthy();
+  });
+
+  it("validates and clones local-only identity shapes", async () => {
+    expect(parseStoredLocalAuthIdentity(localIdentity)).toEqual(localIdentity);
+    expect(parseStoredLocalAuthIdentity({ ...localIdentity, sessionMode: "remote" })).toBeNull();
+    expect(parseStoredLocalAuthIdentity({ ...localIdentity, workspaceId: "" })).toBeNull();
+    expect(parseStoredLocalAuthIdentity({ ...localIdentity, createdAt: "bad-date" })).toBeNull();
+
+    const storage = new InMemoryLocalAuthIdentityStorage();
+    const mutable = { ...localIdentity };
+    await storage.save(mutable);
+    mutable.workspaceId = "mutated";
+    expect(await storage.load()).toEqual(localIdentity);
   });
 
   it("IndexedDbAuthSessionStorage wraps IndexedDB write errors", async () => {

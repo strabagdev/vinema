@@ -14,6 +14,11 @@ escritorio mediante Tauri 2.
   DropdownMenu, Sheet y Badge.
 - IndexedDB es el almacenamiento preferido en navegador; localStorage queda como
   fallback.
+- Vinema puede iniciar en modo local sin cuenta. Ese modo usa IndexedDB,
+  conserva un workspace local persistente y no requiere API ni sincronizacion.
+- La incorporacion de conocimiento local a una cuenta existe solo como accion
+  explicita posterior a login/registro y nunca borra datos antes de verificar la
+  sync remota.
 - SQLite queda preparado conceptualmente para escritorio, sin implementarse.
 - La deteccion de plataforma vive exclusivamente en
   `src/infrastructure/platform/detect-platform.ts`.
@@ -22,6 +27,11 @@ escritorio mediante Tauri 2.
 
 La app incluye `manifest.ts`, icono temporal y `public/sw.js`. El service worker
 cachea el shell y permite abrir las rutas base tras la primera carga.
+
+El modo local sin cuenta permite usar la experiencia principal desde el primer
+uso en PWA, navegador o Tauri. Los datos permanecen en este dispositivo hasta
+que el usuario decida incorporarlos a una cuenta despues de login o registro.
+Si elige `No por ahora`, el espacio local queda separado e intacto.
 
 ## Tauri
 

@@ -872,6 +872,90 @@ Archivo.
 - `implementation/VIN-014C-concept-profiles.md`
 - `implementation/VIN-014D-derived-concept-relationships.md`
 
+## DEC-032 — Vinema puede usarse sin cuenta mediante modo local
+
+**Fecha:** 2026-08-08
+**Estado:** Vigente
+**Ámbito:** Producto / Auth / Local-first
+
+### Decisión
+
+Vinema puede utilizarse sin cuenta mediante un workspace local persistente. El
+modo local no requiere API ni sincronizacion y conserva la experiencia principal.
+
+Modo local no equivale a sesion remota offline.
+
+### Motivo
+
+Vinema es local-first: capturar, leer, relacionar y administrar conocimiento no
+debe depender de Railway ni de credenciales. La cuenta remota agrega sync,
+multidispositivo y respaldo remoto, pero no habilita una version distinta del
+producto.
+
+### Consecuencias
+
+La autenticacion distingue tres estados:
+
+- Modo con cuenta: identidad remota, tokens, sync y respaldo remoto.
+- Modo local: identidad/workspace locales, sin tokens, sin API y sin sync.
+- Modo offline de cuenta: cuenta remota existente temporalmente sin red.
+
+Salir del modo local no borra conocimiento local. Reingresar con `Usar sin
+cuenta` reutiliza la identidad/workspace local cuando existe y no fue
+incorporada a una cuenta. Si esa identidad local ya fue incorporada, `Usar sin
+cuenta` crea un nuevo espacio local vacio para impedir migraciones duplicadas.
+
+### Evidencia
+
+- `VIN-002-foundation.md`
+- `VIN-003-local-core.md`
+- `implementation/VIN-008C3D-authentication-lifecycle.md`
+
+## DEC-033 — La incorporacion local a cuenta siempre es explicita y verificada
+
+**Fecha:** 2026-08-08
+**Estado:** Vigente
+**Ámbito:** Producto / Auth / Local-first / Sync
+
+### Decisión
+
+Vinema nunca incorpora conocimiento local a una cuenta de forma silenciosa.
+Despues de login/registro, si existe contenido local, el usuario decide si
+incorporarlo. El contenido local solo se elimina despues de una incorporacion
+verificada. Un workspace local ya incorporado no puede migrarse posteriormente a
+otra cuenta.
+
+### Motivo
+
+El modo local y la cuenta remota son espacios de confianza distintos. Migrar sin
+consentimiento mezclaria identidades y podria borrar el unico respaldo local si
+fallan red o sincronizacion.
+
+### Consecuencias
+
+Tras login o registro remoto, Vinema revisa capturas, conceptos y relaciones del
+workspace local. Si hay conocimiento real, muestra el dialogo `Tienes
+conocimiento guardado en este dispositivo` con las acciones `Incorporar a mi
+cuenta` y `No por ahora`.
+
+`No por ahora` entra a la cuenta sin modificar identidad ni contenido local. La
+incorporacion usa estado persistente `LOCAL_PENDING`, `LOCAL_MIGRATING` y
+`LOCAL_MIGRATED`; prepara un snapshot local, mapea equivalencias contra el
+workspace remoto, escribe al flujo normal de outbox/sync, verifica que las
+mutaciones remotas incorporadas queden confirmadas y solo entonces limpia el
+workspace local migrado y marca la identidad como inactiva/migrada.
+
+Si falla una etapa, Vinema conserva el contenido local intacto y permite
+reintentar. Si la app se cierra durante `LOCAL_MIGRATING`, el siguiente inicio
+trata el contenido como pendiente/interrumpido sin limpieza destructiva.
+
+### Evidencia
+
+- `VIN-002-foundation.md`
+- `VIN-003-local-core.md`
+- `implementation/VIN-008C3D-authentication-lifecycle.md`
+- `../src/features/auth/local-knowledge-incorporation.ts`
+
 ## Decisiones pendientes de consolidación
 
 - Las vistas de lectura pueden conservar scroll natural. Falta una fuente
