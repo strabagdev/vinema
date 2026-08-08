@@ -103,6 +103,14 @@ Endpoints:
 ## Tauri
 
 Tauri usa `http://localhost:3000` en desarrollo segun `src-tauri/tauri.conf.json`.
+En produccion, Tauri empaqueta `../out`, por lo que `next.config.ts` debe
+mantener `output: "export"` y `npm run build` debe regenerar `out/` antes de
+`npm run tauri:build`.
+
+WSL/Linux sirve para validar la integracion Linux y que Tauri consume el
+frontend estatico. El ejecutable e instalador Windows deben generarse desde
+Windows nativo, no mediante cross-compilacion desde WSL.
+
 La aplicacion local mantiene IndexedDB como base offline. El repositorio contiene
 contratos y mappers de sincronizacion, pero todavia no contiene un motor cliente
 Tauri que seleccione automaticamente entre URL local y URL de produccion ni que

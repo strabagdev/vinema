@@ -167,13 +167,20 @@ El panel de recuerdos muestra los primeros recuerdos segun la logica existente. 
 
 - fragmento del cuerpo;
 - fecha compacta;
-- link al detalle;
+- apertura del detalle en el workspace modal embedded;
 - preservacion del borrador antes de abrir.
 
 Las sugerencias de Memoria priorizan la captura relacionada. El concepto
 asociado, categoria conceptual o identidad emergente no se usa como encabezado
 visual normal si no aporta informacion adicional. No se fabrica titulo ni se
 duplica la primera linea.
+
+Las capturas abiertas desde sugerencias de Memoria utilizan el mismo workspace
+modal embedded que el resto de la exploracion. Vinema no abandona el canvas para
+visualizar una captura: el click hace `PUSH` a `memory-detail` en
+`workspaceHistory`, renderiza `NoteDetailClient` embedded dentro de
+`ApplicationWorkspaceDialog`, no cambia la URL y conserva el borrador, panel y
+snapshot contextual de la sesion.
 
 ## Politica de apertura
 

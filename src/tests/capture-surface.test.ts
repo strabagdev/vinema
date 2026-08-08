@@ -90,6 +90,7 @@ vi.mock("@/app/notes/detail/note-detail-client", () => ({
       {
         "data-note-detail": "",
         "data-node-id": embeddedNodeId,
+        "data-embedded": embeddedNodeId ? "true" : "false",
       },
       `Detalle captura ${embeddedNodeId}`,
       createElement(
@@ -1986,6 +1987,7 @@ describe("CaptureSurface", () => {
   });
 
   it("shows recovered captures as compact navigable suggestions without global CTAs", async () => {
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
     const storage = new MemoryStorageAdapter();
     const nodeRepository = new InMemoryNodeRepository([
       createStoredNode({
@@ -2026,6 +2028,36 @@ describe("CaptureSurface", () => {
     await expect(relationRepository.listByWorkspace(workspace.id)).resolves.toEqual(
       [],
     );
+
+    const canvas = screen.container.querySelector("[data-capture-canvas]");
+    await clickAnchor(recoveryLink!);
+
+    const captureDialog = getDialog(document.body, "Captura") as HTMLElement;
+    const noteDetail = document.body.querySelector("[data-note-detail]");
+
+    expect(captureDialog).toBeDefined();
+    expect(captureDialog.hasAttribute("data-application-workspace-dialog")).toBe(true);
+    expect(noteDetail?.getAttribute("data-node-id")).toBe("mitcom");
+    expect(noteDetail?.getAttribute("data-embedded")).toBe("true");
+    expect(document.body.querySelectorAll("[data-application-workspace-dialog]")).toHaveLength(1);
+    expect(getButtonByLabel(document.body, "Volver")).toBeDefined();
+    expect(getDialog(screen.container, "Me recuerda a…")).toBeDefined();
+    expect(screen.container.contains(canvas)).toBe(true);
+    expect(getTextarea(screen.container)?.value).toBe(
+      "Planificar control de gestion con Mitcom",
+    );
+    expect(window.location.pathname).toBe("/");
+    expect(navigationMocks.push).not.toHaveBeenCalled();
+    expect(openSpy).not.toHaveBeenCalled();
+
+    await click(getButtonByLabel(document.body, "Volver") as HTMLButtonElement);
+
+    expect(getDialog(document.body, "Captura")).toBeUndefined();
+    expect(document.body.querySelector("[data-note-detail]")).toBeNull();
+    expect(screen.container.contains(canvas)).toBe(true);
+    expect(window.location.pathname).toBe("/");
+
+    openSpy.mockRestore();
   });
 
   it("shows more compact memory rows in the same contextual panel", async () => {
@@ -3946,6 +3978,13 @@ function setNativeValue(
 async function click(button: HTMLButtonElement) {
   await act(async () => {
     button.click();
+    await flushPromises();
+  });
+}
+
+async function clickAnchor(anchor: HTMLAnchorElement) {
+  await act(async () => {
+    anchor.click();
     await flushPromises();
   });
 }

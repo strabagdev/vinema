@@ -1036,6 +1036,11 @@ export function CaptureSurface({
     pushWorkspaceView({ kind: "memory-detail", nodeId });
   }, []);
 
+  async function openContextualMemoryCapture(nodeId: string) {
+    await persistCurrentDraft();
+    openWorkspaceMemoryDetail(nodeId);
+  }
+
   const openWorkspaceConcept = useCallback((contextId: string) => {
     pushWorkspaceView({
       kind: "concept-workspace",
@@ -1046,6 +1051,13 @@ export function CaptureSurface({
   const closeRootWorkspaceDialog = useCallback(() => {
     changeWorkspaceDialog(false);
   }, [changeWorkspaceDialog]);
+
+  const workspaceDialogBack =
+    workspaceHistory.length > 1
+      ? goBackWorkspace
+      : currentWorkspaceView?.kind === "memory-detail"
+        ? closeWorkspaceDialog
+        : undefined;
 
   function goBackWorkspace() {
     setWorkspaceHistory((current) =>
@@ -1186,7 +1198,7 @@ export function CaptureSurface({
               onClosePanels={closePanels}
               onToggleExisting={toggleConcept}
               onToggleEmerging={toggleEmergingConcept}
-              onOpenCapture={persistCurrentDraft}
+              onOpenCapture={openContextualMemoryCapture}
             />
           }
         >
@@ -1248,7 +1260,7 @@ export function CaptureSurface({
           workspaceHistory.length <= 1
         }
         returnFocusRef={workspaceDialogTriggerRef}
-        onBack={workspaceHistory.length > 1 ? goBackWorkspace : undefined}
+        onBack={workspaceDialogBack}
         onOpenChange={changeWorkspaceDialog}
       >
         {currentWorkspaceView?.kind === "memory-index" ? (
@@ -1267,7 +1279,7 @@ export function CaptureSurface({
             embeddedNodeId={currentWorkspaceView.nodeId}
             embeddedState={currentWorkspaceEntry?.state.capture}
             onEmbeddedStateChange={replaceCaptureWorkspaceState}
-            onBack={goBackWorkspace}
+            onBack={workspaceDialogBack}
             onOpenConcept={openWorkspaceConcept}
           />
         ) : null}
@@ -1812,7 +1824,7 @@ function CanvasContextualLayer({
   onClosePanels: () => void;
   onToggleExisting: (contextId: string) => void;
   onToggleEmerging: (candidateId: string) => void;
-  onOpenCapture: () => Promise<void>;
+  onOpenCapture: (nodeId: string) => void | Promise<void>;
 }) {
   const contextPanelVisible = isContextualCanvasPanel(visiblePanel);
   const hasContextButtons = showMemoryIndicator || showConceptIndicator;
@@ -2324,7 +2336,7 @@ function MemoryPanelContent({
   loading: boolean;
   error: boolean;
   onRetry: () => void;
-  onOpenCapture: () => void | Promise<void>;
+  onOpenCapture: (nodeId: string) => void | Promise<void>;
 }) {
   const visibleSuggestions = suggestions.slice(0, INITIAL_MEMORY_RESULT_LIMIT);
 
@@ -2365,7 +2377,7 @@ function MemoryResult({
   onOpenCapture,
 }: {
   node: Node;
-  onOpenCapture: () => void | Promise<void>;
+  onOpenCapture: (nodeId: string) => void | Promise<void>;
 }) {
   const preview = getCapturePreview(node.content, { maxLength: 180 });
 
@@ -2376,8 +2388,9 @@ function MemoryResult({
         aria-label={`Abrir recuerdo: ${preview}`}
         title={preview}
         className="block min-w-0 rounded-md px-3 py-1.5 outline-none hover:bg-zinc-50 hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
-        onClick={() => {
-          void onOpenCapture();
+        onClick={(event) => {
+          event.preventDefault();
+          void onOpenCapture(node.id);
         }}
       >
         <span className="block min-w-0 truncate text-zinc-800">{preview}</span>

@@ -89,8 +89,7 @@ En `package.json`:
 
 ### Configuracion
 
-- `next.config.ts`: `output: "export"`, imagenes sin optimizacion y root de
-  Turbopack.
+- `next.config.ts`: `output: "export"` y root de Turbopack.
 - `tsconfig.json`: `strict: true`, alias `@/* -> ./src/*`,
   `moduleResolution: "bundler"`.
 - `postcss.config.mjs`: Tailwind 4 via `@tailwindcss/postcss`.

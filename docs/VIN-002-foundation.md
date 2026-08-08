@@ -7,6 +7,8 @@ escritorio mediante Tauri 2.
 
 - Next.js App Router con TypeScript estricto y `src/`.
 - `output: "export"` para que Tauri empaquete assets estaticos desde `out/`.
+- `npm run build` debe regenerar `out/`; Tauri no consume `.next` en
+  produccion.
 - shadcn/ui estilo `new-york`, base `zinc` y variables CSS.
 - Componentes instalados/creados: Button, Input, Tooltip, Separator,
   DropdownMenu, Sheet y Badge.
@@ -27,9 +29,13 @@ Configuracion principal:
 
 - Producto: Vinema.
 - Bundle identifier: `com.vinema.app`.
+- Frontend empaquetado: `../out` segun `src-tauri/tauri.conf.json`.
 - Ventana: 1100x720.
 - Minimo: 900x620.
 - Sin SQLite, AutoUpdate, tray ni plugins adicionales.
+- Windows debe compilarse desde Windows nativo con Rust/MSVC/WebView2. WSL se
+  puede usar para validar el build Linux y que Tauri encuentre `../out`, pero no
+  para producir el `.exe` o instalador Windows.
 
 ## Validaciones esperadas
 

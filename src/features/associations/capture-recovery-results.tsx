@@ -27,7 +27,7 @@ export function CaptureRecoveryResults({
   error: AssociationError | null;
   identities?: Map<string, CaptureEmergentIdentity>;
   onRetry: () => void;
-  onOpenCapture?: () => void | Promise<void>;
+  onOpenCapture?: (nodeId: string) => void | Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -79,8 +79,13 @@ export function CaptureRecoveryResults({
                   aria-label={`Abrir captura: ${preview}`}
                   title={preview}
                   className="block min-w-0 rounded-sm outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
-                  onClick={() => {
-                    void onOpenCapture?.();
+                  onClick={(event) => {
+                    if (!onOpenCapture) {
+                      return;
+                    }
+
+                    event.preventDefault();
+                    void onOpenCapture(suggestion.node.id);
                   }}
                 >
                   <span className="block min-w-0 truncate">{preview}</span>
