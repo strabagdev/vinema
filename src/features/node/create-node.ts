@@ -29,8 +29,6 @@ export async function createNode(
     version: 1,
     createdAt: now,
     contentUpdatedAt: now,
-    archivedAt: null,
-    restoredAt: null,
     updatedAt: now,
     deletedAt: null,
     createdByDeviceId: input.device.id,

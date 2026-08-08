@@ -82,7 +82,7 @@ describe("memory threads", () => {
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
       kind: "thread",
-      thread: { captureCount: 2 },
+      thread: { captureCount: 3 },
     });
   });
 

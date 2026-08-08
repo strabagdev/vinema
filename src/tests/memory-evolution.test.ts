@@ -184,7 +184,7 @@ describe("Memory Evolution v1", () => {
     ];
     const signals = deriveMemoryEvolutionSignals({ contexts, nodes, relations, now });
 
-    expect(signals).toHaveLength(1);
+    expect(signals).toHaveLength(2);
     expect(signals[0].conceptId).toBe("vinema");
   });
 

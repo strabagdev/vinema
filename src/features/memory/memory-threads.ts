@@ -102,7 +102,7 @@ export function deriveMemoryThreads(input: {
 }
 
 function isThreadableCapture(node: Node) {
-  return node.deletedAt === null && node.status === "ACTIVE";
+  return node.deletedAt === null;
 }
 
 function sortCaptures(captures: MemoryThreadCapture[]) {

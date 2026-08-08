@@ -17,10 +17,12 @@ Un perfil responde preguntas mas concretas y verificables:
 
 - donde aparecio este concepto;
 - con que otros conceptos aparece;
-- cuando comenzo;
-- cuando fue la ultima vez;
 - que recuerdos lo sostienen;
 - como ha evolucionado.
+
+La interfaz normal no convierte esas respuestas en un panel de metricas. Fechas
+como primera aparicion o ultima actividad existen en el modelo derivado, pero se
+reservan para detalle progresivo o para senales excepcionales.
 
 Por eso el perfil no introduce taxonomia, categorias ni relaciones persistidas
 concepto-concepto.
@@ -75,6 +77,11 @@ La seleccion inicial es deterministica:
 
 El limite inicial es cinco recuerdos. No se fabrican titulos.
 
+La vista del perfil no muestra los cinco de entrada. Renderiza por defecto hasta
+dos recuerdos representativos y, si hay mas evidencia, ofrece `Ver los N
+recuerdos` para expandirlos dentro de la misma columna. La expansion no cambia
+la URL ni abre otro modal.
+
 ## Conexiones
 
 Los conceptos relacionados se derivan desde capturas compartidas. Dos conceptos
@@ -112,6 +119,26 @@ basta con no mostrarla.
 `/concepts/detail` usa el perfil como superficie principal de evidencia. Los
 conceptos relacionados abren su propio perfil y conservan la navegacion local
 entre conceptos.
+
+En el workspace modal de Conceptos, el perfil no se presenta como una tercera
+region horizontal ni compite con la busqueda. La navegacion de conceptos vive en
+una franja superior compacta que integra `Conceptos`, buscador, carrusel
+horizontal de nombres y cierre al extremo derecho. No hay header separado,
+subtitulo visible, divisor ni espacio vertical redundante. El perfil ocupa el
+area inferior izquierda, mientras el mapa permanece visible a la derecha en una
+distribucion aproximada 40/60. La lectura del perfil se vuelve mas selectiva:
+
+- no muestra el titulo `Perfil`;
+- no muestra `Perfil vivo` ni `Activo`, porque son condiciones normales;
+- no muestra textos normales de confirmacion como `Concepto emergente
+  confirmado desde la captura actual`;
+- no muestra `Archivado`: el archivado dejo de ser un estado visible de
+  producto y los datos legacy se tratan como memoria disponible;
+- resume la evidencia como `N recuerdos · N conexiones`;
+- renderiza descripcion, aliases, relaciones y recuerdos solo cuando existen;
+- omite fechas derivadas si no aportan decision o navegacion inmediata;
+- muestra como maximo dos recuerdos representativos por defecto y permite
+  expandir el resto en la misma columna.
 
 ## Sync
 

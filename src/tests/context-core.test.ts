@@ -4,7 +4,6 @@ import type { Device } from "@/domain/device/device";
 import { DevicePlatform } from "@/domain/device/device";
 import type { Node } from "@/domain/node/node";
 import type { Workspace } from "@/domain/workspace/workspace";
-import { archiveContext } from "@/features/context/archive-context";
 import { createContext } from "@/features/context/create-context";
 import {
   attachNodeToContext,
@@ -12,9 +11,7 @@ import {
   listContextsForNode,
   listNodesForContext,
 } from "@/features/context/node-context-relations";
-import { restoreContext } from "@/features/context/restore-context";
 import { updateContext } from "@/features/context/update-context";
-import { archiveNode } from "@/features/node/archive-node";
 import { InMemoryContextRepository } from "@/tests/fakes/in-memory-context-repository";
 import { InMemoryNodeContextRelationRepository } from "@/tests/fakes/in-memory-node-context-relation-repository";
 import { InMemoryNodeRepository } from "@/tests/fakes/in-memory-node-repository";
@@ -123,7 +120,7 @@ describe("Context core", () => {
     ).rejects.toThrow("El tipo de contexto no es valido");
   });
 
-  it("updates, archives, restores and lists contexts by type", async () => {
+  it("updates and lists contexts by type", async () => {
     const repository = new InMemoryContextRepository();
     const area = await createContext(repository, {
       workspaceId: workspace.id,
@@ -141,24 +138,12 @@ describe("Context core", () => {
       name: "Trabajo profundo",
       description: "Area principal",
     });
-    const archivedArea = await archiveContext(repository, area.id);
 
     await expect(
       repository.list({ workspaceId: workspace.id, type: "AREA" }),
-    ).resolves.toEqual([]);
-    await expect(
-      repository.list({
-        workspaceId: workspace.id,
-        type: "AREA",
-        includeArchived: true,
-      }),
     ).resolves.toMatchObject([{ id: area.id }]);
 
-    const restoredArea = await restoreContext(repository, area.id);
-
     expect(updatedArea.name).toBe("Trabajo profundo");
-    expect(archivedArea.archivedAt).toEqual(expect.any(String));
-    expect(restoredArea.archivedAt).toBeNull();
   });
 
   it("prevents duplicate names within the same workspace and type", async () => {
@@ -348,23 +333,17 @@ describe("Node context relations", () => {
     ).resolves.toEqual([area]);
     await expect(
       listContextsForNode(repositories, { nodeId: node.id }),
-    ).resolves.toEqual([area]);
-    await expect(
-      listContextsForNode(repositories, {
-        nodeId: node.id,
-        includeArchived: true,
-      }),
     ).resolves.toEqual([archivedProject, area]);
   });
 
-  it("rejects creating a new relation to an archived context", async () => {
+  it("creates a new relation to a legacy archived context", async () => {
     const node = makeNode({ id: "note-1" });
-    const archivedContext = makeContext({
+    const legacyContext = makeContext({
       id: "area-1",
       archivedAt: "2026-01-02T00:00:00.000Z",
     });
     const repositories = {
-      contextRepository: new InMemoryContextRepository([archivedContext]),
+      contextRepository: new InMemoryContextRepository([legacyContext]),
       nodeContextRelationRepository: new InMemoryNodeContextRelationRepository(),
       nodeRepository: new InMemoryNodeRepository([node]),
     };
@@ -372,13 +351,13 @@ describe("Node context relations", () => {
     await expect(
       attachNodeToContext(repositories, {
         nodeId: node.id,
-        contextId: archivedContext.id,
+        contextId: legacyContext.id,
       }),
-    ).rejects.toThrow("contexto archivado");
+    ).resolves.toMatchObject({ contextId: legacyContext.id, nodeId: node.id });
   });
 
-  it("excludes archived nodes by default but preserves relations", async () => {
-    const node = makeNode({ id: "note-1" });
+  it("includes legacy archived nodes and preserves relations", async () => {
+    const node = makeNode({ id: "note-1", status: "ARCHIVED" });
     const context = makeContext({ id: "area-1" });
     const nodeRepository = new InMemoryNodeRepository([node]);
     const relationRepository = new InMemoryNodeContextRelationRepository();
@@ -392,17 +371,9 @@ describe("Node context relations", () => {
       nodeId: node.id,
       contextId: context.id,
     });
-    const archivedNode = await archiveNode(nodeRepository, node.id, device);
-
     await expect(
       listNodesForContext(repositories, { contextId: context.id }),
-    ).resolves.toEqual([]);
-    await expect(
-      listNodesForContext(repositories, {
-        contextId: context.id,
-        includeArchived: true,
-      }),
-    ).resolves.toEqual([archivedNode]);
+    ).resolves.toMatchObject([{ id: node.id, status: "ACTIVE" }]);
     await expect(relationRepository.listByContextId(context.id)).resolves.toHaveLength(
       1,
     );

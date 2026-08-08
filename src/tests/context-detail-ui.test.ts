@@ -90,31 +90,20 @@ describe("ContextDetailView", () => {
     expect(screen.textContent).not.toContain("No persistir");
   });
 
-  it("archives and restores context from read mode", async () => {
-    const onArchive = vi.fn(async () => undefined);
-    const onRestore = vi.fn(async () => undefined);
-    const screen = await renderContextDetail({ onArchive, onRestore });
+  it("does not expose archive or restore actions", async () => {
+    const screen = await renderContextDetail();
 
-    await click(getButton(screen, "Archivar"));
-
-    expect(onArchive).toHaveBeenCalledOnce();
-    expect(screen.textContent).toContain("Archivado");
-
-    await click(getButton(screen, "Restaurar"));
-
-    expect(onRestore).toHaveBeenCalledOnce();
-    expect(screen.textContent).toContain("Activo");
+    expect(screen.textContent).not.toContain("Activo");
+    expect(screen.textContent).not.toContain("Archivado");
+    expect(getButton(screen, "Archivar")).toBeUndefined();
+    expect(getButton(screen, "Restaurar")).toBeUndefined();
   });
 });
 
 async function renderContextDetail({
   onSave = vi.fn(async () => context),
-  onArchive = vi.fn(async () => undefined),
-  onRestore = vi.fn(async () => undefined),
 }: {
   onSave?: (draft: { name: string; description: string }) => Promise<Context>;
-  onArchive?: () => Promise<void>;
-  onRestore?: () => Promise<void>;
 } = {}) {
   const container = document.createElement("div");
   document.body.replaceChildren(container);
@@ -125,8 +114,6 @@ async function renderContextDetail({
         context,
         nodes: [node],
         onSave,
-        onArchive,
-        onRestore,
       }),
     );
   });

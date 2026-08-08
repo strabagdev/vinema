@@ -35,11 +35,10 @@ export function createMemorySignature({
   const parts = [
     `generation:${generation}`,
     ...nodes
-      .filter((node) => node.status === "ACTIVE")
+      .filter((node) => node.deletedAt === null)
       .map((node) => `capture:${node.id}:${node.version}:${node.updatedAt}`)
       .sort(),
     ...contexts
-      .filter((context) => context.archivedAt === null)
       .map((context) => `concept:${context.id}:${context.version}:${context.updatedAt}`)
       .sort(),
     ...relations

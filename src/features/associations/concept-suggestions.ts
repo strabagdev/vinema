@@ -49,10 +49,7 @@ export function suggestConcepts({
     relations,
     selectedContextIds,
   });
-  const selected = selectedConcepts(
-    contexts.filter((context) => context.archivedAt === null),
-    selectedContextIds,
-  );
+  const selected = selectedConcepts(contexts, selectedContextIds);
   const relevant = traces
     .filter((trace) => trace.included)
     .map(toExistingConceptSuggestion)
@@ -87,10 +84,9 @@ export function diagnoseConceptSuggestions({
   selectedContextIds?: string[];
 }): ConceptSuggestionTrace[] {
   const queryTokens = uniqueTokens(tokenizeAssociationText(text));
-  const activeContexts = contexts.filter((context) => context.archivedAt === null);
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
 
-  return activeContexts.map((context) => {
+  return contexts.map((context) => {
     const contextTokens = uniqueTokens(
       tokenizeAssociationText(
         [
@@ -115,7 +111,7 @@ export function diagnoseConceptSuggestions({
           .join(" "),
       ),
     );
-    const identityMatch = findIdentityMatch(context, text, activeContexts);
+    const identityMatch = findIdentityMatch(context, text, contexts);
     const directMatches = overlapCount(queryTokens, contextTokens) +
       (identityMatch ? Math.max(1, queryTokens.length) : 0);
     const relatedMatches = overlapCount(queryTokens, relatedContentTokens);

@@ -92,7 +92,8 @@ describe("ConceptExplorationClient", () => {
 
     expect(screen.querySelector("[data-knowledge-base-surface]")).toBeTruthy();
     expect(screen.textContent).toContain("Railway");
-    expect(screen.textContent).toContain("Perfil vivo");
+    expect(screen.textContent).toContain("2 recuerdos · 2 conexiones");
+    expect(screen.textContent).not.toContain("Perfil vivo");
     expect(screen.textContent).toContain("2 recuerdos");
     expect(screen.textContent).toContain("Recuerdos representativos");
     expect(screen.textContent).toContain("Conexiones principales");
@@ -100,6 +101,10 @@ describe("ConceptExplorationClient", () => {
     expect(screen.textContent).toContain("Sync");
     expect(screen.textContent).toContain("Workspace");
     expect(screen.textContent).toContain("Captura sobre Railway y Sync");
+    expect(screen.textContent).not.toContain("Activo");
+    expect(screen.textContent).not.toContain("Primera aparición");
+    expect(screen.textContent).not.toContain("Última actividad");
+    expect(screen.textContent).not.toContain("Concepto emergente confirmado");
     expect(screen.textContent).not.toContain("Sin título");
     expect(screen.textContent).not.toContain("other workspace");
   });
@@ -137,8 +142,27 @@ describe("ConceptExplorationClient", () => {
     expect(queryButtonByLabel(screen, "Tiempo")).toBeNull();
     expect(queryButtonByLabel(screen, "Mapa")).toBeNull();
     expect(screen.textContent).toContain("Conexiones principales");
-    expect(screen.textContent).toContain("Explorar conexiones");
+    expect(screen.textContent).not.toContain("Explorar conexiones");
     expect(screen.textContent).not.toContain("Graphify");
+  });
+
+  it("keeps relationship evidence collapsed until requested", async () => {
+    const screen = await renderConceptExploration();
+    const relationships = screen.querySelector(
+      "section[aria-label='Relaciones']",
+    ) as HTMLElement;
+
+    expect(relationships.textContent).toContain("Sync");
+    expect(relationships.textContent).toContain("1 recuerdo compartido");
+    expect(relationships.textContent).not.toContain("Captura sobre Railway y Sync");
+    expect(relationships.textContent).not.toContain("Reciente");
+    expect(relationships.textContent).not.toContain("Estable");
+    expect(relationships.textContent).not.toContain("Ocasional");
+
+    await click(getButton(relationships, "Ver evidencia"));
+
+    expect(relationships.textContent).toContain("Captura sobre Railway y Sync");
+    expect(relationships.textContent).toContain("Última actividad:");
   });
 
   it("records panel expansion origin without introducing a global knowledge base entry", async () => {
@@ -152,7 +176,7 @@ describe("ConceptExplorationClient", () => {
         .querySelector("[data-knowledge-base-surface]")
         ?.getAttribute("data-expansion-source"),
     ).toBe("panel");
-    expect(screen.textContent).toContain("Explorar conexiones");
+    expect(screen.textContent).not.toContain("Explorar conexiones");
   });
 
   it("refreshes the open exploration after remote sync invalidation", async () => {
@@ -406,13 +430,11 @@ describe("ConceptExplorationClient", () => {
     ).toBeTruthy();
   });
 
-  it("links profile connections to the global knowledge explorer with focus", async () => {
+  it("keeps the concept map as the only connection explorer", async () => {
     const screen = await renderConceptExploration();
-    const link = Array.from(screen.querySelectorAll("a")).find(
-      (item) => item.textContent?.includes("Explorar conexiones"),
-    );
 
-    expect(link?.getAttribute("href")).toBe("/concepts/explore?focus=railway");
+    expect(screen.textContent).not.toContain("Explorar conexiones");
+    expect(screen.querySelector("a[href^='/concepts/explore']")).toBeNull();
   });
 
   it("links recent concept memories back to Memoria with concept query", async () => {
@@ -428,7 +450,6 @@ describe("ConceptExplorationClient", () => {
     const openConcept = vi.fn();
     const openMemory = vi.fn();
     const openMemoryIndex = vi.fn();
-    const openMap = vi.fn();
     const onBack = vi.fn();
     const screen = await renderConceptExploration(
       createElement(ConceptExplorationClient as ComponentType<{
@@ -437,22 +458,19 @@ describe("ConceptExplorationClient", () => {
         onOpenConcept?: (conceptId: string) => void;
         onOpenMemory?: (nodeId: string) => void;
         onOpenMemoryIndex?: () => void;
-        onOpenMap?: (focusId: string) => void;
       }>, {
         embeddedContextId: "railway",
         onBack,
         onOpenConcept: openConcept,
         onOpenMemory: openMemory,
         onOpenMemoryIndex: openMemoryIndex,
-        onOpenMap: openMap,
       }),
     );
 
     expect(screen.querySelector("a[href^='/concepts/explore']")).toBeNull();
     expect(screen.querySelector("a[href^='/memory/detail']")).toBeNull();
 
-    await click(getButton(screen, "Explorar conexiones"));
-    expect(openMap).toHaveBeenCalledWith("railway");
+    expect(screen.textContent).not.toContain("Explorar conexiones");
 
     await click(getButton(screen, "Memoria"));
     expect(openMemoryIndex).toHaveBeenCalledTimes(1);
@@ -465,6 +483,8 @@ describe("ConceptExplorationClient", () => {
     );
     await click(syncButton as HTMLButtonElement);
     expect(openConcept).toHaveBeenCalledWith("sync");
+
+    await click(getButton(screen, "Ver evidencia"));
 
     const memoryButton = Array.from(screen.querySelectorAll("button")).find(
       (button) => button.textContent?.includes("Captura sobre Railway"),
@@ -491,8 +511,8 @@ describe("ConceptExplorationClient", () => {
     expect(canvas?.className).toContain("h-full");
     expect(canvas?.className).toContain("min-h-0");
     expect(canvas?.className).toContain("overflow-hidden");
-    expect(graphRegion?.className).toContain("overflow-auto");
-    expect(graphRegion?.className).toContain("vinema-scrollbar");
+    expect(graphRegion?.className).toContain("overflow-hidden");
+    expect(graphRegion?.className).not.toContain("overflow-auto");
     expect(alternativeList?.parentElement?.className).toContain("overflow-y-auto");
     expect(screen.querySelector("svg[aria-label='Mapa de conceptos conectados']")).toBeTruthy();
   });

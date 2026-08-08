@@ -1,6 +1,8 @@
 # VIN-013C - Knowledge Management Center
 
-> Ampliado por VIN-013D y VIN-013C.1. El centro actual se llama `Conocimiento` y usa la semantica de memoria completa: `Respaldar memoria`, `Restaurar memoria`, `Vaciar memoria` y `Explorar`.
+> Ampliado por VIN-013D y VIN-013C.1. El centro actual se llama `Conocimiento`
+> y usa la semantica administrativa de memoria: `Respaldar memoria`,
+> `Restaurar memoria` y `Vaciar memoria`.
 
 ## Decision de Producto
 
@@ -8,7 +10,6 @@ VIN-013C consolida las acciones de memoria en un unico centro. Desde VIN-013C.1,
 
 El menu de sesion vuelve a ser minimo:
 
-- Archivo;
 - Conocimiento;
 - Cerrar sesion.
 
@@ -20,10 +21,11 @@ Las acciones de respaldo, restauracion y vaciado dejan de vivir directamente en 
 
 - `Respaldar memoria`;
 - `Restaurar memoria`;
-- `Vaciar memoria`;
-- `Explorar`.
+- `Vaciar memoria`.
 
-`Explorar` abre la entrada global de conocimiento en `/concepts`, cierra el centro y no queda como accion permanente del header ni como item directo del menu de sesion.
+`Conocimiento` no explora la memoria acumulada ni abre Conceptos. La exploracion
+global vive en el rail izquierdo: `Brain` abre Explorar conocimiento y
+`Network` abre Explorar conceptos dentro de `ApplicationWorkspaceDialog`.
 
 El centro muestra un resumen compacto:
 
@@ -32,12 +34,6 @@ El centro muestra un resumen compacto:
 ```
 
 No muestra IDs, detalles de base de datos ni el concepto tecnico de workspace.
-
-## Explorar
-
-La accion `Explorar` pertenece al centro `Conocimiento`.
-
-La entrada global no fabrica conceptos ni muestra una lista de capturas como fallback. Si existen conceptos, los presenta como puntos de entrada a la Base de conocimiento contextual existente. Si no existen conceptos, muestra un estado vacio sereno y permite volver al canvas.
 
 ## Backup
 

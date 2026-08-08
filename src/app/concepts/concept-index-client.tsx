@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { ArrowLeft, Brain, Network, Search } from "lucide-react";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Context } from "@/domain/context/context";
 import type { NodeContextRelation } from "@/domain/context/node-context-relation";
 import type { Node } from "@/domain/node/node";
@@ -32,12 +32,16 @@ export function ConceptIndexClient({
   embedded = false,
   workspaceMode = false,
   selectedConceptId = null,
+  initialQuery = "",
+  onQueryChange,
   onOpenMap,
   onOpenConcept,
 }: {
   embedded?: boolean;
   workspaceMode?: boolean;
   selectedConceptId?: string | null;
+  initialQuery?: string;
+  onQueryChange?: (query: string) => void;
   onOpenMap?: () => void;
   onOpenConcept?: (conceptId: string) => void;
 } = {}) {
@@ -47,7 +51,8 @@ export function ConceptIndexClient({
   const [relations, setRelations] = useState<NodeContextRelation[]>([]);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
+  const carouselRef = useRef<HTMLDivElement | null>(null);
 
   const loadConcepts = useCallback(async () => {
     if (vinemaContext.status !== "ready") {
@@ -61,7 +66,6 @@ export function ConceptIndexClient({
       const [nextConcepts, nextRelations, nextNodes] = await Promise.all([
         contextRepository.list({
           workspaceId: vinemaContext.workspace.id,
-          includeArchived: false,
         }),
         nodeContextRelationRepository.listByWorkspace(vinemaContext.workspace.id),
         nodeRepository.listByWorkspace(vinemaContext.workspace.id),
@@ -105,13 +109,34 @@ export function ConceptIndexClient({
     [concepts, query],
   );
 
+  function updateQuery(nextQuery: string) {
+    setQuery(nextQuery);
+    onQueryChange?.(nextQuery);
+  }
+
+  useEffect(() => {
+    if (!workspaceMode || !selectedConceptId) {
+      return;
+    }
+
+    const activeItem = carouselRef.current?.querySelector(
+      "[data-concept-carousel-item-active='true']",
+    );
+
+    activeItem?.scrollIntoView?.({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "nearest",
+    });
+  }, [selectedConceptId, workspaceMode, visibleConcepts]);
+
   if (vinemaContext.status === "loading" || loadState === "loading") {
     return (
       <ConceptIndexShell
         embedded={embedded}
         workspaceMode={workspaceMode}
         query={query}
-        onQueryChange={setQuery}
+        onQueryChange={updateQuery}
         onOpenMap={onOpenMap}
       >
         <p className="text-sm text-zinc-500">Cargando conocimiento...</p>
@@ -125,7 +150,7 @@ export function ConceptIndexClient({
         embedded={embedded}
         workspaceMode={workspaceMode}
         query={query}
-        onQueryChange={setQuery}
+        onQueryChange={updateQuery}
         onOpenMap={onOpenMap}
       >
         <ConceptIndexMessage
@@ -143,7 +168,7 @@ export function ConceptIndexClient({
         embedded={embedded}
         workspaceMode={workspaceMode}
         query={query}
-        onQueryChange={setQuery}
+        onQueryChange={updateQuery}
         onOpenMap={onOpenMap}
       >
         <ConceptIndexMessage
@@ -161,7 +186,7 @@ export function ConceptIndexClient({
         embedded={embedded}
         workspaceMode={workspaceMode}
         query={query}
-        onQueryChange={setQuery}
+        onQueryChange={updateQuery}
         onOpenMap={onOpenMap}
       >
         <ConceptIndexMessage
@@ -178,20 +203,35 @@ export function ConceptIndexClient({
       embedded={embedded}
       workspaceMode={workspaceMode}
       query={query}
-      onQueryChange={setQuery}
+      onQueryChange={updateQuery}
       onOpenMap={onOpenMap}
     >
       <div
+        ref={workspaceMode ? carouselRef : undefined}
         className={
           workspaceMode
-            ? "space-y-1"
+            ? "flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overscroll-x-contain px-2 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             : "grid gap-2 sm:grid-cols-2"
         }
-        data-concept-index-list=""
+        data-concept-carousel={workspaceMode ? "" : undefined}
+        data-concept-index-list={workspaceMode ? undefined : ""}
+        onWheel={
+          workspaceMode
+            ? (event) => {
+                if (!carouselRef.current || Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
+                  return;
+                }
+
+                carouselRef.current.scrollLeft += event.deltaY;
+              }
+            : undefined
+        }
       >
         {visibleConcepts.map((concept) => {
           const active = selectedConceptId === concept.id;
-          const content = (
+          const content = workspaceMode ? (
+            <span className="block min-w-0 truncate font-medium">{concept.name}</span>
+          ) : (
             <span className="flex items-start gap-3">
               <span
                 className={
@@ -229,10 +269,16 @@ export function ConceptIndexClient({
               key={concept.id}
               type="button"
               aria-pressed={active}
+              data-concept-carousel-item={workspaceMode ? "" : undefined}
+              data-concept-carousel-item-active={workspaceMode ? String(active) : undefined}
               className={
-                active
-                  ? "group min-w-0 rounded-lg bg-zinc-950 p-4 text-left text-white outline-none transition-colors focus-visible:ring-2 focus-visible:ring-zinc-400 motion-reduce:transition-none"
-                  : "group min-w-0 rounded-lg p-4 text-left outline-none transition-colors hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-zinc-400 motion-reduce:transition-none"
+                workspaceMode
+                  ? active
+                    ? "group h-9 max-w-[14rem] shrink-0 rounded-full bg-zinc-950 px-3 text-left text-sm font-medium text-white outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-zinc-400 motion-reduce:transition-none"
+                    : "group h-9 max-w-[14rem] shrink-0 rounded-full px-3 text-left text-sm text-zinc-700 outline-none transition-colors duration-150 hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-zinc-400 motion-reduce:transition-none"
+                  : active
+                    ? "group min-w-0 rounded-lg bg-zinc-950 p-4 text-left text-white outline-none transition-colors focus-visible:ring-2 focus-visible:ring-zinc-400 motion-reduce:transition-none"
+                    : "group min-w-0 rounded-lg p-4 text-left outline-none transition-colors hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-zinc-400 motion-reduce:transition-none"
               }
               onClick={() => onOpenConcept?.(concept.id)}
             >
@@ -272,7 +318,7 @@ function ConceptIndexShell({
     <section
       className={
         workspaceMode
-          ? "flex h-full min-h-0 w-full flex-col overflow-hidden"
+          ? "flex h-full min-h-0 w-full items-center overflow-hidden"
           : "mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-5 sm:px-6 lg:px-8"
       }
       data-concept-index=""
@@ -281,7 +327,7 @@ function ConceptIndexShell({
       <header
         className={
           workspaceMode
-            ? "shrink-0 space-y-3 border-b border-zinc-100 px-3 py-3"
+            ? "flex h-full w-[min(18rem,34vw)] shrink-0 items-center px-3"
             : "flex flex-col gap-5"
         }
       >
@@ -309,11 +355,11 @@ function ConceptIndexShell({
           </div>
         </div>
         {workspaceMode ? (
-          <div className="space-y-2">
+          <div className="w-full">
             <label className="sr-only" htmlFor="concept-workspace-search">
               Buscar conceptos
             </label>
-            <div className="flex items-center gap-2 rounded-md border border-zinc-200 px-3 py-2">
+            <div className="flex h-9 items-center gap-2 rounded-md border border-zinc-200 px-3">
               <Search className="h-4 w-4 text-zinc-400" aria-hidden="true" />
               <input
                 id="concept-workspace-search"
@@ -348,7 +394,7 @@ function ConceptIndexShell({
       <div
         className={
           workspaceMode
-            ? "vinema-scrollbar min-h-0 flex-1 overflow-y-auto px-2 py-2"
+            ? "min-w-0 flex-1 overflow-hidden"
             : ""
         }
       >

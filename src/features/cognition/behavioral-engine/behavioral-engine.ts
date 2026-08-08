@@ -213,7 +213,7 @@ function getBehavioralMemories({
 }): BehavioralMemory[] {
   const activeNodesById = new Map(
     nodes
-      .filter((node) => node.status === "ACTIVE" && node.deletedAt === null)
+      .filter((node) => node.deletedAt === null)
       .map((node) => [node.id, node]),
   );
   const conceptRecords = getConceptRecords(contexts);
@@ -251,10 +251,6 @@ function getConceptRecords(contexts: Context[]) {
   const byId = new Map<string, ConceptRecord>();
 
   for (const context of contexts) {
-    if (context.archivedAt !== null) {
-      continue;
-    }
-
     const normalizedLabel = normalizeContextNameForComparison(context.name);
 
     if (!normalizedLabel) {

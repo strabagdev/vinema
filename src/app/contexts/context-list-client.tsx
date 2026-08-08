@@ -31,7 +31,6 @@ const CONTEXT_LIST_INVALIDATION_TYPES = ["concept", "captureConcept"] as const;
 export function ContextListClient({ type }: { type: ContextType }) {
   const vinemaContext = useVinemaContext();
   const [contexts, setContexts] = useState<ContextWithCount[]>([]);
-  const [view, setView] = useState<"active" | "archived">("active");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -41,13 +40,6 @@ export function ContextListClient({ type }: { type: ContextType }) {
   const [createError, setCreateError] = useState<string | null>(null);
   const label = CONTEXT_TYPE_LABEL[type].toLowerCase();
   const pluralLabel = CONTEXT_TYPE_PLURAL_LABEL[type];
-  const visibleContexts = useMemo(
-    () =>
-      contexts.filter((context) =>
-        view === "active" ? context.archivedAt === null : context.archivedAt !== null,
-      ),
-    [contexts, view],
-  );
   const localRepositories = useMemo(() => {
     if (vinemaContext.status !== "ready") {
       return null;
@@ -71,7 +63,6 @@ export function ContextListClient({ type }: { type: ContextType }) {
       const nextContexts = await listContextsByType(contextRepository, {
         workspaceId: vinemaContext.workspace.id,
         type,
-        includeArchived: true,
       });
       const contextsWithCounts = await Promise.all(
         nextContexts.map(async (context) => ({
@@ -164,23 +155,6 @@ export function ContextListClient({ type }: { type: ContextType }) {
         </Button>
       </div>
 
-      <div className="flex w-fit rounded-md border border-zinc-200 bg-white p-1">
-        <Button
-          variant={view === "active" ? "secondary" : "ghost"}
-          size="sm"
-          onClick={() => setView("active")}
-        >
-          Activos
-        </Button>
-        <Button
-          variant={view === "archived" ? "secondary" : "ghost"}
-          size="sm"
-          onClick={() => setView("archived")}
-        >
-          Archivados
-        </Button>
-      </div>
-
       {formOpen ? (
         <form
           onSubmit={handleCreate}
@@ -246,9 +220,9 @@ export function ContextListClient({ type }: { type: ContextType }) {
         <div className="rounded-lg border border-zinc-200 bg-white p-6 text-sm text-zinc-500">
           Cargando {pluralLabel.toLowerCase()}...
         </div>
-      ) : visibleContexts.length > 0 ? (
+      ) : contexts.length > 0 ? (
         <div className="space-y-3">
-          {visibleContexts.map((context) => (
+          {contexts.map((context) => (
             <Link
               key={context.id}
               href={getContextDetailPath(context.id)}
@@ -267,7 +241,6 @@ export function ContextListClient({ type }: { type: ContextType }) {
                 </div>
                 <div className="flex shrink-0 flex-wrap gap-2 text-xs text-zinc-500">
                   <span>{context.relatedNodeCount} capturas</span>
-                  {context.archivedAt ? <span>Archivado</span> : null}
                 </div>
               </div>
             </Link>
@@ -277,9 +250,7 @@ export function ContextListClient({ type }: { type: ContextType }) {
         <div className="flex min-h-72 items-center justify-center rounded-lg border border-dashed border-zinc-300 bg-white">
           <div className="max-w-sm text-center">
             <h2 className="text-lg font-medium text-zinc-950">
-              {view === "active"
-                ? getEmptyContextMessage(type)
-                : `No hay ${pluralLabel.toLowerCase()} archivados.`}
+              {getEmptyContextMessage(type)}
             </h2>
             <p className="mt-2 text-sm leading-6 text-zinc-500">
               {getContextDescriptionPlaceholder(type)}

@@ -175,7 +175,7 @@ describe("Knowledge Suggestions v1", () => {
       false,
     );
     expect(suggestions.some((suggestion) => suggestion.conceptId === "archived")).toBe(
-      false,
+      true,
     );
   });
 

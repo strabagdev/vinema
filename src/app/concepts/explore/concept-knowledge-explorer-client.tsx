@@ -13,7 +13,6 @@ import {
   deriveConceptGraphNeighborhood,
   deriveConceptRelationships,
   type ConceptGraphEdge,
-  type ConceptGraphNeighborhood,
   type ConceptGraphNode,
   type RelationshipStrength,
 } from "@/features/exploration/concept-relationships";
@@ -35,12 +34,30 @@ interface PositionedGraphNode extends ConceptGraphNode {
   x: number;
   y: number;
   selected: boolean;
+  level: 0 | 1 | 2;
+  parentIds: string[];
+  hiddenRelatedCount: number;
+}
+
+interface PositionedGraphEdge extends ConceptGraphEdge {
+  level: 1 | 2;
 }
 
 interface ExplorerGraph {
   center: ConceptGraphNode | null;
   nodes: PositionedGraphNode[];
-  edges: ConceptGraphEdge[];
+  edges: PositionedGraphEdge[];
+}
+
+interface GraphViewTransform {
+  scale: number;
+  x: number;
+  y: number;
+}
+
+interface GraphPoint {
+  x: number;
+  y: number;
 }
 
 const CONCEPT_EXPLORER_INVALIDATION_TYPES = [
@@ -48,7 +65,9 @@ const CONCEPT_EXPLORER_INVALIDATION_TYPES = [
   "concept",
   "captureConcept",
 ] as const;
-const MAX_GLOBAL_NODES = 12;
+const DIRECT_RELATIONSHIP_LIMIT = 8;
+const SECONDARY_PREVIEW_PER_BRANCH = 4;
+const MAX_VISIBLE_GRAPH_NODES = 32;
 const GRAPH_WIDTH = 760;
 const GRAPH_HEIGHT = 440;
 const CENTER_X = GRAPH_WIDTH / 2;
@@ -58,18 +77,22 @@ export function ConceptKnowledgeExplorerClient({
   embedded = false,
   workspaceMode = false,
   initialFocusId = null,
+  initialViewTransform,
   selectedConceptId: controlledSelectedConceptId = null,
   onBack,
   onSelectConcept,
   onOpenConcept,
+  onViewTransformChange,
 }: {
   embedded?: boolean;
   workspaceMode?: boolean;
   initialFocusId?: string | null;
+  initialViewTransform?: GraphViewTransform;
   selectedConceptId?: string | null;
   onBack?: () => void;
   onSelectConcept?: (conceptId: string) => void;
   onOpenConcept?: (conceptId: string) => void;
+  onViewTransformChange?: (transform: GraphViewTransform) => void;
 } = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -82,7 +105,14 @@ export function ConceptKnowledgeExplorerClient({
   const [nodes, setNodes] = useState<Node[]>([]);
   const [selectedConceptId, setSelectedConceptId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [zoom, setZoom] = useState(1);
+  const [viewTransform, setViewTransform] = useState<GraphViewTransform>({
+    scale: initialViewTransform?.scale ?? 1,
+    x: initialViewTransform?.x ?? 0,
+    y: initialViewTransform?.y ?? 0,
+  });
+  const [manualNodePositions, setManualNodePositions] = useState<
+    Map<string, GraphPoint>
+  >(new Map());
 
   const loadExplorer = useCallback(async () => {
     if (vinemaContext.status !== "ready") {
@@ -96,7 +126,6 @@ export function ConceptKnowledgeExplorerClient({
       const [nextContexts, nextRelations, nextNodes] = await Promise.all([
         contextRepository.list({
           workspaceId: vinemaContext.workspace.id,
-          includeArchived: false,
         }),
         nodeContextRelationRepository.listByWorkspace(vinemaContext.workspace.id),
         nodeRepository.listByWorkspace(vinemaContext.workspace.id),
@@ -165,7 +194,13 @@ export function ConceptKnowledgeExplorerClient({
     [contexts, query],
   );
 
+  useEffect(() => {
+    onViewTransformChange?.(viewTransform);
+  }, [onViewTransformChange, viewTransform]);
+
   function focusConcept(conceptId: string) {
+    setManualNodePositions(new Map());
+    setViewTransform({ scale: 1, x: 0, y: 0 });
     setSelectedConceptId(conceptId);
     onSelectConcept?.(conceptId);
     if (embedded) {
@@ -264,7 +299,12 @@ export function ConceptKnowledgeExplorerClient({
                     type="button"
                     className="h-8 w-8 text-sm text-zinc-600 hover:text-zinc-950"
                     aria-label="Alejar mapa"
-                    onClick={() => setZoom((current) => Math.max(0.75, current - 0.1))}
+                    onClick={() =>
+                      setViewTransform((current) => ({
+                        ...current,
+                        scale: Math.max(0.65, current.scale - 0.1),
+                      }))
+                    }
                   >
                     -
                   </button>
@@ -272,9 +312,22 @@ export function ConceptKnowledgeExplorerClient({
                     type="button"
                     className="h-8 w-8 text-sm text-zinc-600 hover:text-zinc-950"
                     aria-label="Acercar mapa"
-                    onClick={() => setZoom((current) => Math.min(1.4, current + 0.1))}
+                    onClick={() =>
+                      setViewTransform((current) => ({
+                        ...current,
+                        scale: Math.min(1.8, current.scale + 0.1),
+                      }))
+                    }
                   >
                     +
+                  </button>
+                  <button
+                    type="button"
+                    className="h-8 px-2 text-xs font-medium text-zinc-600 hover:text-zinc-950"
+                    aria-label="Centrar mapa"
+                    onClick={() => setViewTransform({ scale: 1, x: 0, y: 0 })}
+                  >
+                    centrar
                   </button>
                 </div>
               ) : null}
@@ -282,7 +335,12 @@ export function ConceptKnowledgeExplorerClient({
                 graph={graph}
                 selectedConceptId={selectedNode?.conceptId ?? null}
                 onFocusConcept={focusConcept}
-                zoom={workspaceMode ? zoom : 1}
+                viewTransform={
+                  workspaceMode ? viewTransform : { scale: 1, x: 0, y: 0 }
+                }
+                onViewTransformChange={setViewTransform}
+                manualNodePositions={manualNodePositions}
+                onManualNodePositionsChange={setManualNodePositions}
               />
             </div>
           ) : (
@@ -403,33 +461,154 @@ function ConceptGraph({
   graph,
   selectedConceptId,
   onFocusConcept,
-  zoom = 1,
+  viewTransform,
+  onViewTransformChange,
+  manualNodePositions,
+  onManualNodePositionsChange,
 }: {
   graph: ExplorerGraph;
   selectedConceptId: string | null;
   onFocusConcept: (conceptId: string) => void;
-  zoom?: number;
+  viewTransform: GraphViewTransform;
+  onViewTransformChange: (value: GraphViewTransform | ((current: GraphViewTransform) => GraphViewTransform)) => void;
+  manualNodePositions: Map<string, GraphPoint>;
+  onManualNodePositionsChange: (
+    value: Map<string, GraphPoint> | ((current: Map<string, GraphPoint>) => Map<string, GraphPoint>),
+  ) => void;
 }) {
+  const [hoveredConceptId, setHoveredConceptId] = useState<string | null>(null);
+  const [dragState, setDragState] = useState<
+    | { kind: "pan"; startX: number; startY: number; origin: GraphViewTransform }
+    | { kind: "node"; conceptId: string }
+    | null
+  >(null);
+  const displayNodes = useMemo(
+    () =>
+      graph.nodes.map((node) => ({
+        ...node,
+        ...(manualNodePositions.get(node.conceptId) ?? {}),
+      })),
+    [graph.nodes, manualNodePositions],
+  );
+  const connectedToHover = useMemo(() => {
+    if (!hoveredConceptId) {
+      return new Set<string>();
+    }
+
+    const connected = new Set<string>([hoveredConceptId]);
+
+    for (const edge of graph.edges) {
+      if (edge.sourceId === hoveredConceptId) {
+        connected.add(edge.targetId);
+      }
+
+      if (edge.targetId === hoveredConceptId) {
+        connected.add(edge.sourceId);
+      }
+    }
+
+    return connected;
+  }, [graph.edges, hoveredConceptId]);
+
+  function getGraphPoint(event: React.MouseEvent<SVGSVGElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const rawX = ((event.clientX - rect.left) / Math.max(rect.width, 1)) * GRAPH_WIDTH;
+    const rawY = ((event.clientY - rect.top) / Math.max(rect.height, 1)) * GRAPH_HEIGHT;
+
+    return {
+      x: (rawX - viewTransform.x) / viewTransform.scale,
+      y: (rawY - viewTransform.y) / viewTransform.scale,
+      rawX,
+      rawY,
+    };
+  }
+
+  function handleWheel(event: React.WheelEvent<SVGSVGElement>) {
+    event.preventDefault();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const rawX = ((event.clientX - rect.left) / Math.max(rect.width, 1)) * GRAPH_WIDTH;
+    const rawY = ((event.clientY - rect.top) / Math.max(rect.height, 1)) * GRAPH_HEIGHT;
+    const nextScale = Math.min(
+      1.8,
+      Math.max(0.65, viewTransform.scale + (event.deltaY > 0 ? -0.08 : 0.08)),
+    );
+    const graphX = (rawX - viewTransform.x) / viewTransform.scale;
+    const graphY = (rawY - viewTransform.y) / viewTransform.scale;
+
+    onViewTransformChange({
+      scale: nextScale,
+      x: rawX - graphX * nextScale,
+      y: rawY - graphY * nextScale,
+    });
+  }
+
   return (
     <div
-      className="vinema-scrollbar h-full min-h-0 flex-1 overflow-auto overscroll-contain"
+      className="h-full min-h-0 flex-1 overflow-hidden overscroll-contain"
       aria-label="Mapa de conexiones"
     >
       <svg
         role="img"
         aria-label="Mapa de conceptos conectados"
         viewBox={`0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`}
-        className="h-full min-h-[22rem] w-full min-w-[34rem] origin-center"
-        style={{ transform: `scale(${zoom})` }}
+        className="h-full min-h-[22rem] w-full touch-none select-none"
+        data-concept-graph-transform={`${viewTransform.scale.toFixed(2)},${Math.round(viewTransform.x)},${Math.round(viewTransform.y)}`}
+        onWheel={handleWheel}
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) {
+            setDragState({
+              kind: "pan",
+              startX: event.clientX,
+              startY: event.clientY,
+              origin: viewTransform,
+            });
+          }
+        }}
+        onMouseMove={(event) => {
+          if (!dragState) {
+            return;
+          }
+
+          if (dragState.kind === "pan") {
+            onViewTransformChange({
+              ...dragState.origin,
+              x: dragState.origin.x + (event.clientX - dragState.startX),
+              y: dragState.origin.y + (event.clientY - dragState.startY),
+            });
+            return;
+          }
+
+          const point = getGraphPoint(event);
+          onManualNodePositionsChange((current) => {
+            const next = new Map(current);
+            next.set(dragState.conceptId, {
+              x: clampGraphCoordinate(point.x, 36, GRAPH_WIDTH - 36),
+              y: clampGraphCoordinate(point.y, 30, GRAPH_HEIGHT - 30),
+            });
+            return next;
+          });
+        }}
+        onMouseUp={() => setDragState(null)}
+        onMouseLeave={() => {
+          setDragState(null);
+          setHoveredConceptId(null);
+        }}
       >
         <title>Mapa de conceptos conectados</title>
+        <g
+          transform={`translate(${viewTransform.x} ${viewTransform.y}) scale(${viewTransform.scale})`}
+        >
         {graph.edges.map((edge) => {
-          const source = graph.nodes.find((node) => node.conceptId === edge.sourceId);
-          const target = graph.nodes.find((node) => node.conceptId === edge.targetId);
+          const source = displayNodes.find((node) => node.conceptId === edge.sourceId);
+          const target = displayNodes.find((node) => node.conceptId === edge.targetId);
 
           if (!source || !target) {
             return null;
           }
+          const highlighted =
+            !hoveredConceptId ||
+            edge.sourceId === hoveredConceptId ||
+            edge.targetId === hoveredConceptId;
 
           return (
             <line
@@ -439,19 +618,39 @@ function ConceptGraph({
               x2={target.x}
               y2={target.y}
               stroke={getGraphStroke(edge.strength)}
-              strokeWidth={getGraphStrokeWidth(edge.strength)}
+              strokeWidth={getGraphStrokeWidth(edge)}
+              opacity={highlighted ? (edge.level === 2 ? 0.45 : 1) : 0.16}
               strokeLinecap="round"
+              data-concept-graph-edge-level={edge.level}
+              data-concept-graph-edge-source={edge.sourceId}
+              data-concept-graph-edge-target={edge.targetId}
             />
           );
         })}
-        {graph.nodes.map((node) => (
+        {displayNodes.map((node) => {
+          const muted =
+            hoveredConceptId !== null && !connectedToHover.has(node.conceptId);
+          const active =
+            node.selected ||
+            node.conceptId === selectedConceptId ||
+            node.conceptId === hoveredConceptId;
+
+          return (
           <g
             key={node.conceptId}
             role="button"
             tabIndex={0}
             aria-label={`Enfocar ${node.label}`}
             className="cursor-pointer outline-none"
+            data-concept-graph-node-level={node.level}
+            onMouseEnter={() => setHoveredConceptId(node.conceptId)}
+            onMouseLeave={() => setHoveredConceptId(null)}
+            onMouseDown={(event) => {
+              event.stopPropagation();
+              setDragState({ kind: "node", conceptId: node.conceptId });
+            }}
             onClick={() => onFocusConcept(node.conceptId)}
+            onDoubleClick={() => onFocusConcept(node.conceptId)}
             onKeyDown={(event) => {
               if (event.key === "Enter" || event.key === " ") {
                 event.preventDefault();
@@ -466,21 +665,40 @@ function ConceptGraph({
             <circle
               cx={node.x}
               cy={node.y}
-              r={node.selected || node.conceptId === selectedConceptId ? 34 : 25}
-              fill={node.selected ? "#18181b" : "#f4f4f5"}
-              stroke={node.conceptId === selectedConceptId ? "#18181b" : "#d4d4d8"}
-              strokeWidth={node.selected ? 2 : 1}
+              r={getGraphNodeRadius(node, selectedConceptId, active)}
+              fill={getGraphNodeFill(node, active)}
+              stroke={getGraphNodeStroke(node, selectedConceptId)}
+              strokeWidth={active ? 2 : 1}
+              opacity={muted ? 0.42 : 1}
             />
             <text
               x={node.x}
-              y={node.y + 50}
+              y={node.y + getGraphLabelOffset(node)}
               textAnchor="middle"
-              className="fill-zinc-700 text-[13px]"
+              className={
+                node.level === 2
+                  ? "fill-zinc-500 text-[11px]"
+                  : "fill-zinc-700 text-[13px]"
+              }
+              opacity={muted ? 0.45 : 1}
             >
               {truncateGraphLabel(node.label)}
             </text>
+            {node.hiddenRelatedCount > 0 ? (
+              <text
+                x={node.x + getGraphNodeRadius(node, selectedConceptId) + 12}
+                y={node.y - getGraphNodeRadius(node, selectedConceptId) + 4}
+                textAnchor="middle"
+                className="fill-zinc-400 text-[11px]"
+                data-concept-graph-hidden-count=""
+              >
+                +{node.hiddenRelatedCount}
+              </text>
+            ) : null}
           </g>
-        ))}
+          );
+        })}
+        </g>
       </svg>
     </div>
   );
@@ -655,31 +873,22 @@ function deriveExplorerGraph({
   nodes: Node[];
 }): ExplorerGraph {
   const activeFocus =
-    focusId && contexts.some((context) => context.id === focusId && context.archivedAt === null)
-      ? focusId
-      : null;
-  const neighborhood = activeFocus
-    ? deriveConceptGraphNeighborhood({
-        currentConceptId: activeFocus,
-        contexts,
-        relations,
-        nodes,
-        limit: MAX_GLOBAL_NODES - 1,
-      })
-    : deriveGlobalGraphNeighborhood({ contexts, relations, nodes });
+    focusId && contexts.some((context) => context.id === focusId) ? focusId : null;
+  const centerId = activeFocus ?? deriveGlobalCenterId({ contexts, relations, nodes });
 
-  if (!neighborhood) {
+  if (!centerId) {
     return { center: null, nodes: [], edges: [] };
   }
 
-  return {
-    center: neighborhood.center,
-    nodes: positionGraphNodes(neighborhood),
-    edges: neighborhood.edges,
-  };
+  return deriveTwoLevelExplorerGraph({
+    centerId,
+    contexts,
+    relations,
+    nodes,
+  });
 }
 
-function deriveGlobalGraphNeighborhood({
+function deriveGlobalCenterId({
   contexts,
   relations,
   nodes,
@@ -687,9 +896,8 @@ function deriveGlobalGraphNeighborhood({
   contexts: Context[];
   relations: NodeContextRelation[];
   nodes: Node[];
-}): ConceptGraphNeighborhood | null {
-  const activeConcepts = contexts.filter((context) => context.archivedAt === null);
-  const candidates = activeConcepts
+}): string | null {
+  const candidates = contexts
     .map((concept) => ({
       concept,
       relationships: deriveConceptRelationships({
@@ -712,39 +920,303 @@ function deriveGlobalGraphNeighborhood({
     return null;
   }
 
-  return deriveConceptGraphNeighborhood({
-    currentConceptId: centerCandidate.concept.id,
+  return centerCandidate.concept.id;
+}
+
+function deriveTwoLevelExplorerGraph({
+  centerId,
+  contexts,
+  relations,
+  nodes,
+}: {
+  centerId: string;
+  contexts: Context[];
+  relations: NodeContextRelation[];
+  nodes: Node[];
+}): ExplorerGraph {
+  const neighborhood = deriveConceptGraphNeighborhood({
+    currentConceptId: centerId,
     contexts,
     relations,
     nodes,
-    limit: MAX_GLOBAL_NODES - 1,
+    limit: DIRECT_RELATIONSHIP_LIMIT,
   });
-}
 
-function positionGraphNodes(neighborhood: ConceptGraphNeighborhood): PositionedGraphNode[] {
-  const [center, ...neighbors] = neighborhood.nodes;
-  const radius = 150;
-  const positioned: PositionedGraphNode[] = [
-    {
-      ...center,
+  if (!neighborhood) {
+    return { center: null, nodes: [], edges: [] };
+  }
+
+  const memoryCounts = countMemoriesByConcept({ contexts, relations, nodes });
+  const nodeRecords = new Map<string, PositionedGraphNode>();
+  const edgeRecords = new Map<string, PositionedGraphEdge>();
+  const directConceptIds = new Set(
+    neighborhood.nodes.slice(1).map((node) => node.conceptId),
+  );
+
+  for (const [index, node] of neighborhood.nodes.entries()) {
+    nodeRecords.set(node.conceptId, {
+      ...node,
       x: CENTER_X,
       y: CENTER_Y,
-      selected: true,
-    },
-  ];
+      selected: index === 0,
+      level: index === 0 ? 0 : 1,
+      parentIds: index === 0 ? [] : [centerId],
+      hiddenRelatedCount: 0,
+    });
+  }
 
-  neighbors.slice(0, MAX_GLOBAL_NODES - 1).forEach((node, index, list) => {
+  for (const edge of neighborhood.edges) {
+    edgeRecords.set(getEdgeKey(edge.sourceId, edge.targetId), {
+      ...edge,
+      level: 1,
+    });
+  }
+
+  for (const directNode of neighborhood.nodes.slice(1)) {
+    const secondaryRelationships = deriveConceptRelationships({
+      sourceConceptId: directNode.conceptId,
+      contexts,
+      relations,
+      nodes,
+      limit: SECONDARY_PREVIEW_PER_BRANCH + 8,
+    }).filter((relationship) => relationship.targetConceptId !== centerId);
+    let shownForBranch = 0;
+    let hiddenForBranch = 0;
+
+    for (const relationship of secondaryRelationships) {
+      if (shownForBranch >= SECONDARY_PREVIEW_PER_BRANCH) {
+        hiddenForBranch += 1;
+        continue;
+      }
+
+      const targetId = relationship.targetConceptId;
+      const existingNode = nodeRecords.get(targetId);
+      const createsNewSecondary = !existingNode && !directConceptIds.has(targetId);
+
+      if (createsNewSecondary && nodeRecords.size >= MAX_VISIBLE_GRAPH_NODES) {
+        hiddenForBranch += 1;
+        continue;
+      }
+
+      if (!existingNode) {
+        nodeRecords.set(targetId, {
+          conceptId: targetId,
+          label: relationship.targetLabel,
+          memoryCount: memoryCounts.get(targetId) ?? 0,
+          x: CENTER_X,
+          y: CENTER_Y,
+          selected: false,
+          level: 2,
+          parentIds: [directNode.conceptId],
+          hiddenRelatedCount: 0,
+        });
+      } else if (!existingNode.parentIds.includes(directNode.conceptId)) {
+        existingNode.parentIds.push(directNode.conceptId);
+      }
+
+      edgeRecords.set(getEdgeKey(directNode.conceptId, targetId), {
+        sourceId: directNode.conceptId,
+        targetId,
+        strength: relationship.strength,
+        sharedMemoryCount: relationship.sharedMemoryCount,
+        level: 2,
+      });
+      shownForBranch += 1;
+    }
+
+    const nodeRecord = nodeRecords.get(directNode.conceptId);
+
+    if (nodeRecord) {
+      nodeRecord.hiddenRelatedCount = hiddenForBranch;
+    }
+  }
+
+  const positioned = positionGraphNodes({
+    centerId,
+    nodes: Array.from(nodeRecords.values()),
+    edges: Array.from(edgeRecords.values()),
+  });
+
+  return {
+    center: neighborhood.center,
+    nodes: positioned,
+    edges: Array.from(edgeRecords.values()),
+  };
+}
+
+function positionGraphNodes({
+  centerId,
+  nodes,
+  edges,
+}: {
+  centerId: string;
+  nodes: PositionedGraphNode[];
+  edges: PositionedGraphEdge[];
+}): PositionedGraphNode[] {
+  const center = nodes.find((node) => node.conceptId === centerId);
+
+  if (!center) {
+    return [];
+  }
+
+  const directNodes = nodes.filter((node) => node.level === 1);
+  const secondaryNodes = nodes.filter((node) => node.level === 2);
+  const positioned = new Map<string, PositionedGraphNode>();
+
+  positioned.set(center.conceptId, {
+    ...center,
+    x: CENTER_X,
+    y: CENTER_Y,
+    selected: true,
+  });
+
+  directNodes.forEach((node, index, list) => {
     const angle = (-Math.PI / 2) + (2 * Math.PI * index) / Math.max(list.length, 1);
 
-    positioned.push({
+    positioned.set(node.conceptId, {
       ...node,
-      x: Math.round(CENTER_X + Math.cos(angle) * radius),
-      y: Math.round(CENTER_Y + Math.sin(angle) * radius),
-      selected: false,
+      x: Math.round(CENTER_X + Math.cos(angle) * 138),
+      y: Math.round(CENTER_Y + Math.sin(angle) * 118),
     });
   });
 
-  return positioned;
+  secondaryNodes.forEach((node, index) => {
+    const parentPositions = node.parentIds
+      .map((parentId) => positioned.get(parentId))
+      .filter((parent): parent is PositionedGraphNode => Boolean(parent));
+    const anchor =
+      parentPositions.length > 0
+        ? {
+            x: parentPositions.reduce((sum, parent) => sum + parent.x, 0) / parentPositions.length,
+            y: parentPositions.reduce((sum, parent) => sum + parent.y, 0) / parentPositions.length,
+          }
+        : { x: CENTER_X, y: CENTER_Y };
+    const outwardX = anchor.x - CENTER_X;
+    const outwardY = anchor.y - CENTER_Y;
+    const magnitude = Math.hypot(outwardX, outwardY) || 1;
+    const siblingOffset = ((index % 5) - 2) * 18;
+    const perpendicularX = -outwardY / magnitude;
+    const perpendicularY = outwardX / magnitude;
+
+    positioned.set(node.conceptId, {
+      ...node,
+      x: clampGraphCoordinate(
+        Math.round(anchor.x + (outwardX / magnitude) * 88 + perpendicularX * siblingOffset),
+        52,
+        GRAPH_WIDTH - 52,
+      ),
+      y: clampGraphCoordinate(
+        Math.round(anchor.y + (outwardY / magnitude) * 74 + perpendicularY * siblingOffset),
+        42,
+        GRAPH_HEIGHT - 44,
+      ),
+    });
+  });
+
+  return applyControlledForceLayout({
+    centerId,
+    nodes: Array.from(positioned.values()),
+    edges,
+  });
+}
+
+function applyControlledForceLayout({
+  centerId,
+  nodes,
+  edges,
+}: {
+  centerId: string;
+  nodes: PositionedGraphNode[];
+  edges: PositionedGraphEdge[];
+}) {
+  const working = nodes.map((node) => ({ ...node }));
+  const velocities = new Map<string, GraphPoint>();
+
+  for (const node of working) {
+    velocities.set(node.conceptId, { x: 0, y: 0 });
+  }
+
+  for (let tick = 0; tick < 72; tick += 1) {
+    const alpha = 0.08 * (1 - tick / 72);
+
+    for (let firstIndex = 0; firstIndex < working.length; firstIndex += 1) {
+      for (let secondIndex = firstIndex + 1; secondIndex < working.length; secondIndex += 1) {
+        const first = working[firstIndex];
+        const second = working[secondIndex];
+        const dx = second.x - first.x || 0.01;
+        const dy = second.y - first.y || 0.01;
+        const distance = Math.max(1, Math.hypot(dx, dy));
+        const minDistance = getGraphNodeRadius(first, null) + getGraphNodeRadius(second, null) + 26;
+        const force = Math.min(6, (minDistance * minDistance) / (distance * distance)) * alpha;
+        const fx = (dx / distance) * force;
+        const fy = (dy / distance) * force;
+
+        pushVelocity(velocities, first.conceptId, -fx, -fy);
+        pushVelocity(velocities, second.conceptId, fx, fy);
+      }
+    }
+
+    for (const edge of edges) {
+      const source = working.find((node) => node.conceptId === edge.sourceId);
+      const target = working.find((node) => node.conceptId === edge.targetId);
+
+      if (!source || !target) {
+        continue;
+      }
+
+      const dx = target.x - source.x || 0.01;
+      const dy = target.y - source.y || 0.01;
+      const distance = Math.max(1, Math.hypot(dx, dy));
+      const desired = edge.level === 1 ? 142 : 92;
+      const force = (distance - desired) * 0.012 * alpha;
+      const fx = (dx / distance) * force;
+      const fy = (dy / distance) * force;
+
+      if (source.conceptId !== centerId) {
+        pushVelocity(velocities, source.conceptId, fx, fy);
+      }
+      pushVelocity(velocities, target.conceptId, -fx, -fy);
+    }
+
+    for (const node of working) {
+      if (node.conceptId === centerId) {
+        node.x = CENTER_X;
+        node.y = CENTER_Y;
+        continue;
+      }
+
+      const vx = velocities.get(node.conceptId)?.x ?? 0;
+      const vy = velocities.get(node.conceptId)?.y ?? 0;
+      const centerPull = node.level === 1 ? 0.015 : 0.006;
+
+      node.x = clampGraphCoordinate(
+        node.x + vx - (node.x - CENTER_X) * centerPull * alpha,
+        44,
+        GRAPH_WIDTH - 44,
+      );
+      node.y = clampGraphCoordinate(
+        node.y + vy - (node.y - CENTER_Y) * centerPull * alpha,
+        38,
+        GRAPH_HEIGHT - 42,
+      );
+      velocities.set(node.conceptId, { x: vx * 0.55, y: vy * 0.55 });
+    }
+  }
+
+  return working;
+}
+
+function pushVelocity(
+  velocities: Map<string, GraphPoint>,
+  conceptId: string,
+  x: number,
+  y: number,
+) {
+  const current = velocities.get(conceptId) ?? { x: 0, y: 0 };
+  velocities.set(conceptId, {
+    x: current.x + x,
+    y: current.y + y,
+  });
 }
 
 function searchConcepts({
@@ -762,10 +1234,6 @@ function searchConcepts({
 
   return contexts
     .filter((context) => {
-      if (context.archivedAt !== null) {
-        return false;
-      }
-
       return [context.name, ...(context.aliases ?? [])].some((label) =>
         label.toLocaleLowerCase("es").includes(normalizedQuery),
       );
@@ -781,8 +1249,102 @@ function getGraphStroke(strength: RelationshipStrength) {
       : "#d4d4d8";
 }
 
-function getGraphStrokeWidth(strength: RelationshipStrength) {
-  return strength === "STRONG" ? 4 : strength === "MEDIUM" ? 2.5 : 1.5;
+function getGraphStrokeWidth(edge: PositionedGraphEdge) {
+  const base =
+    edge.strength === "STRONG" ? 4 : edge.strength === "MEDIUM" ? 2.5 : 1.5;
+
+  return edge.level === 2 ? Math.max(1, base * 0.55) : base;
+}
+
+function getGraphNodeRadius(
+  node: PositionedGraphNode,
+  selectedConceptId: string | null,
+  active = false,
+) {
+  if (node.selected || node.conceptId === selectedConceptId) {
+    return 34;
+  }
+
+  if (node.level === 1) {
+    return active ? 27 : 24;
+  }
+
+  return active ? 16 : 14;
+}
+
+function getGraphNodeFill(node: PositionedGraphNode, active = false) {
+  if (node.selected) {
+    return "#18181b";
+  }
+
+  if (active) {
+    return node.level === 1 ? "#e4e4e7" : "#f4f4f5";
+  }
+
+  return node.level === 1 ? "#f4f4f5" : "#fafafa";
+}
+
+function getGraphNodeStroke(
+  node: PositionedGraphNode,
+  selectedConceptId: string | null,
+) {
+  if (node.conceptId === selectedConceptId) {
+    return "#18181b";
+  }
+
+  return node.level === 1 ? "#d4d4d8" : "#e4e4e7";
+}
+
+function getGraphLabelOffset(node: PositionedGraphNode) {
+  return node.level === 2 ? 31 : 50;
+}
+
+function countMemoriesByConcept({
+  contexts,
+  relations,
+  nodes,
+}: {
+  contexts: Context[];
+  relations: NodeContextRelation[];
+  nodes: Node[];
+}) {
+  const activeConceptIds = new Set(
+    contexts.map((context) => context.id),
+  );
+  const activeNodeIds = new Set(
+    nodes
+      .filter((node) => node.deletedAt === null)
+      .map((node) => node.id),
+  );
+  const nodeIdsByConcept = new Map<string, Set<string>>();
+
+  for (const relation of relations) {
+    if (
+      !activeConceptIds.has(relation.contextId) ||
+      !activeNodeIds.has(relation.nodeId)
+    ) {
+      continue;
+    }
+
+    const nodeIds = nodeIdsByConcept.get(relation.contextId) ?? new Set<string>();
+    nodeIds.add(relation.nodeId);
+    nodeIdsByConcept.set(relation.contextId, nodeIds);
+  }
+
+  return new Map(
+    Array.from(nodeIdsByConcept.entries()).map(([conceptId, nodeIds]) => [
+      conceptId,
+      nodeIds.size,
+    ]),
+  );
+}
+
+function getEdgeKey(firstConceptId: string, secondConceptId: string) {
+  return [firstConceptId, secondConceptId].sort().join("::");
+}
+
+function clampGraphCoordinate(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function formatStrength(strength: RelationshipStrength) {

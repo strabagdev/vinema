@@ -2,7 +2,6 @@ import { act, createElement } from "react";
 import type { ComponentType, ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import MemoryArchivePage from "@/app/memory/archive/page";
 import { KnowledgeBaseClient } from "@/app/notes/knowledge-base-client";
 import type { Context } from "@/domain/context/context";
 import type { NodeContextRelation } from "@/domain/context/node-context-relation";
@@ -46,7 +45,7 @@ const mocks = vi.hoisted(() => {
     },
     async listActive(): Promise<Node[]> {
       return Array.from(nodes.values()).filter(
-        (node) => node.status === "ACTIVE",
+        (node) => node.deletedAt === null,
       );
     },
     async listInbox(): Promise<Node[]> {
@@ -54,20 +53,11 @@ const mocks = vi.hoisted(() => {
         (node) => node.organizationStatus === "INBOX",
       );
     },
-    async listArchived(): Promise<Node[]> {
-      return Array.from(nodes.values()).filter(
-        (node) => node.status === "ARCHIVED",
-      );
-    },
-    async listByWorkspace(
-      workspaceId: string,
-      options: { includeArchived?: boolean } = {},
-    ): Promise<Node[]> {
+    async listByWorkspace(workspaceId: string): Promise<Node[]> {
       return Array.from(nodes.values()).filter(
         (node) =>
           node.workspaceId === workspaceId &&
-          node.deletedAt === null &&
-          (options.includeArchived || node.status !== "ARCHIVED"),
+          node.deletedAt === null,
       );
     },
   },
@@ -140,7 +130,7 @@ describe("Knowledge Base", () => {
     document.body.replaceChildren();
   });
 
-  it("orders active captures stably and excludes archived captures", async () => {
+  it("orders captures stably and treats legacy archived status as visible", async () => {
     const repository = new InMemoryNodeRepository([
       createNode({ id: "b", updatedAt: "2026-01-02T00:00:00.000Z" }),
       createNode({ id: "a", updatedAt: "2026-01-02T00:00:00.000Z" }),
@@ -157,8 +147,8 @@ describe("Knowledge Base", () => {
       limit: 10,
     });
 
-    expect(page.items.map((item) => item.id)).toEqual(["new", "a", "b"]);
-    expect(page.total).toBe(3);
+    expect(page.items.map((item) => item.id)).toEqual(["archived", "new", "a", "b"]);
+    expect(page.total).toBe(4);
     expect(page.hasMore).toBe(false);
   });
 
@@ -489,8 +479,9 @@ describe("Knowledge Base", () => {
         content: "Seguimiento con caracteres especiales Mitcom (A)",
       }),
       createNode({
-        id: "archived",
+        id: "legacy-status",
         status: "ARCHIVED",
+        content: "Mitcom (A) historico",
       }),
       createNode({
         id: "other",
@@ -499,12 +490,12 @@ describe("Knowledge Base", () => {
 
     const screen = await renderKnowledgeBase();
 
-    expect(screen.textContent).toContain('1 resultados para "Mitcom (A)".');
-    expect(screen.querySelectorAll("mark")).toHaveLength(2);
+    expect(screen.textContent).toContain('2 resultados para "Mitcom (A)".');
+    expect(screen.querySelectorAll("mark")).toHaveLength(4);
     expect(getFirstDetailLink(screen)?.getAttribute("href")).toBe(
-      "/memory/detail?nodeId=match&returnTo=%2Fmemory%3Fq%3DMitcom%2520(A)",
+      "/memory/detail?nodeId=legacy-status&returnTo=%2Fmemory%3Fq%3DMitcom%2520(A)",
     );
-    expect(screen.textContent).not.toContain("archivado");
+    expect(screen.textContent).toContain("historico");
   });
 
   it("clears an empty search state", async () => {
@@ -522,14 +513,6 @@ describe("Knowledge Base", () => {
     await click(getButton(screen, "Limpiar busqueda"));
 
     expect(mocks.replace).toHaveBeenCalledWith("/memory", { scroll: false });
-  });
-
-  it("keeps the archive route available without exposing it from Memoria", async () => {
-    const screen = await renderKnowledgeBase();
-
-    expect(MemoryArchivePage).toBeTypeOf("function");
-    expect(screen.querySelector("a[href='/memory/archive']")).toBeNull();
-    expect(screen.textContent).not.toContain("Archivo");
   });
 
   it("opens memory details through callbacks when embedded", async () => {

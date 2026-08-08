@@ -60,7 +60,6 @@ export async function normalizePersistedConceptLabels({
   };
   const contexts = await contextRepository.list({
     workspaceId,
-    includeArchived: false,
   });
   const groups = groupContextsByEquivalenceKey(contexts);
 
@@ -139,13 +138,15 @@ export async function normalizePersistedConceptLabels({
       });
       diagnostics.transferredRelationCount += result.transferredRelationCount;
       diagnostics.duplicateRelationCount += result.duplicateRelationCount;
-      await archiveMergedContext({
+      const annotated = await annotateMergedContext({
         contextRepository,
         duplicateContext,
         canonicalContext,
         canonicalLabel,
       });
-      diagnostics.mergedConceptCount += 1;
+      if (annotated) {
+        diagnostics.mergedConceptCount += 1;
+      }
     }
 
     diagnostics.candidates.push({
@@ -327,7 +328,7 @@ async function transferRelationsToCanonical({
   return { transferredRelationCount, duplicateRelationCount };
 }
 
-async function archiveMergedContext({
+async function annotateMergedContext({
   contextRepository,
   duplicateContext,
   canonicalContext,
@@ -337,23 +338,22 @@ async function archiveMergedContext({
   duplicateContext: Context;
   canonicalContext: Context;
   canonicalLabel: string;
-}) {
-  if (duplicateContext.archivedAt) {
-    return;
-  }
-
+}): Promise<boolean> {
   const now = new Date().toISOString();
   const mergeNote = `Fusionado en ${canonicalLabel} (${canonicalContext.id}).`;
+  if (duplicateContext.description?.includes(mergeNote)) {
+    return false;
+  }
   const description = duplicateContext.description
     ? `${duplicateContext.description}\n${mergeNote}`
     : mergeNote;
 
-  await contextRepository.archive({
+  await contextRepository.save({
     ...duplicateContext,
     description,
-    archivedAt: now,
     updatedAt: now,
   });
+  return true;
 }
 
 function extractWords(text: string) {

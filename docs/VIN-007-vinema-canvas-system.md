@@ -15,13 +15,21 @@ VIN-007 transforma la superficie principal de captura en un sistema de escritura
 
 ## Navegacion De Superficie
 
-El rail izquierdo contiene solo herramientas permanentes:
+El rail izquierdo contiene solo accesos permanentes de superficie y exploracion global:
 
+- Explorar conocimiento (`Brain`);
+- Explorar conceptos (`Network`);
 - Canvas;
-- Administrar;
 - Estado.
 
 Las sugerencias de Memoria y Conceptos no modifican el rail. Cuando existen resultados reales para la captura actual, aparecen en una barra contextual propia del canvas, sobre la superficie de escritura y fuera del area editable.
+
+La administracion del conocimiento no vive en el rail. El centro `Conocimiento`
+se abre desde el menu de tres puntos y reune importar, exportar y vaciar.
+
+Los paneles contextuales solo muestran sugerencias derivadas del contenido
+actual. La exploracion global pertenece al rail; por eso Memoria y Conceptos no
+incluyen CTAs para abrir los workspaces completos.
 
 La barra contextual:
 
@@ -29,7 +37,19 @@ La barra contextual:
 - puede mostrar Memoria, Conceptos o ambas;
 - no vive dentro de `data-canvas-scroll-viewport`;
 - no cambia la posicion del editor, el punto inicial de escritura ni el seguimiento del caret;
-- reutiliza el mismo `CanvasSidePanel` y el mismo modelo de `pinnedPanel` / `previewPanel`.
+- reutiliza el mismo `CanvasSidePanel` y el mismo modelo de `pinnedPanel` / `previewPanel`;
+- estabiliza indicadores con resultados confirmados, sin parpadear por estados
+  intermedios de evaluacion;
+- trata trigger, corredor y panel visible como una region interactiva continua,
+  sin zonas muertas dentro de la superficie visible;
+- coordina el hover contextual con estado explicito de trigger, corredor y
+  panel, usando eventos pointer para que el cierre de 240ms solo avance cuando
+  el puntero salio de toda la region y no hay panel fijado;
+- actualiza sugerencias de forma silenciosa: no solicita refrescar manualmente
+  resultados contextuales, conserva estable el snapshot abierto y usa el ultimo
+  resultado confirmado al volver a abrir;
+- prioriza recuperacion local para Memoria y no deja que `Recordando...`
+  dependa de una carga indefinida o de sync remoto.
 
 ## Preferencias
 

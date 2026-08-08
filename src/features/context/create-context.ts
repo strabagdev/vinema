@@ -21,7 +21,6 @@ export async function createContext(
   const existingContexts = await repository.list({
     workspaceId: validated.workspaceId,
     type: validated.type,
-    includeArchived: true,
   });
 
   assertContextNameIsAvailable(existingContexts, {

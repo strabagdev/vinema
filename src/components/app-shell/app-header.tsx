@@ -12,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { VinemaBrandMark } from "@/components/brand/vinema-brand";
+import { KnowledgeManagementCenterMenuItem } from "@/components/app-shell/knowledge-management-center";
 import { useAuth } from "@/features/auth/auth-provider";
 import { cn } from "@/lib/cn";
 
@@ -71,6 +72,8 @@ export function AppHeader({ pathname, onFocusWriting }: AppHeaderProps) {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem disabled>{identity}</DropdownMenuItem>
+            <div className="my-1 h-px bg-zinc-100" role="separator" />
+            <KnowledgeManagementCenterMenuItem label="Conocimiento" trigger="menu" />
             <div className="my-1 h-px bg-zinc-100" role="separator" />
             <DropdownMenuItem disabled={loggingOut} onClick={handleLogout}>
               Cerrar sesion

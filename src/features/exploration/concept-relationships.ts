@@ -70,7 +70,7 @@ export function deriveConceptRelationships({
 }): DerivedConceptRelationship[] {
   const source = contexts.find((context) => context.id === sourceConceptId);
 
-  if (!source || source.archivedAt !== null || limit <= 0) {
+  if (!source || limit <= 0) {
     return [];
   }
 
@@ -108,7 +108,7 @@ export function deriveConceptRelationships({
 
       const targetRecord = conceptRecords.byId.get(targetConceptId);
 
-      if (!targetRecord || targetRecord.context.archivedAt !== null) {
+      if (!targetRecord) {
         continue;
       }
 
@@ -280,7 +280,7 @@ export function deriveConceptGraphNeighborhood({
 }): ConceptGraphNeighborhood | null {
   const center = contexts.find((context) => context.id === currentConceptId);
 
-  if (!center || center.archivedAt !== null) {
+  if (!center) {
     return null;
   }
 
@@ -391,10 +391,6 @@ function getConceptRecords(contexts: Context[]) {
   const byId = new Map<string, ConceptRecord>();
 
   for (const context of contexts) {
-    if (context.archivedAt !== null) {
-      continue;
-    }
-
     const normalizedLabel = normalizeContextNameForComparison(context.name);
 
     if (!normalizedLabel) {
@@ -494,7 +490,7 @@ function countMemoriesByConcept({
 function getActiveNodesById(nodes: Node[]) {
   return new Map(
     nodes
-      .filter((node) => node.status === "ACTIVE" && node.deletedAt === null)
+      .filter((node) => node.deletedAt === null)
       .map((node) => [node.id, node]),
   );
 }

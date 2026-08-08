@@ -199,7 +199,7 @@ describe("AppHeader", () => {
     expect(menuTrigger).toBeTruthy();
   });
 
-  it("keeps the top menu scoped to account actions", async () => {
+  it("keeps the top menu scoped to account and knowledge administration", async () => {
     const screen = await renderHeader();
     const header = screen.querySelector("header");
     const wordmarkTrigger = screen.querySelector(
@@ -219,7 +219,7 @@ describe("AppHeader", () => {
     await click(screen.querySelector("button[aria-label='Abrir menu']"));
 
     expect(document.body.textContent).toContain("User");
-    expect(document.body.textContent).not.toContain("Conocimiento");
+    expect(document.body.textContent).toContain("Conocimiento");
     expect(document.body.textContent).not.toContain("Capturar");
     expect(document.body.textContent).not.toContain("Memoria");
     expect(document.body.textContent).not.toContain("Conceptos");
@@ -237,15 +237,21 @@ describe("AppHeader", () => {
     expect(document.body.textContent).not.toContain("Sincronizacion futura");
   });
 
-  it("does not duplicate knowledge navigation in the account menu", async () => {
+  it("opens the existing knowledge administration center from the account menu", async () => {
     const screen = await renderHeader();
 
     await click(screen.querySelector("button[aria-label='Abrir menu']"));
+    await click(getByText("Conocimiento"));
 
+    expect(getDialog()).toBeTruthy();
+    expect(document.body.textContent).toContain("Importar memoria");
+    expect(document.body.textContent).toContain("Exportar memoria");
+    expect(document.body.textContent).toContain("Vaciar memoria");
     expect(getLinkByText("/", "Capturar")).toBeUndefined();
     expect(document.body.querySelector("a[href='/memory']")).toBeNull();
     expect(document.body.querySelector("a[href='/concepts']")).toBeNull();
     expect(queryByText("Administrar")).toBeUndefined();
+    expect(window.location.pathname).toBe("/");
   });
 
   it("renders the center as a responsive portal with internal scrolling", async () => {

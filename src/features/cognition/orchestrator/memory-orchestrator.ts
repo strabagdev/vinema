@@ -129,10 +129,6 @@ function createConceptModel(contexts: Context[]) {
   const canonicalIdByIdentityLabel = new Map<string, string>();
 
   for (const context of contexts) {
-    if (context.archivedAt !== null) {
-      continue;
-    }
-
     byId.set(context.id, context);
   }
 

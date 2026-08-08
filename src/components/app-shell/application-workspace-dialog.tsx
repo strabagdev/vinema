@@ -9,6 +9,7 @@ export function ApplicationWorkspaceDialog({
   open,
   title,
   description,
+  hideHeader = false,
   returnFocusRef,
   onBack,
   onOpenChange,
@@ -17,6 +18,7 @@ export function ApplicationWorkspaceDialog({
   open: boolean;
   title: string;
   description?: string;
+  hideHeader?: boolean;
   returnFocusRef?: RefObject<HTMLElement | null>;
   onBack?: () => void;
   onOpenChange: (open: boolean) => void;
@@ -48,40 +50,51 @@ export function ApplicationWorkspaceDialog({
             returnFocusTarget.focus();
           }}
         >
-          <header className="flex shrink-0 items-start gap-3 border-b border-zinc-100 px-4 py-4 sm:px-6">
-            {onBack ? (
-              <button
-                type="button"
-                className="mt-0.5 shrink-0 rounded-md p-2 text-zinc-500 outline-none hover:bg-zinc-100 hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
-                aria-label="Volver"
-                onClick={onBack}
-              >
-                <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-              </button>
-            ) : null}
-            <div className="min-w-0 flex-1">
-              <Dialog.Title className="text-lg font-semibold text-zinc-950">
-                {title}
-              </Dialog.Title>
+          {hideHeader ? (
+            <>
+              <Dialog.Title className="sr-only">{title}</Dialog.Title>
               {description ? (
-                <Dialog.Description
-                  id={descriptionId}
-                  className="mt-1 text-sm leading-6 text-zinc-600"
-                >
+                <Dialog.Description id={descriptionId} className="sr-only">
                   {description}
                 </Dialog.Description>
               ) : null}
-            </div>
-            <Dialog.Close asChild>
-              <button
-                type="button"
-                className="shrink-0 rounded-md p-2 text-zinc-500 outline-none hover:bg-zinc-100 hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
-                aria-label={`Cerrar ${title}`}
-              >
-                <X className="h-4 w-4" aria-hidden="true" />
-              </button>
-            </Dialog.Close>
-          </header>
+            </>
+          ) : (
+            <header className="flex min-h-[56px] shrink-0 items-center gap-3 px-4 py-3 sm:px-6">
+              {onBack ? (
+                <button
+                  type="button"
+                  className="mt-0.5 shrink-0 rounded-md p-2 text-zinc-500 outline-none hover:bg-zinc-100 hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
+                  aria-label="Volver"
+                  onClick={onBack}
+                >
+                  <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                </button>
+              ) : null}
+              <div className="min-w-0 flex-1">
+                <Dialog.Title className="text-lg font-semibold text-zinc-950">
+                  {title}
+                </Dialog.Title>
+                {description ? (
+                  <Dialog.Description
+                    id={descriptionId}
+                    className="sr-only"
+                  >
+                    {description}
+                  </Dialog.Description>
+                ) : null}
+              </div>
+              <Dialog.Close asChild>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-md p-2 text-zinc-500 outline-none hover:bg-zinc-100 hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
+                  aria-label={`Cerrar ${title}`}
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </Dialog.Close>
+            </header>
+          )}
 
           <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
         </Dialog.Content>

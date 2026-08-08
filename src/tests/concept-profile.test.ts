@@ -159,16 +159,16 @@ describe("concept profiles", () => {
       now,
     });
 
-    expect(profile?.memoryCount).toBe(3);
+    expect(profile?.memoryCount).toBe(4);
     expect(profile?.firstSeenAt?.toISOString()).toBe("2026-06-01T10:00:00.000Z");
     expect(profile?.lastSeenAt?.toISOString()).toBe("2026-07-31T10:00:00.000Z");
     expect(profile?.activity).toMatchObject({
-      total: 3,
-      last7Days: 1,
-      last30Days: 2,
+      total: 4,
+      last7Days: 2,
+      last30Days: 3,
       monthlyBuckets: [
         { month: "2026-06", count: 1 },
-        { month: "2026-07", count: 2 },
+        { month: "2026-07", count: 3 },
       ],
     });
     expect(profile?.relatedConcepts).toMatchObject([
@@ -178,19 +178,21 @@ describe("concept profiles", () => {
         sharedMemoryCount: 2,
       },
       {
+        conceptId: "perfumes",
+        label: "Perfumes",
+        sharedMemoryCount: 2,
+      },
+      {
+        conceptId: "archived",
+        label: "Archivado",
+        sharedMemoryCount: 1,
+      },
+      {
         conceptId: "erba-pura",
         label: "Erba Pura",
         sharedMemoryCount: 1,
       },
-      {
-        conceptId: "perfumes",
-        label: "Perfumes",
-        sharedMemoryCount: 1,
-      },
     ]);
-    expect(profile?.relatedConcepts.map((item) => item.conceptId)).not.toContain(
-      "archived",
-    );
     expect(profile?.representativeMemories.map((memory) => memory.nodeId)).toContain(
       "recent",
     );

@@ -105,12 +105,8 @@ export class IndexedDbLocalSyncNodeRepository implements NodeRepository {
     return this.delegate.listInbox();
   }
 
-  listArchived() {
-    return this.delegate.listArchived();
-  }
-
-  listByWorkspace(workspaceId: string, options?: { includeArchived?: boolean }) {
-    return this.delegate.listByWorkspace(workspaceId, options);
+  listByWorkspace(workspaceId: string) {
+    return this.delegate.listByWorkspace(workspaceId);
   }
 
   async create(node: Node): Promise<Node> {
@@ -197,14 +193,6 @@ export class IndexedDbLocalSyncContextRepository implements ContextRepository {
   }
 
   save(context: Context) {
-    return this.persist(context);
-  }
-
-  archive(context: Context) {
-    return this.persist(context);
-  }
-
-  restore(context: Context) {
     return this.persist(context);
   }
 
@@ -335,20 +323,20 @@ export class IndexedDbLocalSyncNodeContextRelationRepository
       }
 
       assertSameWorkspace(this.options.syncContext, existing.workspaceId);
-      const archivedAt = this.clock();
+      const updatedAt = this.clock();
       await relations.delete(id);
       await enqueueLocalMutation({
         outboxStore: transaction.objectStore(SYNC_MUTATIONS_STORE),
         syncContext: this.options.syncContext,
         origin: this.origin,
-        at: archivedAt,
+        at: updatedAt,
         localVersion: existing.version,
         mutation: mapLocalRelationToCaptureConceptMutation({
           mutationId: this.mutationIdFactory(),
           relation: existing,
           baseVersion: existing.version,
-          updatedAt: archivedAt,
-          archivedAt,
+          updatedAt,
+          archivedAt: updatedAt,
         }),
       });
       await transaction.done;

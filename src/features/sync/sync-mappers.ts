@@ -25,7 +25,6 @@ export function mapLocalNodeToCaptureMutation(input: {
       content: input.node.content,
       createdAt: input.node.createdAt,
       updatedAt: input.node.updatedAt,
-      archivedAt: input.node.archivedAt ?? null,
     },
   };
 }
@@ -51,7 +50,6 @@ export function mapLocalContextToConceptMutation(input: {
       normalizedAliases: context.normalizedAliases ?? [],
       createdAt: context.createdAt,
       updatedAt: context.updatedAt,
-      archivedAt: context.archivedAt,
       mergedIntoId: input.mergedIntoId ?? null,
     },
   };
@@ -90,14 +88,12 @@ export function mapRemoteCaptureToLocalNode(
     workspaceId: capture.workspaceId,
     type: "NOTE",
     content: capture.content,
-    status: capture.archivedAt ? "ARCHIVED" : "ACTIVE",
+    status: "ACTIVE",
     organizationStatus: "ORGANIZED",
     metadata: {},
     version: capture.version,
     createdAt: capture.createdAt,
     contentUpdatedAt: capture.updatedAt,
-    archivedAt: capture.archivedAt,
-    restoredAt: null,
     updatedAt: capture.updatedAt,
     deletedAt: null,
     createdByDeviceId: deviceId,
@@ -117,7 +113,7 @@ export function mapRemoteConceptToLocalContext(concept: ConceptEntity): Context 
     version: concept.version,
     createdAt: concept.createdAt,
     updatedAt: concept.updatedAt,
-    archivedAt: concept.archivedAt,
+    archivedAt: null,
     aliases: concept.aliases,
     normalizedAliases: concept.normalizedAliases,
   });

@@ -1,10 +1,6 @@
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it } from "vitest";
-import { archiveContext } from "@/features/context/archive-context";
-import { restoreContext } from "@/features/context/restore-context";
-import { archiveNode } from "@/features/node/archive-node";
 import { deriveCaptureEmergentIdentity } from "@/features/identity/capture-emergent-identity";
-import { restoreNode } from "@/features/node/restore-node";
 import { updateNode } from "@/features/node/update-node";
 import { SyncClientError } from "@/features/sync/sync-client";
 import {
@@ -159,44 +155,13 @@ describe("end-to-end synchronization", () => {
       expect(await getOutboxRecords()).toHaveLength(0);
     });
 
-    await harness.runOnDevice(deviceA, () =>
-      archiveNode(deviceA.repositories.nodeRepository, node.id, deviceA.device),
-    );
-    await harness.runOnDevice(deviceA, () => deviceA.pushCoordinator.run());
-    await harness.runOnDevice(deviceB, () => deviceB.pullCoordinator.run());
-    await harness.runOnDevice(deviceB, async () => {
-      expect((await snapshotDevice(workspaceId)).nodes[0]).toMatchObject({
-        status: "ARCHIVED",
-        version: 2,
-      });
-    });
-
-    await harness.runOnDevice(deviceB, () =>
-      restoreNode(deviceB.repositories.nodeRepository, node.id, deviceB.device),
-    );
-    await harness.runOnDevice(deviceB, () => deviceB.pushCoordinator.run());
-    await harness.runOnDevice(deviceA, () => deviceA.pullCoordinator.run());
-
-    await harness.runOnDevice(deviceA, () =>
-      archiveContext(deviceA.repositories.contextRepository, context.id),
-    );
-    await harness.runOnDevice(deviceA, () => deviceA.pushCoordinator.run());
-    await harness.runOnDevice(deviceB, () => deviceB.pullCoordinator.run());
-    await harness.runOnDevice(deviceB, () =>
-      restoreContext(deviceB.repositories.contextRepository, context.id),
-    );
-    await harness.runOnDevice(deviceB, () => deviceB.pushCoordinator.run());
-    await harness.runOnDevice(deviceA, () => deviceA.pullCoordinator.run());
-
     const convergence = await harness.compareDevices();
     expect(convergence.converged).toBe(true);
     expect(convergence.deviceA.nodes[0]).toMatchObject({
       status: "ACTIVE",
-      version: 3,
     });
     expect(convergence.deviceA.contexts[0]).toMatchObject({
       archivedAt: null,
-      version: 3,
     });
   });
 

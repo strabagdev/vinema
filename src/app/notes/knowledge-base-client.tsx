@@ -50,10 +50,17 @@ const MEMORY_THREAD_INITIAL_CAPTURE_LIMIT = 2;
 
 export function KnowledgeBaseClient({
   embedded = false,
+  embeddedState,
+  onEmbeddedStateChange,
   onOpenMemory,
   onOpenConcept,
 }: {
   embedded?: boolean;
+  embeddedState?: {
+    query?: string;
+    scrollTop?: number;
+  };
+  onEmbeddedStateChange?: (state: { query?: string; scrollTop?: number }) => void;
   onOpenMemory?: (nodeId: string) => void;
   onOpenConcept?: (conceptId: string) => void;
 } = {}) {
@@ -61,7 +68,7 @@ export function KnowledgeBaseClient({
   const searchParams = useSearchParams();
   const vinemaContext = useVinemaContext();
   const routeQuery = searchParams.get("q")?.trim() ?? "";
-  const [embeddedQuery, setEmbeddedQuery] = useState("");
+  const [embeddedQuery, setEmbeddedQuery] = useState(embeddedState?.query ?? "");
   const query = embedded ? embeddedQuery : routeQuery;
   const [draftQuery, setDraftQuery] = useState(query);
   const [expandedThreadIds, setExpandedThreadIds] = useState<Set<string>>(
@@ -78,6 +85,7 @@ export function KnowledgeBaseClient({
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [error, setError] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const embeddedScrollRef = useRef<HTMLElement | null>(null);
 
   const activeQuery = query.trim();
   const searchResultsByNodeId = useMemo(
@@ -185,6 +193,26 @@ export function KnowledgeBaseClient({
   }, [query]);
 
   useEffect(() => {
+    if (!embedded) {
+      return;
+    }
+
+    onEmbeddedStateChange?.({ query: embeddedQuery });
+  }, [embedded, embeddedQuery, onEmbeddedStateChange]);
+
+  useEffect(() => {
+    if (!embedded || embeddedState?.scrollTop === undefined) {
+      return;
+    }
+
+    queueMicrotask(() => {
+      if (embeddedScrollRef.current) {
+        embeddedScrollRef.current.scrollTop = embeddedState.scrollTop ?? 0;
+      }
+    });
+  }, [embedded, embeddedState?.scrollTop]);
+
+  useEffect(() => {
     if (vinemaContext.status === "loading") {
       return;
     }
@@ -276,7 +304,23 @@ export function KnowledgeBaseClient({
   }
 
   return (
-    <section className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+    <section
+      ref={embedded ? embeddedScrollRef : undefined}
+      className={
+        embedded
+          ? "vinema-scrollbar mx-auto flex h-full min-h-0 w-full max-w-5xl flex-1 flex-col gap-6 overflow-y-auto px-4 py-4 sm:px-6"
+          : "mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8"
+      }
+      onScroll={
+        embedded
+          ? (event) =>
+              onEmbeddedStateChange?.({
+                query: embeddedQuery,
+                scrollTop: event.currentTarget.scrollTop,
+              })
+          : undefined
+      }
+    >
       <div className="space-y-2">
         <h1 className="text-3xl font-semibold tracking-normal text-zinc-950">
           Memoria

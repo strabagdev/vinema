@@ -129,7 +129,6 @@ async function getOrCreateEmergingConceptContext(
 ): Promise<Context> {
   const contexts = await repository.list({
     workspaceId,
-    includeArchived: false,
   });
   const normalizedLabel = createConceptEquivalenceKey(emergingConcept.suggestedLabel);
   const resolution = resolveConceptIdentity(emergingConcept.suggestedLabel, contexts);

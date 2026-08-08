@@ -433,7 +433,7 @@ function createKnowledgeModel({
   const conceptIdByIdentityLabel = new Map<string, string>();
   const activeNodesById = new Map(
     nodes
-      .filter((node) => node.status === "ACTIVE" && node.deletedAt === null)
+      .filter((node) => node.deletedAt === null)
       .map((node) => [node.id, node]),
   );
   const relatedContextIds = new Set(
@@ -447,7 +447,7 @@ function createKnowledgeModel({
   );
 
   for (const context of contexts) {
-    if (context.archivedAt !== null || !relatedContextIds.has(context.id)) {
+    if (!relatedContextIds.has(context.id)) {
       continue;
     }
 

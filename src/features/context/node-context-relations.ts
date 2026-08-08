@@ -30,10 +30,6 @@ export async function attachNodeToContext(
     throw new Error("La captura y el contexto pertenecen a workspaces distintos.");
   }
 
-  if (context.archivedAt) {
-    throw new Error("No se puede asociar una captura a un contexto archivado.");
-  }
-
   const existingRelation =
     await repositories.nodeContextRelationRepository.getByNodeAndContext(
       node.id,
@@ -78,7 +74,6 @@ export async function listContextsForNode(
   input: {
     nodeId: string;
     type?: ContextType;
-    includeArchived?: boolean;
   },
 ): Promise<Context[]> {
   const relations =
@@ -92,7 +87,6 @@ export async function listContextsForNode(
   return contexts
     .filter((context): context is Context => context !== null)
     .filter((context) => !input.type || context.type === input.type)
-    .filter((context) => input.includeArchived || context.archivedAt === null)
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -101,7 +95,7 @@ export async function listNodesForContext(
     ContextRelationRepositories,
     "nodeContextRelationRepository" | "nodeRepository"
   >,
-  input: { contextId: string; includeArchived?: boolean },
+  input: { contextId: string },
 ): Promise<Node[]> {
   const relations =
     await repositories.nodeContextRelationRepository.listByContextId(
@@ -115,6 +109,5 @@ export async function listNodesForContext(
 
   return nodes
     .filter((node): node is Node => node !== null)
-    .filter((node) => input.includeArchived || node.status !== "ARCHIVED")
     .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
 }

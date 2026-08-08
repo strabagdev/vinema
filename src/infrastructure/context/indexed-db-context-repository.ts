@@ -28,7 +28,6 @@ export class IndexedDbContextRepository implements ContextRepository {
     return contexts
       .map(normalizeStoredContext)
       .filter((context): context is Context => context !== null)
-      .filter((context) => options.includeArchived || context.archivedAt === null)
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
@@ -39,13 +38,6 @@ export class IndexedDbContextRepository implements ContextRepository {
     return storedContext;
   }
 
-  async archive(context: Context): Promise<Context> {
-    return this.save(context);
-  }
-
-  async restore(context: Context): Promise<Context> {
-    return this.save(context);
-  }
 }
 
 export function normalizeStoredContext(value: unknown): Context | null {
@@ -67,9 +59,7 @@ export function normalizeStoredContext(value: unknown): Context | null {
       typeof record.description !== "string") ||
     typeof record.createdAt !== "string" ||
     typeof record.updatedAt !== "string" ||
-    (record.archivedAt !== null &&
-      record.archivedAt !== undefined &&
-      typeof record.archivedAt !== "string")
+    false
   ) {
     return null;
   }
@@ -94,7 +84,7 @@ export function normalizeStoredContext(value: unknown): Context | null {
         : 1,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
-    archivedAt: record.archivedAt ?? null,
+    archivedAt: null,
   });
 }
 

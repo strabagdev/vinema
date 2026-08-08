@@ -100,8 +100,9 @@ describe("contextual concept exploration", () => {
     });
 
     expect(neighborhood?.relatedConcepts.map((item) => item.id)).toEqual([
-      "b",
       "a",
+      "archived-context",
+      "b",
     ]);
   });
 });

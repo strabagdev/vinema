@@ -22,7 +22,7 @@ export const captureEntitySchema = z.object({
   content: z.string().max(MAX_CAPTURE_CONTENT_LENGTH),
   createdAt: isoDateSchema,
   updatedAt: isoDateSchema,
-  archivedAt: nullableIsoDateSchema,
+  archivedAt: nullableIsoDateSchema.optional(),
   version: z.number().int().positive(),
 });
 
@@ -37,7 +37,7 @@ export const conceptEntitySchema = z.object({
     .default([]),
   createdAt: isoDateSchema,
   updatedAt: isoDateSchema,
-  archivedAt: nullableIsoDateSchema,
+  archivedAt: nullableIsoDateSchema.optional(),
   mergedIntoId: uuidSchema.nullable(),
   version: z.number().int().positive(),
 });
@@ -56,7 +56,7 @@ export const captureConceptEntitySchema = z.object({
   source: captureConceptSourceSchema,
   createdAt: isoDateSchema,
   updatedAt: isoDateSchema,
-  archivedAt: nullableIsoDateSchema,
+  archivedAt: nullableIsoDateSchema.optional(),
   version: z.number().int().positive(),
 });
 
@@ -160,7 +160,7 @@ export const captureEntityResponseSchema = z.object({
   entityId: uuidSchema,
   version: z.number().int().positive(),
   content: z.string().max(MAX_CAPTURE_CONTENT_LENGTH),
-  archivedAt: nullableIsoDateSchema,
+  archivedAt: nullableIsoDateSchema.optional(),
   updatedAt: isoDateSchema,
 });
 

@@ -42,7 +42,6 @@ export class IndexedDbNodeRepository implements NodeRepository {
       .filter(
         (node) =>
           node.deletedAt === null &&
-          node.status === "ACTIVE" &&
           node.organizationStatus === "ORGANIZED",
       )
       .sort(byNewestUpdatedAt);
@@ -58,38 +57,19 @@ export class IndexedDbNodeRepository implements NodeRepository {
       .filter(
         (node) =>
           node.deletedAt === null &&
-          node.status === "ACTIVE" &&
           node.organizationStatus === "INBOX",
       )
       .sort(byNewestUpdatedAt);
   }
 
-  async listArchived(): Promise<Node[]> {
-    const db = await getVinemaDb();
-    const nodes = await db.getAll(NODES_STORE);
-
-    return nodes
-      .map(normalizeStoredNode)
-      .filter((node): node is Node => node !== null)
-      .filter((node) => node.deletedAt === null && node.status === "ARCHIVED")
-      .sort(byNewestUpdatedAt);
-  }
-
-  async listByWorkspace(
-    workspaceId: string,
-    options: { includeArchived?: boolean } = {},
-  ): Promise<Node[]> {
+  async listByWorkspace(workspaceId: string): Promise<Node[]> {
     const db = await getVinemaDb();
     const nodes = await db.getAllFromIndex(NODES_STORE, "by-workspace", workspaceId);
 
     return nodes
       .map(normalizeStoredNode)
       .filter((node): node is Node => node !== null)
-      .filter(
-        (node) =>
-          node.deletedAt === null &&
-          (options.includeArchived || node.status !== "ARCHIVED"),
-      )
+      .filter((node) => node.deletedAt === null)
       .sort(byNewestUpdatedAt);
   }
 }
@@ -115,7 +95,7 @@ export function normalizeStoredNode(value: unknown): Node | null {
     typeof record.workspaceId !== "string" ||
     (record.type !== "NOTE" && record.type !== "IDEA") ||
     typeof recoveredContent !== "string" ||
-    (record.status !== "ACTIVE" && record.status !== "ARCHIVED") ||
+    typeof record.status !== "string" ||
     (record.organizationStatus !== "INBOX" &&
       record.organizationStatus !== "ORGANIZED") ||
     typeof record.version !== "number" ||
@@ -132,7 +112,7 @@ export function normalizeStoredNode(value: unknown): Node | null {
     workspaceId: record.workspaceId,
     type: record.type,
     content: recoveredContent,
-    status: record.status,
+    status: "ACTIVE",
     organizationStatus: record.organizationStatus,
     metadata:
       typeof record.metadata === "object" && record.metadata !== null
@@ -141,8 +121,6 @@ export function normalizeStoredNode(value: unknown): Node | null {
     version: record.version,
     createdAt: record.createdAt,
     contentUpdatedAt: record.contentUpdatedAt,
-    archivedAt: record.archivedAt,
-    restoredAt: record.restoredAt,
     updatedAt: record.updatedAt,
     deletedAt: typeof record.deletedAt === "string" ? record.deletedAt : null,
     createdByDeviceId: record.createdByDeviceId,

@@ -32,11 +32,22 @@ El rail izquierdo queda reservado para herramientas permanentes de la aplicacion
 
 Rail permanente:
 
+- Explorar conocimiento;
+- Explorar conceptos;
 - Canvas;
-- Administrar;
 - Estado.
 
 Memoria y Conceptos viven en una barra contextual estructuralmente asociada al canvas. Esa barra aparece solo cuando existen resultados reales para la captura actual.
+
+El menu de tres puntos contiene `Conocimiento` como acceso administrativo:
+importar, exportar y vaciar. No abre exploracion global. La exploracion global
+pertenece al rail; las sugerencias derivadas del contenido actual pertenecen a
+la barra contextual.
+
+Los paneles contextuales solo muestran sugerencias derivadas del contenido
+actual. No contienen CTAs hacia workspaces globales como Explorar conocimiento,
+Explorar conceptos, Ver todo o abrir el workspace completo; esa navegacion
+pertenece al rail permanente.
 
 ## Estados implementados
 
@@ -97,6 +108,12 @@ Por eso:
 - si no hay indicadores, no se reserva espacio visual;
 - si el indicador activo desaparece, el panel se cierra.
 
+La visibilidad de estas señales se actualiza con resultados confirmados. Los
+estados transitorios de evaluacion, debounce, carga o error no deben provocar
+aparicion/desaparicion visual ni borrar una senal que acaba de tener resultados
+validos. Una evaluacion confirmada sin resultados si puede retirar la senal; el
+texto realmente vacio la retira de inmediato.
+
 La barra contextual pertenece a `CanvasWritingSurface`, se ubica sobre el canvas y no esta dentro de `data-canvas-scroll-viewport`. Su aparicion no modifica la grilla del editor, el punto inicial de escritura, el seguimiento del caret ni el scroll interno del texto.
 
 ## Paneles contextuales
@@ -128,6 +145,20 @@ Seleccionar un concepto:
   `knowledgeSuggestionReasons` para el mismo concepto, el panel puede enriquecer
   esa fila sin reconstruir la vista ni perder seleccion.
 
+Las sugerencias se actualizan de forma silenciosa. Vinema no solicita al
+usuario refrescar manualmente los resultados contextuales: mientras un panel
+esta abierto conserva su snapshot visual estable, puede enriquecer metadatos de
+filas ya visibles y, al cerrarse y volver a abrirse, toma automaticamente el
+ultimo resultado confirmado disponible.
+
+El panel de Memoria nunca depende de una carga indefinida. La recuperacion local
+tiene prioridad y los estados transitorios no sustituyen innecesariamente un
+snapshot confirmado. Si un panel de Memoria se abre durante una evaluacion nueva
+y queda con un snapshot visual en carga, ese snapshot se resuelve
+silenciosamente cuando la evaluacion termina. Si una lectura local queda
+pendiente demasiado tiempo, el estado visual sale de `Recordando...` y conserva
+la semantica local-first sin esperar sync remoto.
+
 No se muestran scores, confidence ni payloads internos.
 
 ## Panel “Me recuerda a…”
@@ -139,7 +170,10 @@ El panel de recuerdos muestra los primeros recuerdos segun la logica existente. 
 - link al detalle;
 - preservacion del borrador antes de abrir.
 
-No se fabrica titulo ni se duplica la primera linea.
+Las sugerencias de Memoria priorizan la captura relacionada. El concepto
+asociado, categoria conceptual o identidad emergente no se usa como encabezado
+visual normal si no aporta informacion adicional. No se fabrica titulo ni se
+duplica la primera linea.
 
 ## Politica de apertura
 
@@ -155,6 +189,19 @@ Se adopto una politica basada en intencion:
 - abrir un panel cierra el otro.
 
 El cierre de escritorio tiene un retardo breve y cancelable. Si el puntero sale del indicador pero entra al panel durante ese intervalo, el cierre se cancela para evitar parpadeo.
+
+El panel contextual visible constituye una unica region interactiva continua:
+trigger, corredor, header, padding, scroll area y contenido pertenecen al mismo
+hitbox. No deben existir zonas muertas dentro de la superficie visible; el cierre
+solo se programa cuando el puntero sale de toda esa region.
+
+La permanencia del panel contextual se coordina con estado explicito por zona:
+trigger, corredor y panel. La region usa eventos `pointerenter` / `pointerleave`
+para hover de escritorio; entrar al panel cancela inmediatamente el timer de
+cierre y tambien cualquier fade de salida pendiente. El timer de 240ms vuelve a
+validar esa region activa antes de iniciar `closing`, por lo que un cierre
+programado al salir del trigger no puede ganar la carrera si el puntero ya entro
+al corredor, header, padding, contenido o scrollbar del panel.
 
 El retardo se limpia al desmontar, al escribir, al cambiar de panel y al capturar.
 

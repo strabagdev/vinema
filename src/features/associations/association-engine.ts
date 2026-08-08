@@ -413,7 +413,6 @@ function isIndexableActiveNode(node: Node) {
   return (
     typeof node.id === "string" &&
     node.id.length > 0 &&
-    node.status === "ACTIVE" &&
     node.deletedAt === null &&
     typeof node.content === "string"
   );

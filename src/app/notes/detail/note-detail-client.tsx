@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Archive } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -29,8 +28,6 @@ import {
   attachNodeToContext,
   detachNodeFromContext,
 } from "@/features/context/node-context-relations";
-import { archiveNode } from "@/features/node/archive-node";
-import { restoreNode } from "@/features/node/restore-node";
 import { updateNode } from "@/features/node/update-node";
 import { useNode } from "@/features/node/hooks/use-node";
 import { useVinemaContext } from "@/features/node/hooks/use-vinema-context";
@@ -68,11 +65,15 @@ type Draft = {
 export function NoteDetailClient({
   embeddedNodeId,
   embeddedReturnTo = null,
+  embeddedState,
+  onEmbeddedStateChange,
   onBack,
   onOpenConcept,
 }: {
   embeddedNodeId?: string;
   embeddedReturnTo?: string | null;
+  embeddedState?: NoteDetailEmbeddedState;
+  onEmbeddedStateChange?: (state: NoteDetailEmbeddedState) => void;
   onBack?: () => void;
   onOpenConcept?: (conceptId: string) => void;
 } = {}) {
@@ -96,6 +97,8 @@ export function NoteDetailClient({
       nodeId={nodeId}
       returnTo={returnTo}
       embedded={Boolean(embeddedNodeId)}
+      embeddedState={embeddedState}
+      onEmbeddedStateChange={onEmbeddedStateChange}
       onBack={onBack}
       onOpenConcept={onOpenConcept}
     />
@@ -106,12 +109,16 @@ function NoteDetailLoader({
   nodeId,
   returnTo,
   embedded = false,
+  embeddedState,
+  onEmbeddedStateChange,
   onBack,
   onOpenConcept,
 }: {
   nodeId: string;
   returnTo: string | null;
   embedded?: boolean;
+  embeddedState?: NoteDetailEmbeddedState;
+  onEmbeddedStateChange?: (state: NoteDetailEmbeddedState) => void;
   onBack?: () => void;
   onOpenConcept?: (conceptId: string) => void;
 }) {
@@ -262,24 +269,6 @@ function NoteDetailLoader({
         setNode(updatedNode);
         return updatedNode;
       }}
-      onArchive={async () => {
-        await archiveNode(localRepositories.nodeRepository, node.id, context.device);
-        if (embedded) {
-          onBack?.();
-          return;
-        }
-
-        router.push(returnTo ?? "/memory");
-      }}
-      onRestore={async () => {
-        const restored = await restoreNode(
-          localRepositories.nodeRepository,
-          node.id,
-          context.device,
-        );
-        setNode(restored);
-        return restored;
-      }}
       onSaveContextRelations={async (selectedContextIds) => {
         const persistedContextIds = new Set(
           getPersistedSelectedContextIds({
@@ -318,12 +307,11 @@ function NoteDetailLoader({
 
         await loadNoteContexts(node.id, context.workspace.id);
       }}
-      onResolveCaptureSelection={async (selection) => {
-        const contexts = await localRepositories.contextRepository.list({
-          workspaceId: context.workspace.id,
-          includeArchived: false,
-        });
-        return resolveCapturedSelectionConcept(selection, contexts);
+	      onResolveCaptureSelection={async (selection) => {
+	        const contexts = await localRepositories.contextRepository.list({
+	          workspaceId: context.workspace.id,
+	        });
+	        return resolveCapturedSelectionConcept(selection, contexts);
       }}
       onApplyCaptureSelection={async ({ contextId, label }) => {
         const contextToAttach = contextId
@@ -363,9 +351,17 @@ function NoteDetailLoader({
         router.push(returnTo ?? "/memory");
       }}
       onOpenConcept={onOpenConcept}
+      embedded={embedded}
+      embeddedState={embeddedState}
+      onEmbeddedStateChange={onEmbeddedStateChange}
     />
   );
 }
+
+export type NoteDetailEmbeddedState = {
+  mode?: "read" | "edit";
+  scrollTop?: number;
+};
 
 export function NoteDetailView({
   node,
@@ -377,10 +373,11 @@ export function NoteDetailView({
   onSaveContextRelations,
   onResolveCaptureSelection,
   onApplyCaptureSelection,
-  onArchive,
-  onRestore,
   onBack,
   onOpenConcept,
+  embedded = false,
+  embeddedState,
+  onEmbeddedStateChange,
   canvasPreferencesStorage = storageAdapter,
 }: {
   node: Node;
@@ -397,23 +394,22 @@ export function NoteDetailView({
     contextId?: string;
     label: string;
   }) => Promise<{ contextId: string; label: string } | void>;
-  onArchive: () => Promise<void>;
-  onRestore?: () => Promise<Node>;
   onBack?: () => void;
   onOpenConcept?: (conceptId: string) => void;
+  embedded?: boolean;
+  embeddedState?: NoteDetailEmbeddedState;
+  onEmbeddedStateChange?: (state: NoteDetailEmbeddedState) => void;
   canvasPreferencesStorage?: StorageAdapter;
 }) {
   const feedback = useVisualFeedback();
   const canvasPreferences = useCanvasPreferences(canvasPreferencesStorage);
   const [persistedNode, setPersistedNode] = useState(node);
-  const [mode, setMode] = useState<"read" | "edit">("read");
+  const [mode, setMode] = useState<"read" | "edit">(embeddedState?.mode ?? "read");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saveStatus, setSaveStatus] = useState<
     "idle" | "dirty" | "saving" | "saved" | "error"
   >("idle");
   const [formError, setFormError] = useState<string | null>(null);
-  const [archiveConfirmationVisible, setArchiveConfirmationVisible] =
-    useState(false);
   const [capturedSelection, setCapturedSelection] =
     useState<CapturedTextSelection | null>(null);
   const [selectionResolution, setSelectionResolution] =
@@ -428,6 +424,7 @@ export function NoteDetailView({
   );
   const selectedContextIdsRef = useRef(selectedContextIds);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const embeddedScrollRef = useRef<HTMLElement | null>(null);
   const persistedNodeRef = useRef(persistedNode);
   const modeRef = useRef(mode);
   const draftRef = useRef<Draft | null>(draft);
@@ -481,6 +478,18 @@ export function NoteDetailView({
   }, [feedback, formError, saveStatus]);
 
   useEffect(() => {
+    if (!embedded || embeddedState?.scrollTop === undefined) {
+      return;
+    }
+
+    queueMicrotask(() => {
+      if (embeddedScrollRef.current) {
+        embeddedScrollRef.current.scrollTop = embeddedState.scrollTop ?? 0;
+      }
+    });
+  }, [embedded, embeddedState?.scrollTop]);
+
+  useEffect(() => {
     if (!capturedSelection) {
       return;
     }
@@ -510,6 +519,7 @@ export function NoteDetailView({
   function setModeState(nextMode: "read" | "edit") {
     modeRef.current = nextMode;
     setMode(nextMode);
+    onEmbeddedStateChange?.({ mode: nextMode });
   }
 
   function setDraftState(nextDraft: Draft | null) {
@@ -621,10 +631,6 @@ export function NoteDetailView({
   }
 
   function beginEdit() {
-    if (persistedNodeRef.current.status === "ARCHIVED") {
-      return;
-    }
-
     setDraftState(toDraft(persistedNodeRef.current));
     setSelectedContexts(
       getPersistedSelectedContextIds({
@@ -827,55 +833,6 @@ export function NoteDetailView({
     }
   }
 
-  async function handleArchive() {
-    clearCapturedSelection();
-    if (savingRef.current || mode !== "read") {
-      return;
-    }
-
-    if (!archiveConfirmationVisible) {
-      setArchiveConfirmationVisible(true);
-      return;
-    }
-
-    savingRef.current = true;
-    setFormError(null);
-
-    try {
-      await onArchive();
-    } catch (caughtError) {
-      const message = caughtError instanceof Error
-        ? caughtError.message
-        : "No se pudo archivar la captura.";
-      setFormError(message);
-      feedback.error(message);
-      savingRef.current = false;
-    }
-  }
-
-  async function handleRestore() {
-    if (savingRef.current || mode !== "read" || !onRestore) {
-      return;
-    }
-
-    savingRef.current = true;
-    setFormError(null);
-
-    try {
-      const restored = await onRestore();
-      setPersisted(restored);
-      feedback.capture();
-    } catch (caughtError) {
-      const message = caughtError instanceof Error
-        ? caughtError.message
-        : "No se pudo restaurar la captura.";
-      setFormError(message);
-      feedback.error(message);
-    } finally {
-      savingRef.current = false;
-    }
-  }
-
   function handleKeyDown(event: React.KeyboardEvent) {
     const key = typeof event.key === "string"
       ? event.key.toLowerCase()
@@ -893,173 +850,255 @@ export function NoteDetailView({
 
   return (
     <section
-      className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8"
+      ref={embedded ? embeddedScrollRef : undefined}
+      className={
+        embedded
+          ? "vinema-scrollbar mx-auto flex h-full min-h-0 w-full max-w-5xl flex-1 flex-col gap-5 overflow-y-auto px-4 py-4 sm:px-6 lg:px-8"
+          : "mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8"
+      }
       onKeyDown={handleKeyDown}
+      onScroll={
+        embedded
+          ? (event) =>
+              onEmbeddedStateChange?.({
+                mode,
+                scrollTop: event.currentTarget.scrollTop,
+              })
+          : undefined
+      }
+      data-note-detail-embedded={embedded ? "" : undefined}
     >
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-3">
-          <Badge variant="secondary">
-            {persistedNode.status === "ARCHIVED" ? "Captura archivada" : "Captura"}
-          </Badge>
-          <div>
-            <h1 className="text-3xl font-semibold tracking-normal text-zinc-950">
-              {mode === "edit" ? "Editar captura" : "Captura"}
-            </h1>
-            {mode === "read" ? (
-              <CaptureEmergentIdentityLabel
-                identity={emergentIdentity}
-                className="mt-2"
-                getConceptHref={onOpenConcept ? undefined : getConceptExplorationPath}
-                onConceptClick={onOpenConcept}
-              />
-            ) : null}
-            <CaptureDates node={persistedNode} />
-          </div>
-        </div>
-        {mode === "read" && persistedNode.status === "ARCHIVED" ? (
-          <div className="flex gap-2">
-            <Button variant="ghost" onClick={handleBack}>
-              ← Volver
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={handleRestore}
-              disabled={savingRef.current}
-            >
-              Restaurar
-            </Button>
-          </div>
-        ) : mode === "read" ? (
-          <div className="flex gap-2">
-            <Button variant="ghost" onClick={handleBack}>
-              ← Volver
-            </Button>
-            <Button variant="secondary" onClick={beginEdit}>
-              Editar
-            </Button>
-            <Button variant="ghost" onClick={handleArchive} disabled={savingRef.current}>
-              <Archive className="h-4 w-4" />
-              Archivar
-            </Button>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-2 sm:items-end">
-            <div className="flex gap-2">
-              <Button variant="ghost" onClick={handleBack} disabled={saveStatus === "saving"}>
-                ← Volver
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={cancelEdit}
-                disabled={saveStatus === "saving"}
-              >
-                Cancelar
-              </Button>
-              <Button onClick={handleDone} disabled={saveStatus === "saving"}>
-                Listo
-              </Button>
+      {embedded ? (
+        <>
+          <div
+            className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
+            data-note-detail-embedded-layout=""
+          >
+            <div className="space-y-2" data-note-detail-embedded-meta="">
+              {mode === "read" ? (
+                <CaptureEmergentIdentityLabel
+                  identity={emergentIdentity}
+                  getConceptHref={onOpenConcept ? undefined : getConceptExplorationPath}
+                  onConceptClick={onOpenConcept}
+                />
+              ) : null}
+              <CaptureDates node={persistedNode} />
             </div>
-          </div>
-        )}
-      </div>
 
-      {archiveConfirmationVisible && persistedNode.status !== "ARCHIVED" ? (
-        <div
-          className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"
-          role="alert"
-        >
-          <p className="font-medium">Archivar esta captura?</p>
-          <p className="mt-1">Podras restaurarla desde Archivo.</p>
-          <div className="mt-3 flex gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setArchiveConfirmationVisible(false)}
-            >
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={handleArchive}
-              disabled={savingRef.current}
-            >
-              Archivar
-            </Button>
+            {mode === "read" ? (
+              <div className="flex gap-2" data-note-detail-actions="">
+                <Button variant="secondary" onClick={beginEdit}>
+                  Editar
+                </Button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2 sm:items-end" data-note-detail-actions="">
+                <div className="flex gap-2">
+                  <Button
+                    variant="ghost"
+                    onClick={cancelEdit}
+                    disabled={saveStatus === "saving"}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button onClick={handleDone} disabled={saveStatus === "saving"}>
+                    Listo
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      ) : null}
-      {contextError ? (
-        <p
-          className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700"
-        >
-          {contextError}
-        </p>
-      ) : null}
-      {mode === "read" ? (
-        <div className="space-y-4">
-          <article className="rounded-lg border border-zinc-200 bg-white p-5">
-            <div className="prose prose-zinc max-w-none whitespace-pre-wrap text-sm leading-7 text-zinc-800">
-              {persistedNode.content.trim() || "Sin contenido"}
+
+          {contextError ? (
+            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+              {contextError}
+            </p>
+          ) : null}
+          {mode === "read" ? (
+            <div className="space-y-4">
+              <article className="min-w-0" data-note-detail-reading-column="">
+                <div className="whitespace-pre-wrap text-base leading-8 text-zinc-800">
+                  {persistedNode.content.trim() || "Sin contenido"}
+                </div>
+              </article>
+              <ReadConceptSection
+                contexts={relatedContexts}
+                onOpenConcept={onOpenConcept}
+              />
             </div>
-          </article>
-          <ReadConceptSection
-            contexts={relatedContexts}
-            onOpenConcept={onOpenConcept}
-          />
-        </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="relative min-w-0" data-note-detail-editor-column="">
+                <Textarea
+                  ref={textareaRef}
+                  value={content}
+                  onMouseUp={updateCapturedSelection}
+                  onKeyUp={updateCapturedSelection}
+                  onSelect={updateCapturedSelection}
+                  onChange={(event) => {
+                    updateDraft({
+                      nodeId: persistedNode.id,
+                      content: event.target.value,
+                    });
+                  }}
+                  placeholder="Contenido"
+                  aria-label="Contenido"
+                  className="min-h-[420px] resize-y"
+                  style={getCanvasEditorStyle(canvasPreferences.preferences)}
+                />
+                <CaptureSelectionAction
+                  selection={capturedSelection}
+                  resolution={selectionResolution}
+                  processing={selectionProcessing}
+                  touch={!canUseSelectionPopover()}
+                  anchorElement={textareaRef.current}
+                  onCapture={() => void captureSelectedText()}
+                  onConfirmNew={() => {
+                    if (capturedSelection) {
+                      void applySelectionConcept({ label: capturedSelection.text });
+                    }
+                  }}
+                  onChoose={(contextId) => {
+                    const context = relationOptions.find((item) => item.id === contextId);
+                    void applySelectionConcept({
+                      contextId,
+                      label: context?.name ?? "Concepto",
+                    });
+                  }}
+                  onCancel={clearCapturedSelection}
+                />
+              </div>
+              <EditContextSection
+                contexts={relationOptions}
+                selectedContextIds={selectedContextIds}
+                onChange={setSelectedContexts}
+              />
+              <p className="text-xs text-zinc-500">
+                Ctrl+S o Cmd+S guarda y mantiene la edicion abierta.
+              </p>
+            </div>
+          )}
+        </>
       ) : (
-        <div className="space-y-4 rounded-lg border border-zinc-200 bg-white p-4">
-          <div className="relative">
-            <Textarea
-              ref={textareaRef}
-              value={content}
-              onMouseUp={updateCapturedSelection}
-              onKeyUp={updateCapturedSelection}
-              onSelect={updateCapturedSelection}
-              onChange={(event) => {
-                updateDraft({
-                  nodeId: persistedNode.id,
-                  content: event.target.value,
-                });
-              }}
-              placeholder="Contenido"
-              aria-label="Contenido"
-              className="min-h-[420px] resize-y"
-              style={getCanvasEditorStyle(canvasPreferences.preferences)}
-            />
-            <CaptureSelectionAction
-              selection={capturedSelection}
-              resolution={selectionResolution}
-              processing={selectionProcessing}
-              touch={!canUseSelectionPopover()}
-              anchorElement={textareaRef.current}
-              onCapture={() => void captureSelectedText()}
-              onConfirmNew={() => {
-                if (capturedSelection) {
-                  void applySelectionConcept({ label: capturedSelection.text });
-                }
-              }}
-              onChoose={(contextId) => {
-                const context = relationOptions.find((item) => item.id === contextId);
-                void applySelectionConcept({
-                  contextId,
-                  label: context?.name ?? "Concepto",
-                });
-              }}
-              onCancel={clearCapturedSelection}
-            />
+        <>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-3">
+              <Badge variant="secondary">Captura</Badge>
+              <div>
+                <h1 className="text-3xl font-semibold tracking-normal text-zinc-950">
+                  {mode === "edit" ? "Editar captura" : "Captura"}
+                </h1>
+                {mode === "read" ? (
+                  <CaptureEmergentIdentityLabel
+                    identity={emergentIdentity}
+                    className="mt-2"
+                    getConceptHref={onOpenConcept ? undefined : getConceptExplorationPath}
+                    onConceptClick={onOpenConcept}
+                  />
+                ) : null}
+                <CaptureDates node={persistedNode} />
+              </div>
+            </div>
+            {mode === "read" ? (
+              <div className="flex gap-2">
+                <Button variant="ghost" onClick={handleBack}>
+                  ← Volver
+                </Button>
+                <Button variant="secondary" onClick={beginEdit}>
+                  Editar
+                </Button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2 sm:items-end">
+                <div className="flex gap-2">
+                  <Button variant="ghost" onClick={handleBack} disabled={saveStatus === "saving"}>
+                    ← Volver
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={cancelEdit}
+                    disabled={saveStatus === "saving"}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button onClick={handleDone} disabled={saveStatus === "saving"}>
+                    Listo
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
-          <EditContextSection
-            contexts={relationOptions}
-            selectedContextIds={selectedContextIds}
-            onChange={setSelectedContexts}
-          />
-          <p className="text-xs text-zinc-500">
-            Ctrl+S o Cmd+S guarda y mantiene la edicion abierta.
-          </p>
-        </div>
+
+          {contextError ? (
+            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+              {contextError}
+            </p>
+          ) : null}
+          {mode === "read" ? (
+            <div className="space-y-4">
+              <article className="rounded-lg border border-zinc-200 bg-white p-5">
+                <div className="prose prose-zinc max-w-none whitespace-pre-wrap text-sm leading-7 text-zinc-800">
+                  {persistedNode.content.trim() || "Sin contenido"}
+                </div>
+              </article>
+              <ReadConceptSection
+                contexts={relatedContexts}
+                onOpenConcept={onOpenConcept}
+              />
+            </div>
+          ) : (
+            <div className="space-y-4 rounded-lg border border-zinc-200 bg-white p-4">
+              <div className="relative">
+                <Textarea
+                  ref={textareaRef}
+                  value={content}
+                  onMouseUp={updateCapturedSelection}
+                  onKeyUp={updateCapturedSelection}
+                  onSelect={updateCapturedSelection}
+                  onChange={(event) => {
+                    updateDraft({
+                      nodeId: persistedNode.id,
+                      content: event.target.value,
+                    });
+                  }}
+                  placeholder="Contenido"
+                  aria-label="Contenido"
+                  className="min-h-[420px] resize-y"
+                  style={getCanvasEditorStyle(canvasPreferences.preferences)}
+                />
+                <CaptureSelectionAction
+                  selection={capturedSelection}
+                  resolution={selectionResolution}
+                  processing={selectionProcessing}
+                  touch={!canUseSelectionPopover()}
+                  anchorElement={textareaRef.current}
+                  onCapture={() => void captureSelectedText()}
+                  onConfirmNew={() => {
+                    if (capturedSelection) {
+                      void applySelectionConcept({ label: capturedSelection.text });
+                    }
+                  }}
+                  onChoose={(contextId) => {
+                    const context = relationOptions.find((item) => item.id === contextId);
+                    void applySelectionConcept({
+                      contextId,
+                      label: context?.name ?? "Concepto",
+                    });
+                  }}
+                  onCancel={clearCapturedSelection}
+                />
+              </div>
+              <EditContextSection
+                contexts={relationOptions}
+                selectedContextIds={selectedContextIds}
+                onChange={setSelectedContexts}
+              />
+              <p className="text-xs text-zinc-500">
+                Ctrl+S o Cmd+S guarda y mantiene la edicion abierta.
+              </p>
+            </div>
+          )}
+        </>
       )}
     </section>
   );
@@ -1092,19 +1131,17 @@ function ReadConceptSection({
               type="button"
               className="rounded-full border border-zinc-200 px-3 py-1 text-sm text-zinc-700 hover:border-zinc-400 hover:text-zinc-950"
               onClick={() => onOpenConcept(context.id)}
-            >
-              {context.name}
-              {context.archivedAt ? " · Archivado" : ""}
-            </button>
+	            >
+	              {context.name}
+	            </button>
           ) : (
             <Link
               key={context.id}
               href={getConceptExplorationPath(context.id)}
               className="rounded-full border border-zinc-200 px-3 py-1 text-sm text-zinc-700 hover:border-zinc-400 hover:text-zinc-950"
-            >
-              {context.name}
-              {context.archivedAt ? " · Archivado" : ""}
-            </Link>
+	            >
+	              {context.name}
+	            </Link>
           ),
         ),
       )}
@@ -1164,26 +1201,23 @@ function EditContextSection({
     <section className="flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-4">
       <h2 className="mr-1 text-sm font-medium text-zinc-700">Conceptos</h2>
       {visibleTypes.map((type) =>
-        groupedContexts[type].map((context) => {
-          const disabled = Boolean(context.archivedAt) && !selectedSet.has(context.id);
-          const selected = selectedSet.has(context.id);
+	        groupedContexts[type].map((context) => {
+	          const selected = selectedSet.has(context.id);
 
           return (
             <button
               key={context.id}
-              type="button"
-              aria-pressed={selected}
-              disabled={disabled}
-              className={
+	              type="button"
+	              aria-pressed={selected}
+	              className={
                 selected
                   ? "rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-sm text-white"
                   : "rounded-full border border-zinc-200 px-3 py-1 text-sm text-zinc-700 hover:border-zinc-400 disabled:text-zinc-400"
               }
               onClick={() => toggleContext(context.id)}
-            >
-              {context.name}
-              {context.archivedAt ? " · Archivado" : ""}
-            </button>
+	            >
+	              {context.name}
+	            </button>
           );
         }),
       )}
@@ -1259,16 +1293,12 @@ function CaptureDates({ node }: { node: Node }) {
   const timestamps = getCaptureTimestamps(node);
   const createdAt = formatShortDate(timestamps.createdAt);
   const contentUpdatedAt = formatShortDate(timestamps.contentUpdatedAt);
-  const archivedAt = timestamps.archivedAt
-    ? formatShortDate(timestamps.archivedAt)
-    : null;
   const showContentUpdated = timestamps.contentUpdatedAt !== timestamps.createdAt;
 
   return (
     <p className="mt-2 text-sm text-zinc-500">
       Creada {createdAt}
       {showContentUpdated ? ` · Editada ${contentUpdatedAt}` : ""}
-      {archivedAt ? ` · Archivada ${archivedAt}` : ""}
     </p>
   );
 }

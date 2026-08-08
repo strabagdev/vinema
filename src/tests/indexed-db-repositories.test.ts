@@ -8,9 +8,7 @@ import { DevicePlatform } from "@/domain/device/device";
 import type { Node } from "@/domain/node/node";
 import type { Workspace } from "@/domain/workspace/workspace";
 import { getOrCreateDevice } from "@/features/device/get-or-create-device";
-import { archiveNode } from "@/features/node/archive-node";
 import { convertIdeaToNote } from "@/features/node/convert-idea-to-note";
-import { restoreNode } from "@/features/node/restore-node";
 import { updateNode } from "@/features/node/update-node";
 import {
   buildAssociationIndex,
@@ -347,7 +345,7 @@ describe("IndexedDB repositories", () => {
     expect(relationStore.indexNames.contains("by-relation-type")).toBe(true);
   });
 
-  it("archives, restores and converts using inline Node keys", async () => {
+  it("converts using inline Node keys", async () => {
     const repository = new IndexedDbNodeRepository();
     const idea = makeNode({
       id: "idea-1",
@@ -360,15 +358,6 @@ describe("IndexedDB repositories", () => {
     const note = await convertIdeaToNote(repository, idea.id, device);
     expect(note.id).toBe(idea.id);
     expect(note.type).toBe("NOTE");
-    await expect(repository.listActive()).resolves.toHaveLength(1);
-
-    const archived = await archiveNode(repository, note.id, device);
-    expect(archived.status).toBe("ARCHIVED");
-    await expect(repository.listActive()).resolves.toHaveLength(0);
-    await expect(repository.listArchived()).resolves.toHaveLength(1);
-
-    const restored = await restoreNode(repository, note.id, device);
-    expect(restored.status).toBe("ACTIVE");
     await expect(repository.listActive()).resolves.toHaveLength(1);
   });
 

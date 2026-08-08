@@ -1,14 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { Activity, Brain, Check, Lightbulb, Settings2, X } from "lucide-react";
+import { Activity, Brain, Check, Lightbulb, Network, Settings2, X } from "lucide-react";
 import type { MouseEvent, ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConceptWorkspaceClient } from "@/app/concepts/concept-workspace-client";
 import { NoteDetailClient } from "@/app/notes/detail/note-detail-client";
 import { KnowledgeBaseClient } from "@/app/notes/knowledge-base-client";
 import { ApplicationWorkspaceDialog } from "@/components/app-shell/application-workspace-dialog";
-import { KnowledgeManagementCenterMenuItem } from "@/components/app-shell/knowledge-management-center";
 import { Button } from "@/components/ui/button";
 import type { Node } from "@/domain/node/node";
 import type { Context } from "@/domain/context/context";
@@ -55,7 +54,6 @@ import {
 import { CaptureSelectionAction } from "@/features/capture/capture-selection-action";
 import type { KnowledgeSuggestionKind } from "@/features/cognition/knowledge-suggestions";
 import type { CaptureEmergentIdentity } from "@/features/identity/capture-emergent-identity";
-import { CaptureEmergentIdentityLabel } from "@/features/identity/capture-emergent-identity-view";
 import { loadCaptureEmergentIdentities } from "@/features/identity/load-capture-emergent-identities";
 import { useVisualFeedback } from "@/features/feedback/visual-feedback-provider";
 import { isKnowledgeResetRunning } from "@/features/knowledge-reset/knowledge-reset";
@@ -67,7 +65,7 @@ import type { StorageAdapter } from "@/infrastructure/storage/storage-adapter";
 import { cn } from "@/lib/cn";
 
 const EMPTY_SELECTED_CAPTURE_IDS: string[] = [];
-const INITIAL_MEMORY_RESULT_LIMIT = 3;
+const INITIAL_MEMORY_RESULT_LIMIT = 5;
 const DESKTOP_PANEL_BREAKPOINT = 768;
 const CONCEPT_HIGHLIGHT_MS = 1200;
 const PANEL_HOVER_CLOSE_DELAY_MS = 240;
@@ -76,10 +74,44 @@ const PANEL_PREVIEW_EXIT_MS = 240;
 type DraftStatus = "idle" | "saving" | "saved" | "error";
 type ActivePanel = "concepts" | "memories" | "preferences" | "memoryStatus" | null;
 type ToolPanel = Exclude<ActivePanel, null>;
-type WorkspaceView =
+type ContextHoverPart = "trigger" | "corridor" | "panel";
+type ContextHoverState = {
+  activePanel: ToolPanel | null;
+  trigger: boolean;
+  corridor: boolean;
+  panel: boolean;
+};
+export type WorkspaceView =
   | { kind: "memory-index" }
   | { kind: "memory-detail"; nodeId: string }
   | { kind: "concept-workspace"; selectedConceptId?: string | null };
+export type WorkspaceMapTransform = {
+  scale: number;
+  x: number;
+  y: number;
+};
+export type WorkspaceViewState = {
+  scrollTop?: number;
+  memory?: {
+    query?: string;
+    scrollTop?: number;
+  };
+  concept?: {
+    selectedConceptId?: string | null;
+    query?: string;
+    profileScrollTop?: number;
+    mapTransform?: WorkspaceMapTransform;
+  };
+  capture?: {
+    mode?: "read" | "edit";
+    scrollTop?: number;
+  };
+};
+export type WorkspaceHistoryEntry = {
+  view: WorkspaceView;
+  params?: Record<string, string>;
+  state: WorkspaceViewState;
+};
 type PanelSnapshot = {
   panel: Exclude<ActivePanel, null>;
   signature: string;
@@ -130,7 +162,12 @@ export function CaptureSurface({
   const [panelSnapshots, setPanelSnapshots] = useState<
     Partial<Record<ToolPanel, PanelSnapshot>>
   >({});
-  const [workspaceHistory, setWorkspaceHistory] = useState<WorkspaceView[]>([]);
+  const [confirmedContextSignals, setConfirmedContextSignals] = useState({
+    memories: false,
+    concepts: false,
+    conceptCount: 0,
+  });
+  const [workspaceHistory, setWorkspaceHistory] = useState<WorkspaceHistoryEntry[]>([]);
   const [capturedSelection, setCapturedSelection] =
     useState<CapturedTextSelection | null>(null);
   const [selectionResolution, setSelectionResolution] =
@@ -140,13 +177,21 @@ export function CaptureSurface({
   const savePromiseRef = useRef<Promise<unknown> | null>(null);
   const closePanelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previewExitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const contextHoverStateRef = useRef<ContextHoverState>({
+    activePanel: null,
+    trigger: false,
+    corridor: false,
+    panel: false,
+  });
+  const previousPanelContentRef = useRef(content);
   const highlightTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map(),
   );
   const captureInFlightRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const workspaceDialogTriggerRef = useRef<HTMLElement | null>(null);
-  const currentWorkspaceView = workspaceHistory.at(-1) ?? null;
+  const currentWorkspaceEntry = workspaceHistory.at(-1) ?? null;
+  const currentWorkspaceView = currentWorkspaceEntry?.view ?? null;
   const hasContent = content.trim().length > 0;
   const placeholder = useStableCanvasPrompt({
     category: "mixed",
@@ -167,8 +212,18 @@ export function CaptureSurface({
     selectedExistingConceptSuggestions,
   );
   const memorySuggestions = associationState.suggestions;
-  const showConceptIndicator = hasContent && conceptSuggestions.length > 0;
-  const showMemoryIndicator = hasContent && memorySuggestions.length > 0;
+  const showConceptIndicator =
+    hasContent && (confirmedContextSignals.concepts || conceptSuggestions.length > 0);
+  const showMemoryIndicator =
+    hasContent && (confirmedContextSignals.memories || memorySuggestions.length > 0);
+  const contextualConceptCount = Math.max(
+    confirmedContextSignals.conceptCount,
+    conceptSuggestions.length,
+  );
+  const hasSelectedConceptSuggestions =
+    selectedContextIds.length > 0 ||
+    selectedEmergingConcepts.length > 0 ||
+    selectedExistingConceptSuggestions.length > 0;
   const visiblePanel = pinnedPanel ?? previewPanel ?? closingPreviewPanel;
   const visiblePanelIsContextual = isContextualCanvasPanel(visiblePanel);
   const previewClosing =
@@ -187,15 +242,15 @@ export function CaptureSurface({
           memoryLoading: associationState.status === "loading",
           memoryError: associationState.error !== null,
         })
+      : visiblePanel === "memories" && visiblePanelSnapshot
+        ? createResolvedMemoryPanelSnapshot({
+            snapshot: visiblePanelSnapshot,
+            memorySuggestions,
+            memoryIdentities,
+            memoryLoading: associationState.status === "loading",
+            memoryError: associationState.error !== null,
+          })
       : visiblePanelSnapshot;
-  const activePanelHasUpdates =
-    displayedPanelSnapshot !== null &&
-    displayedPanelSnapshot.signature !== getPanelSignature(displayedPanelSnapshot.panel, {
-      conceptSuggestions,
-      memorySuggestions,
-      memoryLoading: associationState.status === "loading",
-      memoryError: associationState.error !== null,
-    });
   const clearPanelCloseTimer = useCallback(() => {
     if (closePanelTimerRef.current) {
       clearTimeout(closePanelTimerRef.current);
@@ -209,6 +264,7 @@ export function CaptureSurface({
   }, []);
   const closePanels = useCallback(() => {
     clearPanelCloseTimer();
+    resetContextHoverState();
     setPinnedPanel(null);
     setPreviewPanel(null);
     setClosingPreviewPanel(null);
@@ -216,6 +272,53 @@ export function CaptureSurface({
       textareaRef.current?.focus();
     });
   }, [clearPanelCloseTimer]);
+
+  useEffect(() => {
+    if (!hasContent) {
+      queueMicrotask(() => {
+        setConfirmedContextSignals({
+          memories: false,
+          concepts: false,
+          conceptCount: 0,
+        });
+      });
+      return;
+    }
+
+    if (associationState.status !== "ready") {
+      return;
+    }
+
+    queueMicrotask(() => {
+      setConfirmedContextSignals({
+        memories: memorySuggestions.length > 0,
+        concepts: conceptSuggestions.length > 0,
+        conceptCount: conceptSuggestions.length,
+      });
+    });
+  }, [
+    associationState.status,
+    conceptSuggestions.length,
+    hasContent,
+    memorySuggestions.length,
+  ]);
+
+  useEffect(() => {
+    if (previousPanelContentRef.current === content) {
+      return;
+    }
+
+    previousPanelContentRef.current = content;
+
+    if (
+      visiblePanel &&
+      !(visiblePanel === "concepts" && hasSelectedConceptSuggestions)
+    ) {
+      queueMicrotask(() => {
+        closePanels();
+      });
+    }
+  }, [closePanels, content, hasSelectedConceptSuggestions, visiblePanel]);
 
   useEffect(() => {
     let cancelled = false;
@@ -620,7 +723,6 @@ export function CaptureSurface({
     try {
       const contexts = await repositories.contextRepository.list({
         workspaceId: workspace.id,
-        includeArchived: false,
       });
       const resolution = resolveCapturedSelectionConcept(selection, contexts);
 
@@ -734,6 +836,40 @@ export function CaptureSurface({
     }
   }
 
+  function activateContextPreviewPanel(panel: ToolPanel) {
+    setContextHoverPart("trigger", panel, true);
+    activatePreviewPanel(panel);
+  }
+
+  function leaveContextPreviewTrigger(panel: ToolPanel) {
+    setContextHoverPart("trigger", panel, false);
+
+    if (!pinnedPanel && !isContextHoverRegionActive(panel)) {
+      schedulePreviewClose(panel);
+    }
+  }
+
+  function enterContextPreviewSurface(panel: ToolPanel, part: ContextHoverPart) {
+    if (pinnedPanel) {
+      return;
+    }
+
+    setContextHoverPart(part, panel, true);
+    clearPanelCloseTimer();
+    setClosingPreviewPanel(null);
+    setPreviewPanel(panel);
+  }
+
+  function leaveContextPreviewSurface(panel: ToolPanel, part: ContextHoverPart) {
+    if (!pinnedPanel) {
+      setContextHoverPart(part, panel, false);
+
+      if (!isContextHoverRegionActive(panel)) {
+        schedulePreviewClose(panel);
+      }
+    }
+  }
+
   function enterPreviewSurface(panel: ToolPanel) {
     if (pinnedPanel) {
       return;
@@ -753,6 +889,11 @@ export function CaptureSurface({
   function schedulePreviewClose(panel: ToolPanel) {
     clearPanelCloseTimer();
     closePanelTimerRef.current = setTimeout(() => {
+      if (isContextualCanvasPanel(panel) && isContextHoverRegionActive(panel)) {
+        closePanelTimerRef.current = null;
+        return;
+      }
+
       closePanelTimerRef.current = null;
       setClosingPreviewPanel(panel);
       setPreviewPanel(null);
@@ -765,6 +906,7 @@ export function CaptureSurface({
 
   function openPanel(panel: ToolPanel) {
     clearPanelCloseTimer();
+    resetContextHoverState();
     setPreviewPanel(null);
     setClosingPreviewPanel(null);
 
@@ -777,12 +919,46 @@ export function CaptureSurface({
     setPinnedPanel(panel);
   }
 
-  function refreshActivePanel() {
-    if (!visiblePanel) {
-      return;
-    }
+  function resetContextHoverState() {
+    contextHoverStateRef.current = {
+      activePanel: null,
+      trigger: false,
+      corridor: false,
+      panel: false,
+    };
+  }
 
-    snapshotPanel(visiblePanel);
+  function setContextHoverPart(
+    part: ContextHoverPart,
+    panel: ToolPanel,
+    hovered: boolean,
+  ) {
+    const current = contextHoverStateRef.current;
+    const samePanel = current.activePanel === panel;
+    const nextState = {
+      trigger: samePanel ? current.trigger : false,
+      corridor: samePanel ? current.corridor : false,
+      panel: samePanel ? current.panel : false,
+      [part]: hovered,
+    };
+    const active =
+      nextState.trigger || nextState.corridor || nextState.panel;
+
+    contextHoverStateRef.current = {
+      activePanel: active ? panel : null,
+      trigger: nextState.trigger,
+      corridor: nextState.corridor,
+      panel: nextState.panel,
+    };
+  }
+
+  function isContextHoverRegionActive(panel: ToolPanel) {
+    const hoverState = contextHoverStateRef.current;
+
+    return (
+      hoverState.activePanel === panel &&
+      (hoverState.trigger || hoverState.corridor || hoverState.panel)
+    );
   }
 
   async function persistCurrentDraft() {
@@ -809,27 +985,67 @@ export function CaptureSurface({
     event: MouseEvent<HTMLElement>,
   ) {
     workspaceDialogTriggerRef.current = event.currentTarget;
-    setWorkspaceHistory([view]);
+    setWorkspaceHistory([createWorkspaceHistoryEntry(view)]);
   }
 
-  function closeWorkspaceDialog() {
+  const closeWorkspaceDialog = useCallback(() => {
     setWorkspaceHistory([]);
     queueMicrotask(() => {
       workspaceDialogTriggerRef.current?.focus();
     });
-  }
+  }, []);
 
-  function changeWorkspaceDialog(open: boolean) {
+  const changeWorkspaceDialog = useCallback((open: boolean) => {
     if (open) {
       return;
     }
 
     closeWorkspaceDialog();
-  }
+  }, [closeWorkspaceDialog]);
 
   function pushWorkspaceView(view: WorkspaceView) {
-    setWorkspaceHistory((current) => [...current, view]);
+    setWorkspaceHistory((current) => [...current, createWorkspaceHistoryEntry(view)]);
   }
+
+  const replaceWorkspaceState = useCallback((state: WorkspaceViewState) => {
+    setWorkspaceHistory((current) => replaceWorkspaceHistoryState(current, state));
+  }, []);
+
+  const replaceMemoryWorkspaceState = useCallback(
+    (memoryState: NonNullable<WorkspaceViewState["memory"]>) => {
+      replaceWorkspaceState({ memory: memoryState });
+    },
+    [replaceWorkspaceState],
+  );
+
+  const replaceCaptureWorkspaceState = useCallback(
+    (captureState: NonNullable<WorkspaceViewState["capture"]>) => {
+      replaceWorkspaceState({ capture: captureState });
+    },
+    [replaceWorkspaceState],
+  );
+
+  const replaceConceptWorkspaceState = useCallback(
+    (conceptState: NonNullable<WorkspaceViewState["concept"]>) => {
+      replaceWorkspaceState({ concept: conceptState });
+    },
+    [replaceWorkspaceState],
+  );
+
+  const openWorkspaceMemoryDetail = useCallback((nodeId: string) => {
+    pushWorkspaceView({ kind: "memory-detail", nodeId });
+  }, []);
+
+  const openWorkspaceConcept = useCallback((contextId: string) => {
+    pushWorkspaceView({
+      kind: "concept-workspace",
+      selectedConceptId: contextId,
+    });
+  }, []);
+
+  const closeRootWorkspaceDialog = useCallback(() => {
+    changeWorkspaceDialog(false);
+  }, [changeWorkspaceDialog]);
 
   function goBackWorkspace() {
     setWorkspaceHistory((current) =>
@@ -843,6 +1059,30 @@ export function CaptureSurface({
     >
       <CanvasMainRegion>
         <CanvasIconRail>
+          <CanvasRailWorkspaceButton
+            label="Explorar conocimiento"
+            active={currentWorkspaceView?.kind === "memory-index"}
+            onClick={(event) => openWorkspaceDialog({ kind: "memory-index" }, event)}
+          >
+            <Brain
+              className="h-5 w-5"
+              aria-hidden="true"
+              data-canvas-rail-icon="knowledge"
+            />
+          </CanvasRailWorkspaceButton>
+          <CanvasRailWorkspaceButton
+            label="Explorar conceptos"
+            active={currentWorkspaceView?.kind === "concept-workspace"}
+            onClick={(event) =>
+              openWorkspaceDialog({ kind: "concept-workspace" }, event)
+            }
+          >
+            <Network
+              className="h-5 w-5"
+              aria-hidden="true"
+              data-canvas-rail-icon="concept-network"
+            />
+          </CanvasRailWorkspaceButton>
           <CanvasPanelIconButton
             active={visiblePanel === "preferences"}
             pressed={pinnedPanel === "preferences"}
@@ -856,7 +1096,6 @@ export function CaptureSurface({
           >
             <Settings2 className="h-5 w-5" aria-hidden="true" />
           </CanvasPanelIconButton>
-          <KnowledgeManagementCenterMenuItem label="Administrar" trigger="rail" />
           <CanvasPanelIconButton
             active={visiblePanel === "memoryStatus"}
             pressed={pinnedPanel === "memoryStatus"}
@@ -931,31 +1170,23 @@ export function CaptureSurface({
               previewClosing={previewClosing}
               showMemoryIndicator={showMemoryIndicator}
               showConceptIndicator={showConceptIndicator}
-              conceptCount={conceptSuggestions.length}
+              conceptCount={contextualConceptCount}
               displayedPanelSnapshot={displayedPanelSnapshot}
               selectedContextIds={selectedContextIds}
               selectedEmergingCandidateIds={selectedEmergingConcepts.map(
                 (concept) => concept.candidateId,
               )}
               highlightedConceptKeys={highlightedConceptKeys}
-              activePanelHasUpdates={activePanelHasUpdates}
               associationRetry={associationState.retry}
-              onRefreshActivePanel={refreshActivePanel}
-              onActivatePreviewPanel={activatePreviewPanel}
-              onLeavePreviewTrigger={leavePreviewTrigger}
-              onEnterPreviewSurface={enterPreviewSurface}
-              onLeavePreviewSurface={leavePreviewSurface}
+              onActivatePreviewPanel={activateContextPreviewPanel}
+              onLeavePreviewTrigger={leaveContextPreviewTrigger}
+              onEnterPreviewSurface={enterContextPreviewSurface}
+              onLeavePreviewSurface={leaveContextPreviewSurface}
               onOpenPanel={openPanel}
               onClosePanels={closePanels}
               onToggleExisting={toggleConcept}
               onToggleEmerging={toggleEmergingConcept}
-              onExploreConcepts={(event) =>
-                openWorkspaceDialog({ kind: "concept-workspace" }, event)
-              }
               onOpenCapture={persistCurrentDraft}
-              onExploreMemory={(event) =>
-                openWorkspaceDialog({ kind: "memory-index" }, event)
-              }
             />
           }
         >
@@ -1012,42 +1243,55 @@ export function CaptureSurface({
         open={currentWorkspaceView !== null}
         title={getWorkspaceViewTitle(currentWorkspaceView)}
         description={getWorkspaceViewDescription(currentWorkspaceView)}
+        hideHeader={
+          currentWorkspaceView?.kind === "concept-workspace" &&
+          workspaceHistory.length <= 1
+        }
         returnFocusRef={workspaceDialogTriggerRef}
         onBack={workspaceHistory.length > 1 ? goBackWorkspace : undefined}
         onOpenChange={changeWorkspaceDialog}
       >
         {currentWorkspaceView?.kind === "memory-index" ? (
           <KnowledgeBaseClient
+            key={`memory-index-${workspaceHistory.length}`}
             embedded
-            onOpenMemory={(nodeId) =>
-              pushWorkspaceView({ kind: "memory-detail", nodeId })
-            }
-            onOpenConcept={(contextId) =>
-              pushWorkspaceView({
-                kind: "concept-workspace",
-                selectedConceptId: contextId,
-              })
-            }
+            embeddedState={currentWorkspaceEntry?.state.memory}
+            onEmbeddedStateChange={replaceMemoryWorkspaceState}
+            onOpenMemory={openWorkspaceMemoryDetail}
+            onOpenConcept={openWorkspaceConcept}
           />
         ) : null}
         {currentWorkspaceView?.kind === "memory-detail" ? (
           <NoteDetailClient
+            key={`memory-detail-${workspaceHistory.length}-${currentWorkspaceView.nodeId}`}
             embeddedNodeId={currentWorkspaceView.nodeId}
+            embeddedState={currentWorkspaceEntry?.state.capture}
+            onEmbeddedStateChange={replaceCaptureWorkspaceState}
             onBack={goBackWorkspace}
-            onOpenConcept={(contextId) =>
-              pushWorkspaceView({
-                kind: "concept-workspace",
-                selectedConceptId: contextId,
-              })
-            }
+            onOpenConcept={openWorkspaceConcept}
           />
         ) : null}
         {currentWorkspaceView?.kind === "concept-workspace" ? (
           <ConceptWorkspaceClient
+            key={`concept-workspace-${workspaceHistory.length}`}
             initialConceptId={currentWorkspaceView.selectedConceptId ?? null}
-            onOpenMemory={(nodeId) =>
-              pushWorkspaceView({ kind: "memory-detail", nodeId })
+            initialState={{
+              selectedConceptId:
+                currentWorkspaceEntry?.state.concept?.selectedConceptId ??
+                currentWorkspaceView.selectedConceptId ??
+                null,
+              query: currentWorkspaceEntry?.state.concept?.query,
+              profileScrollTop: currentWorkspaceEntry?.state.concept?.profileScrollTop,
+              mapTransform: currentWorkspaceEntry?.state.concept?.mapTransform,
+            }}
+            onStateChange={replaceConceptWorkspaceState}
+            onClose={
+              workspaceHistory.length <= 1
+                ? closeRootWorkspaceDialog
+                : undefined
             }
+            onOpenConcept={openWorkspaceConcept}
+            onOpenMemory={openWorkspaceMemoryDetail}
           />
         ) : null}
       </ApplicationWorkspaceDialog>
@@ -1075,10 +1319,106 @@ function getWorkspaceViewDescription(view: WorkspaceView | null) {
     case "memory-detail":
       return "Detalle de una captura de la Memoria.";
     case "concept-workspace":
-      return "Conceptos, recuerdos y conexiones de Vinema.";
+      return undefined;
     default:
       return undefined;
   }
+}
+
+function createWorkspaceHistoryEntry(view: WorkspaceView): WorkspaceHistoryEntry {
+  return {
+    view,
+    params: {},
+    state: getInitialWorkspaceViewState(view),
+  };
+}
+
+function getInitialWorkspaceViewState(view: WorkspaceView): WorkspaceViewState {
+  switch (view.kind) {
+    case "memory-index":
+      return { memory: { query: "" }, scrollTop: 0 };
+    case "memory-detail":
+      return { capture: { mode: "read" }, scrollTop: 0 };
+    case "concept-workspace":
+      return {
+        concept: {
+          selectedConceptId: view.selectedConceptId ?? null,
+        },
+        scrollTop: 0,
+      };
+  }
+}
+
+export function mergeWorkspaceState(
+  current: WorkspaceViewState,
+  next: WorkspaceViewState,
+): WorkspaceViewState {
+  return {
+    ...current,
+    ...next,
+    memory: next.memory ? { ...current.memory, ...next.memory } : current.memory,
+    concept: next.concept ? { ...current.concept, ...next.concept } : current.concept,
+    capture: next.capture ? { ...current.capture, ...next.capture } : current.capture,
+  };
+}
+
+export function replaceWorkspaceHistoryState(
+  current: WorkspaceHistoryEntry[],
+  state: WorkspaceViewState,
+) {
+  if (current.length === 0) {
+    return current;
+  }
+
+  const active = current[current.length - 1];
+  const nextState = mergeWorkspaceState(active.state, state);
+
+  if (areWorkspaceStatesEquivalent(active.state, nextState)) {
+    return current;
+  }
+
+  const next = current.slice();
+  next[next.length - 1] = {
+    ...active,
+    state: nextState,
+  };
+  return next;
+}
+
+export function areWorkspaceStatesEquivalent(
+  first: WorkspaceViewState,
+  second: WorkspaceViewState,
+) {
+  return (
+    first.scrollTop === second.scrollTop &&
+    first.memory?.query === second.memory?.query &&
+    first.memory?.scrollTop === second.memory?.scrollTop &&
+    first.concept?.selectedConceptId === second.concept?.selectedConceptId &&
+    first.concept?.query === second.concept?.query &&
+    first.concept?.profileScrollTop === second.concept?.profileScrollTop &&
+    areMapTransformsEqual(first.concept?.mapTransform, second.concept?.mapTransform) &&
+    first.capture?.mode === second.capture?.mode &&
+    first.capture?.scrollTop === second.capture?.scrollTop
+  );
+}
+
+export function areMapTransformsEqual(
+  first: WorkspaceMapTransform | undefined,
+  second: WorkspaceMapTransform | undefined,
+) {
+  if (!first || !second) {
+    return first === second;
+  }
+
+  return (
+    areNearlyEqual(first.scale, second.scale) &&
+    areNearlyEqual(first.x, second.x) &&
+    areNearlyEqual(first.y, second.y)
+  );
+}
+
+function areNearlyEqual(first: number, second: number) {
+  return Math.abs(first - second) < 0.0001;
 }
 
 function mergeSelectedConceptSuggestions(
@@ -1202,6 +1542,42 @@ function createEnrichedConceptPanelSnapshot({
       memoryError,
     }),
     conceptSuggestions,
+  };
+}
+
+function createResolvedMemoryPanelSnapshot({
+  snapshot,
+  memorySuggestions,
+  memoryIdentities,
+  memoryLoading,
+  memoryError,
+}: {
+  snapshot: PanelSnapshot;
+  memorySuggestions: AssociationSuggestion[];
+  memoryIdentities: Map<string, CaptureEmergentIdentity>;
+  memoryLoading: boolean;
+  memoryError: boolean;
+}) {
+  const staleLoadingSnapshot =
+    snapshot.memoryLoading &&
+    (memorySuggestions.length > 0 || !memoryLoading || memoryError);
+
+  if (!staleLoadingSnapshot) {
+    return snapshot;
+  }
+
+  return {
+    ...snapshot,
+    signature: getPanelSignature("memories", {
+      conceptSuggestions: snapshot.conceptSuggestions,
+      memorySuggestions,
+      memoryLoading,
+      memoryError,
+    }),
+    memorySuggestions,
+    memoryIdentities: new Map(memoryIdentities),
+    memoryLoading,
+    memoryError,
   };
 }
 
@@ -1363,6 +1739,38 @@ function CanvasPanelIconButton({
   );
 }
 
+function CanvasRailWorkspaceButton({
+  active,
+  label,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  label: string;
+  onClick: (event: MouseEvent<HTMLButtonElement>) => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={active}
+      title={label}
+      data-canvas-panel-trigger=""
+      data-canvas-workspace-trigger=""
+      className={cn(
+        "inline-flex h-11 w-11 min-w-11 items-center justify-center rounded-full outline-none transition-[background-color,color,transform] duration-[180ms] hover:scale-105 hover:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-zinc-400 active:scale-95 motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
+        active
+          ? "bg-zinc-100 text-zinc-950 hover:text-zinc-950"
+          : "text-zinc-400 hover:text-zinc-700",
+      )}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
 function CanvasContextualLayer({
   visiblePanel,
   pinnedPanel,
@@ -1374,9 +1782,7 @@ function CanvasContextualLayer({
   selectedContextIds,
   selectedEmergingCandidateIds,
   highlightedConceptKeys,
-  activePanelHasUpdates,
   associationRetry,
-  onRefreshActivePanel,
   onActivatePreviewPanel,
   onLeavePreviewTrigger,
   onEnterPreviewSurface,
@@ -1385,9 +1791,7 @@ function CanvasContextualLayer({
   onClosePanels,
   onToggleExisting,
   onToggleEmerging,
-  onExploreConcepts,
   onOpenCapture,
-  onExploreMemory,
 }: {
   visiblePanel: ActivePanel;
   pinnedPanel: ActivePanel;
@@ -1399,20 +1803,16 @@ function CanvasContextualLayer({
   selectedContextIds: string[];
   selectedEmergingCandidateIds: string[];
   highlightedConceptKeys: Set<string>;
-  activePanelHasUpdates: boolean;
   associationRetry: () => void;
-  onRefreshActivePanel: () => void;
   onActivatePreviewPanel: (panel: ToolPanel) => void;
   onLeavePreviewTrigger: (panel: ToolPanel) => void;
-  onEnterPreviewSurface: (panel: ToolPanel) => void;
-  onLeavePreviewSurface: (panel: ToolPanel) => void;
+  onEnterPreviewSurface: (panel: ToolPanel, part: ContextHoverPart) => void;
+  onLeavePreviewSurface: (panel: ToolPanel, part: ContextHoverPart) => void;
   onOpenPanel: (panel: ToolPanel) => void;
   onClosePanels: () => void;
   onToggleExisting: (contextId: string) => void;
   onToggleEmerging: (candidateId: string) => void;
-  onExploreConcepts: (event: MouseEvent<HTMLElement>) => void;
   onOpenCapture: () => Promise<void>;
-  onExploreMemory: (event: MouseEvent<HTMLElement>) => void;
 }) {
   const contextPanelVisible = isContextualCanvasPanel(visiblePanel);
   const hasContextButtons = showMemoryIndicator || showConceptIndicator;
@@ -1423,21 +1823,25 @@ function CanvasContextualLayer({
 
   return (
     <div
-      className="pointer-events-none absolute inset-x-[var(--vinema-canvas-padding-x)] top-[var(--vinema-canvas-padding-y)] z-20 flex min-w-0 flex-col items-center"
+      className={cn(
+        "absolute inset-x-[var(--vinema-canvas-padding-x)] top-[var(--vinema-canvas-padding-y)] z-20 flex min-w-0 flex-col items-center",
+        contextPanelVisible ? "pointer-events-auto gap-2" : "pointer-events-none",
+      )}
       data-canvas-context-layer=""
-      onMouseEnter={() => {
+      data-canvas-panel-interaction-region={contextPanelVisible ? "" : undefined}
+      onPointerEnter={() => {
         if (contextPanelVisible) {
-          onEnterPreviewSurface(visiblePanel);
+          onEnterPreviewSurface(visiblePanel, "corridor");
         }
       }}
-      onMouseLeave={() => {
+      onPointerLeave={() => {
         if (contextPanelVisible) {
-          onLeavePreviewSurface(visiblePanel);
+          onLeavePreviewSurface(visiblePanel, "corridor");
         }
       }}
       onFocus={() => {
         if (contextPanelVisible) {
-          onEnterPreviewSurface(visiblePanel);
+          onEnterPreviewSurface(visiblePanel, "corridor");
         }
       }}
       onBlur={(event) => {
@@ -1446,7 +1850,7 @@ function CanvasContextualLayer({
           !(event.relatedTarget instanceof Element &&
             event.currentTarget.contains(event.relatedTarget))
         ) {
-          onLeavePreviewSurface(visiblePanel);
+          onLeavePreviewSurface(visiblePanel, "corridor");
         }
       }}
     >
@@ -1499,8 +1903,10 @@ function CanvasContextualLayer({
       ) : null}
       {contextPanelVisible ? (
         <div
-          className="pointer-events-auto mt-2 flex max-w-full justify-center"
+          className="pointer-events-auto flex max-w-full justify-center"
           data-canvas-context-panel-anchor=""
+          onPointerEnter={() => onEnterPreviewSurface(visiblePanel, "panel")}
+          onPointerLeave={() => onLeavePreviewSurface(visiblePanel, "panel")}
         >
           <CanvasSidePanel
             title={getActivePanelTitle(visiblePanel)}
@@ -1509,16 +1915,6 @@ function CanvasContextualLayer({
             closing={previewClosing}
             onClose={onClosePanels}
           >
-            {activePanelHasUpdates ? (
-              <button
-                type="button"
-                className="mb-3 inline-flex min-h-8 items-center rounded-md px-1 text-xs font-medium text-zinc-500 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
-                onClick={onRefreshActivePanel}
-                data-canvas-panel-refresh=""
-              >
-                Actualizar sugerencias
-              </button>
-            ) : null}
             {visiblePanel === "concepts" && displayedPanelSnapshot ? (
               <>
                 <ConceptPanelContent
@@ -1529,25 +1925,15 @@ function CanvasContextualLayer({
                   onToggleExisting={onToggleExisting}
                   onToggleEmerging={onToggleEmerging}
                 />
-                <button
-                  type="button"
-                  className="mt-3 inline-flex h-8 items-center rounded-md px-1 text-xs font-medium text-zinc-500 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
-                  aria-label="Explorar conceptos"
-                  onClick={onExploreConcepts}
-                >
-                  Explorar conceptos
-                </button>
               </>
             ) : null}
             {visiblePanel === "memories" && displayedPanelSnapshot ? (
               <MemoryPanelContent
                 suggestions={displayedPanelSnapshot.memorySuggestions}
-                identities={displayedPanelSnapshot.memoryIdentities}
                 loading={displayedPanelSnapshot.memoryLoading}
                 error={displayedPanelSnapshot.memoryError}
                 onRetry={associationRetry}
                 onOpenCapture={onOpenCapture}
-                onExploreMemory={onExploreMemory}
               />
             ) : null}
           </CanvasSidePanel>
@@ -1595,8 +1981,8 @@ function CanvasContextualButton({
         "inline-flex h-8 max-w-full items-center gap-1.5 rounded-full px-2.5 text-xs font-medium outline-none transition-[background-color,color,transform] duration-[160ms] hover:scale-[1.03] focus-visible:ring-2 focus-visible:ring-zinc-400 active:scale-95 motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
         getRailIconColorClassName({ icon, active }),
       )}
-      onMouseEnter={onHover}
-      onMouseLeave={onHoverEnd}
+      onPointerEnter={onHover}
+      onPointerLeave={onHoverEnd}
       onFocus={onHover}
       onBlur={onHoverEnd}
       onClick={onClick}
@@ -1666,7 +2052,7 @@ function CanvasSidePanel({
       )}
     >
       <header
-        className="flex shrink-0 items-center gap-3 px-5 pb-2 pt-4"
+        className="pointer-events-auto flex shrink-0 items-center gap-3 px-5 pb-2 pt-4"
         data-canvas-side-panel-header=""
       >
         <h2 className="min-w-0 flex-1 text-sm font-medium text-zinc-950">
@@ -1684,7 +2070,7 @@ function CanvasSidePanel({
         ) : null}
       </header>
       <div
-        className="vinema-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-5 pb-4 pt-1 [overflow-wrap:anywhere]"
+        className="vinema-scrollbar pointer-events-auto min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-5 pb-4 pt-1 [overflow-wrap:anywhere]"
         data-canvas-side-panel-content=""
       >
         {children}
@@ -1929,20 +2315,16 @@ function getConceptSuggestionId(suggestion: ConceptSuggestion) {
 
 function MemoryPanelContent({
   suggestions,
-  identities,
   loading,
   error,
   onRetry,
   onOpenCapture,
-  onExploreMemory,
 }: {
   suggestions: AssociationSuggestion[];
-  identities: Map<string, CaptureEmergentIdentity>;
   loading: boolean;
   error: boolean;
   onRetry: () => void;
   onOpenCapture: () => void | Promise<void>;
-  onExploreMemory: (event: MouseEvent<HTMLButtonElement>) => void;
 }) {
   const visibleSuggestions = suggestions.slice(0, INITIAL_MEMORY_RESULT_LIMIT);
 
@@ -1971,51 +2353,35 @@ function MemoryPanelContent({
         <MemoryResult
           key={suggestion.node.id}
           node={suggestion.node}
-          identity={identities.get(suggestion.node.id) ?? null}
           onOpenCapture={onOpenCapture}
         />
       ))}
-      <button
-        type="button"
-        className="inline-flex h-8 items-center rounded-md px-1 text-xs text-zinc-500 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
-        onClick={onExploreMemory}
-      >
-        Explorar memoria
-      </button>
     </div>
   );
 }
 
 function MemoryResult({
   node,
-  identity,
   onOpenCapture,
 }: {
   node: Node;
-  identity: CaptureEmergentIdentity | null;
   onOpenCapture: () => void | Promise<void>;
 }) {
-  const preview = getCapturePreview(node.content, { maxLength: 600 });
+  const preview = getCapturePreview(node.content, { maxLength: 180 });
 
   return (
-    <article className="min-w-0 rounded-md text-sm leading-6 text-zinc-700">
-      {identity?.displayText ? (
-        <CaptureEmergentIdentityLabel
-          identity={identity}
-          className="px-3 pt-2 text-sm leading-6"
-        />
-      ) : null}
+    <article className="min-w-0 rounded-md text-sm leading-5 text-zinc-700">
       <Link
         href={getNodeDetailPath(node.id, { returnTo: "/" })}
         aria-label={`Abrir recuerdo: ${preview}`}
         title={preview}
-        className="block min-w-0 rounded-md px-3 py-2 outline-none hover:bg-zinc-50 hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
+        className="block min-w-0 rounded-md px-3 py-1.5 outline-none hover:bg-zinc-50 hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
         onClick={() => {
           void onOpenCapture();
         }}
       >
-        <span className="block min-w-0 truncate">{preview}</span>
-        <time className="mt-1 block text-xs text-zinc-400">
+        <span className="block min-w-0 truncate text-zinc-800">{preview}</span>
+        <time className="mt-0.5 block text-xs text-zinc-400">
           {formatCompactDate(getContentTimestamp(node))}
         </time>
       </Link>

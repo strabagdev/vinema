@@ -12,16 +12,6 @@ export function getKnowledgeBasePath(query = "") {
   return `/memory?q=${encodeURIComponent(normalizedQuery)}`;
 }
 
-export function getArchivePath(query = "") {
-  const normalizedQuery = query.trim();
-
-  if (!normalizedQuery) {
-    return "/memory/archive";
-  }
-
-  return `/memory/archive?q=${encodeURIComponent(normalizedQuery)}`;
-}
-
 export function getReturnToFromSearchParams(
   searchParams: Pick<URLSearchParams, "get">,
 ) {

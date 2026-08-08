@@ -3,10 +3,7 @@ import type { ContextRepository } from "@/domain/context/context-repository";
 import type { Node } from "@/domain/node/node";
 import type { NodeRepository } from "@/domain/node/node-repository";
 import type { NodeContextRelationRepository } from "@/domain/context/node-context-relation-repository";
-import {
-  getArchivedTimestamp,
-  getContentTimestamp,
-} from "@/features/capture/capture-timestamps";
+import { getContentTimestamp } from "@/features/capture/capture-timestamps";
 import { getCapturePreview } from "@/features/node/node-display";
 import {
   normalizeRecoveryText,
@@ -29,7 +26,7 @@ export type SearchNodesInput = {
   workspaceId: string;
   query: string;
   includeContexts?: boolean;
-  scope?: "active" | "archived" | "all";
+  scope?: "active" | "all";
 };
 
 export async function searchNodes(
@@ -43,22 +40,7 @@ export async function searchNodes(
     return [];
   }
 
-  const scope = input.scope ?? "active";
-  const nodes = (
-    await repositories.nodeRepository.listByWorkspace(input.workspaceId, {
-      includeArchived: scope !== "active",
-    })
-  ).filter((node) => {
-    if (scope === "archived") {
-      return node.status === "ARCHIVED";
-    }
-
-    if (scope === "active") {
-      return node.status === "ACTIVE";
-    }
-
-    return true;
-  });
+  const nodes = await repositories.nodeRepository.listByWorkspace(input.workspaceId);
   const results = await Promise.all(
     nodes.map(async (node) => {
       const contexts =
@@ -76,7 +58,6 @@ export async function searchNodes(
         contexts,
         normalizedQuery,
         queryTokens,
-        scope,
       );
     }),
   );
@@ -91,7 +72,6 @@ function buildRecoveryResult(
   contexts: Context[],
   normalizedQuery: string,
   queryTokens: string[],
-  scope: "active" | "archived" | "all",
 ): RecoveryResult | null {
   const normalizedContent = normalizeRecoveryText(node.content);
   const normalizedContextText = normalizeRecoveryText(
@@ -131,10 +111,8 @@ function buildRecoveryResult(
       id: context.id,
       name: context.name,
       type: context.type,
-      archivedAt: context.archivedAt,
     })),
-    updatedAt:
-      scope === "archived" ? getArchivedTimestamp(node) : getContentTimestamp(node),
+    updatedAt: getContentTimestamp(node),
     score,
   };
 }

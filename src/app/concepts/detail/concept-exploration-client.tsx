@@ -18,11 +18,9 @@ import {
 } from "@/features/cognition/semantic-understanding";
 import { deriveConceptNeighborhood } from "@/features/exploration/concept-neighborhood";
 import type { ConceptProfile } from "@/features/exploration/concept-profile";
-import type { RelationshipStrength } from "@/features/exploration/concept-relationships";
 import {
   getConceptExpansionSourceFromSearchParams,
   getConceptExplorationPath,
-  getConceptKnowledgeExplorerPath,
   getConceptIdFromSearchParams,
 } from "@/features/exploration/concept-routes";
 import type { CaptureEmergentIdentity } from "@/features/identity/capture-emergent-identity";
@@ -55,7 +53,6 @@ export function ConceptExplorationClient({
   onOpenConcept,
   onOpenMemory,
   onOpenMemoryIndex,
-  onOpenMap,
 }: {
   embeddedContextId?: string;
   embeddedReturnTo?: string | null;
@@ -64,7 +61,6 @@ export function ConceptExplorationClient({
   onOpenConcept?: (conceptId: string) => void;
   onOpenMemory?: (nodeId: string) => void;
   onOpenMemoryIndex?: () => void;
-  onOpenMap?: (focusId: string) => void;
 } = {}) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -167,7 +163,6 @@ export function ConceptExplorationClient({
         contextRepository.getById(contextId),
         contextRepository.list({
           workspaceId: vinemaContext.workspace.id,
-          includeArchived: true,
         }),
         nodeContextRelationRepository.listByWorkspace(vinemaContext.workspace.id),
         nodeRepository.listByWorkspace(vinemaContext.workspace.id),
@@ -323,12 +318,8 @@ export function ConceptExplorationClient({
       data-concept-profile-workspace={workspaceMode ? "" : undefined}
       data-expansion-source={expansionSource ?? undefined}
     >
-      {workspaceMode ? (
-        <h2 className="text-sm font-medium text-zinc-500">Perfil</h2>
-      ) : null}
       <ConceptIdentityHeader
         center={center}
-        profile={profile}
         relatedConceptCount={neighborhood?.relatedConcepts.length ?? 0}
         memoryCount={memories.length}
         onBack={goBack}
@@ -348,7 +339,7 @@ export function ConceptExplorationClient({
         onNavigateToConcept={navigateToConcept}
         onOpenMemory={onOpenMemory}
         onOpenMemoryIndex={onOpenMemoryIndex}
-        onOpenMap={onOpenMap}
+        workspaceMode={workspaceMode}
       />
     </section>
   );
@@ -356,14 +347,12 @@ export function ConceptExplorationClient({
 
 function ConceptIdentityHeader({
   center,
-  profile,
   relatedConceptCount,
   memoryCount,
   onBack,
   workspaceMode = false,
 }: {
   center: Context;
-  profile: ConceptProfile | null;
   relatedConceptCount: number;
   memoryCount: number;
   onBack: () => void;
@@ -380,36 +369,45 @@ function ConceptIdentityHeader({
             ← Volver
           </Button>
         )}
-        <span
-          className={
-            center.archivedAt
-              ? "rounded-full border border-zinc-200 px-2 py-1 text-xs text-zinc-500"
-              : "rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-700"
-          }
-        >
-          {center.archivedAt ? "Archivado" : "Activo"}
-        </span>
       </div>
 
-      <div className="space-y-4">
+      <div className={workspaceMode ? "space-y-3" : "space-y-4"}>
         <div>
           <h1
             className={
               workspaceMode
-                ? "text-2xl font-medium tracking-normal text-zinc-950"
+                ? "text-lg font-medium tracking-normal text-zinc-950"
                 : "text-3xl font-medium tracking-normal text-zinc-950 sm:text-4xl"
             }
           >
             {center.name}
           </h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-500" aria-live="polite">
-            Perfil vivo · {memoryCount} {memoryCount === 1 ? "recuerdo" : "recuerdos"}
+          <p
+            className={
+              workspaceMode
+                ? "mt-1 text-xs leading-5 text-zinc-500"
+                : "mt-3 max-w-2xl text-sm leading-6 text-zinc-500"
+            }
+            aria-live="polite"
+          >
+            {memoryCount} {memoryCount === 1 ? "recuerdo" : "recuerdos"}
             {relatedConceptCount > 0
               ? ` · ${relatedConceptCount} ${
                   relatedConceptCount === 1 ? "conexión" : "conexiones"
                 }`
               : ""}
           </p>
+          {center.description ? (
+            <p
+              className={
+                workspaceMode
+                  ? "mt-2 text-sm leading-6 text-zinc-600"
+                  : "mt-3 max-w-2xl text-sm leading-6 text-zinc-600"
+              }
+            >
+              {center.description}
+            </p>
+          ) : null}
         </div>
 
         {center.aliases && center.aliases.length > 0 ? (
@@ -426,24 +424,6 @@ function ConceptIdentityHeader({
           </div>
         ) : null}
 
-        {profile ? (
-          <div className="grid gap-4 border-y border-zinc-100 py-4 sm:grid-cols-3">
-            <ProfileMetric
-              label="Primera aparición"
-              value={formatProfileDate(profile.firstSeenAt)}
-            />
-            <ProfileMetric
-              label="Última actividad"
-              value={formatProfileDate(profile.lastSeenAt)}
-            />
-            <ProfileMetric
-              label="Memoria"
-              value={`${profile.memoryCount} ${
-                profile.memoryCount === 1 ? "recuerdo" : "recuerdos"
-              }`}
-            />
-          </div>
-        ) : null}
       </div>
     </header>
   );
@@ -462,7 +442,7 @@ function ConceptLivingProfile({
   onNavigateToConcept,
   onOpenMemory,
   onOpenMemoryIndex,
-  onOpenMap,
+  workspaceMode = false,
 }: {
   profile: ConceptProfile | null;
   memories: Node[];
@@ -476,7 +456,7 @@ function ConceptLivingProfile({
   onNavigateToConcept: (contextId: string) => void;
   onOpenMemory?: (nodeId: string) => void;
   onOpenMemoryIndex?: () => void;
-  onOpenMap?: (focusId: string) => void;
+  workspaceMode?: boolean;
 }) {
   if (!profile) {
     return (
@@ -490,25 +470,29 @@ function ConceptLivingProfile({
     );
   }
 
-  const activitySignal = getPrimaryActivitySignal({ profile, evolutionSignals });
+  const activitySignal = workspaceMode
+    ? null
+    : getPrimaryActivitySignal({ profile, evolutionSignals });
   const evolutionOnlySignals = evolutionSignals
     .filter((signal) => signal.id !== activitySignal?.signalId)
-    .slice(0, 3);
-  const mainConnections = profile.relatedConcepts.slice(0, 6);
-  const recentMemories = memories.slice(0, 5);
+    .slice(0, workspaceMode ? 2 : 3);
+  const mainConnections = profile.relatedConcepts.slice(0, workspaceMode ? 4 : 6);
+  const recentMemories = memories.slice(0, workspaceMode ? 3 : 5);
 
   return (
-    <div className="space-y-10" aria-label="Perfil vivo del concepto">
+    <div
+      className={workspaceMode ? "space-y-6" : "space-y-10"}
+      aria-label="Detalle del concepto"
+    >
       {activitySignal ? <ConceptActivitySection signal={activitySignal} /> : null}
 
       {mainConnections.length > 0 ? (
         <MainConnections
-          conceptId={profile.concept.id}
           connections={mainConnections}
           returnTo={returnTo}
           onNavigateToConcept={onNavigateToConcept}
           onOpenMemory={onOpenMemory}
-          onOpenMap={onOpenMap}
+          workspaceMode={workspaceMode}
         />
       ) : null}
 
@@ -541,13 +525,15 @@ function ConceptLivingProfile({
 
       {profile.representativeMemories.length > 0 ? (
         <RepresentativeMemories
-          memories={profile.representativeMemories.slice(0, 4)}
+          memories={profile.representativeMemories}
           returnTo={returnTo}
           onOpenMemory={onOpenMemory}
+          workspaceMode={workspaceMode}
         />
       ) : null}
 
-      {recentMemories.length > 0 ? (
+      {recentMemories.length > 0 &&
+      !(workspaceMode && profile.representativeMemories.length > 0) ? (
         <RecentMemories
           conceptId={profile.concept.id}
           memories={recentMemories}
@@ -556,6 +542,7 @@ function ConceptLivingProfile({
           onOpenMemory={onOpenMemory}
           onOpenMemoryIndex={onOpenMemoryIndex}
           onNavigateToConcept={onNavigateToConcept}
+          workspaceMode={workspaceMode}
         />
       ) : null}
     </div>
@@ -646,113 +633,131 @@ function ConceptActivitySection({ signal }: { signal: ActivitySignal }) {
 }
 
 function MainConnections({
-  conceptId,
   connections,
   returnTo,
   onNavigateToConcept,
   onOpenMemory,
-  onOpenMap,
+  workspaceMode = false,
 }: {
-  conceptId: string;
   connections: ConceptProfile["relatedConcepts"];
   returnTo: string;
   onNavigateToConcept: (contextId: string) => void;
   onOpenMemory?: (nodeId: string) => void;
-  onOpenMap?: (focusId: string) => void;
+  workspaceMode?: boolean;
 }) {
+  const [expandedConnectionId, setExpandedConnectionId] = useState<string | null>(null);
+
   return (
-    <section className="space-y-4" aria-label="Conexiones principales">
+    <section className={workspaceMode ? "space-y-2" : "space-y-4"} aria-label="Relaciones">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-sm font-medium text-zinc-500">
-            Conexiones principales
+            {workspaceMode ? "Relaciones" : "Conexiones principales"}
           </h2>
-          <p className="mt-1 text-sm leading-6 text-zinc-600">
-            Conceptos que aparecen junto a este en recuerdos aceptados.
-          </p>
+          {workspaceMode ? null : (
+            <p className="mt-1 text-sm leading-6 text-zinc-600">
+              Conceptos que aparecen junto a este en recuerdos aceptados.
+            </p>
+          )}
         </div>
-        {onOpenMap ? (
-          <button
-            type="button"
-            className="text-sm font-medium text-zinc-700 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
-            onClick={() => onOpenMap(conceptId)}
-          >
-            Explorar conexiones
-          </button>
-        ) : (
-          <Link
-            href={getConceptKnowledgeExplorerPath({ focus: conceptId })}
-            className="text-sm font-medium text-zinc-700 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
-          >
-            Explorar conexiones
-          </Link>
-        )}
       </div>
       <div className="divide-y divide-zinc-100">
-        {connections.map((connection) => (
-          <article key={connection.conceptId} className="py-4">
-            <button
-              type="button"
-              className="w-full text-left outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
-              onClick={() => onNavigateToConcept(connection.conceptId)}
-            >
-              <span className="flex flex-wrap items-center gap-2">
-                <span className="text-base font-medium text-zinc-900">
-                  {connection.label}
-                </span>
-                <span className={`rounded-full px-2 py-0.5 text-[11px] ${getStrengthClass(connection.strength)}`}>
-                  {formatConnectionSignal(connection)}
-                </span>
-              </span>
-              <span className="mt-1 block text-sm leading-6 text-zinc-500">
-                {connection.sharedMemoryCount}{" "}
-                {connection.sharedMemoryCount === 1
-                  ? "recuerdo compartido"
-                  : "recuerdos compartidos"}
-                {connection.lastSharedAt
-                  ? ` · ${formatShortDate(connection.lastSharedAt.toISOString())}`
-                  : ""}
-              </span>
-            </button>
-            {connection.evidence[0] ? (
-              onOpenMemory ? (
+        {connections.map((connection) => {
+          const isExpanded = expandedConnectionId === connection.conceptId;
+          const signal = formatExceptionalConnectionSignal(connection);
+
+          return (
+            <article key={connection.conceptId} className={workspaceMode ? "py-2.5" : "py-4"}>
+              <div className="flex items-start justify-between gap-3">
                 <button
                   type="button"
-                  className="mt-2 block w-full border-l-2 border-zinc-200 pl-3 text-left text-sm leading-6 text-zinc-500 outline-none hover:text-zinc-800 focus-visible:ring-2 focus-visible:ring-zinc-400"
-                  onClick={() => onOpenMemory(connection.evidence[0].nodeId)}
+                  className="min-w-0 flex-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+                  onClick={() => onNavigateToConcept(connection.conceptId)}
                 >
-                  {connection.evidence[0].excerpt}
+                  <span
+                    className={
+                      workspaceMode
+                        ? "block truncate text-sm font-medium text-zinc-900"
+                        : "block truncate text-base font-medium text-zinc-900"
+                    }
+                  >
+                    {connection.label}
+                  </span>
+                  <span className="mt-1 block text-sm leading-6 text-zinc-500">
+                    {connection.sharedMemoryCount}{" "}
+                    {connection.sharedMemoryCount === 1
+                      ? "recuerdo compartido"
+                      : "recuerdos compartidos"}
+                  </span>
                 </button>
-              ) : (
-                <Link
-                  href={getNodeDetailPath(connection.evidence[0].nodeId, { returnTo })}
-                  className="mt-2 block border-l-2 border-zinc-200 pl-3 text-sm leading-6 text-zinc-500 outline-none hover:text-zinc-800 focus-visible:ring-2 focus-visible:ring-zinc-400"
-                >
-                  {connection.evidence[0].excerpt}
-                </Link>
-              )
-            ) : null}
-          </article>
-        ))}
+                {connection.evidence.length > 0 ? (
+                  <button
+                    type="button"
+                    className="shrink-0 text-xs font-medium text-zinc-600 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
+                    aria-expanded={isExpanded}
+                    onClick={() =>
+                      setExpandedConnectionId(isExpanded ? null : connection.conceptId)
+                    }
+                  >
+                    {isExpanded ? "Ocultar" : "Ver evidencia"}
+                  </button>
+                ) : null}
+              </div>
+              {isExpanded ? (
+                <div className="mt-3 space-y-2 border-l-2 border-zinc-100 pl-3">
+                  {signal || connection.lastSharedAt ? (
+                    <p className="text-xs leading-5 text-zinc-500">
+                      {signal ? `${signal}` : null}
+                      {signal && connection.lastSharedAt ? " · " : null}
+                      {connection.lastSharedAt
+                        ? `Última actividad: ${formatShortDate(
+                            connection.lastSharedAt.toISOString(),
+                          )}`
+                        : null}
+                    </p>
+                  ) : null}
+                  {connection.evidence.slice(0, workspaceMode ? 1 : 2).map((evidence) =>
+                    onOpenMemory ? (
+                      <button
+                        key={evidence.nodeId}
+                        type="button"
+                        className="block w-full text-left text-sm leading-6 text-zinc-500 outline-none hover:text-zinc-800 focus-visible:ring-2 focus-visible:ring-zinc-400"
+                        onClick={() => onOpenMemory(evidence.nodeId)}
+                      >
+                        {evidence.excerpt}
+                      </button>
+                    ) : (
+                      <Link
+                        key={evidence.nodeId}
+                        href={getNodeDetailPath(evidence.nodeId, { returnTo })}
+                        className="block text-sm leading-6 text-zinc-500 outline-none hover:text-zinc-800 focus-visible:ring-2 focus-visible:ring-zinc-400"
+                      >
+                        {evidence.excerpt}
+                      </Link>
+                    ),
+                  )}
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
       </div>
     </section>
   );
 }
 
-function formatConnectionSignal(connection: ConceptProfile["relatedConcepts"][number]) {
-  if (connection.recentSharedMemoryCount > 0) {
-    return "Reciente";
+function formatExceptionalConnectionSignal(
+  connection: ConceptProfile["relatedConcepts"][number],
+) {
+  if (connection.recentSharedMemoryCount > 1) {
+    return "Relación activa recientemente";
   }
 
-  if (connection.monthlySpread > 1) {
-    return "Estable";
+  if (connection.strength === "STRONG" && connection.sharedMemoryCount >= 4) {
+    return "Relación fuerte por evidencia";
   }
 
-  return connection.strength === "STRONG"
-    ? "Frecuente"
-    : connection.strength === "MEDIUM"
-      ? "Recurrente"
-      : "Ocasional";
+  return null;
 }
 
 function ObservedEvolution({
@@ -985,43 +990,28 @@ function formatBehavioralPattern(
   }
 }
 
-function ProfileMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-xs text-zinc-500">{label}</p>
-      <p className="mt-1 text-base font-medium text-zinc-900">{value}</p>
-    </div>
-  );
-}
-
-function getStrengthClass(strength: RelationshipStrength) {
-  if (strength === "STRONG") {
-    return "bg-emerald-100 text-emerald-800";
-  }
-
-  if (strength === "MEDIUM") {
-    return "bg-sky-100 text-sky-800";
-  }
-
-  return "bg-zinc-100 text-zinc-600";
-}
-
 function RepresentativeMemories({
   memories,
   returnTo,
   onOpenMemory,
+  workspaceMode = false,
 }: {
   memories: ConceptProfile["representativeMemories"];
   returnTo: string;
   onOpenMemory?: (nodeId: string) => void;
+  workspaceMode?: boolean;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const defaultLimit = 2;
+  const visibleMemories = expanded ? memories : memories.slice(0, defaultLimit);
+
   return (
-    <section className="space-y-3" aria-label="Recuerdos representativos">
+    <section className="space-y-3" aria-label="Recuerdos">
       <h2 className="text-sm font-medium text-zinc-500">
-        Recuerdos representativos
+        {workspaceMode ? "Recuerdos" : "Recuerdos representativos"}
       </h2>
-      <div className="space-y-4">
-        {memories.map((memory) => (
+      <div className={workspaceMode ? "space-y-3" : "space-y-4"}>
+        {visibleMemories.map((memory) => (
           onOpenMemory ? (
             <button
               key={memory.nodeId}
@@ -1034,12 +1024,20 @@ function RepresentativeMemories({
                   {memory.identityLabels.join(" · ")}
                 </span>
               ) : null}
-              <span className="block text-base leading-7 text-zinc-800">
+              <span
+                className={
+                  workspaceMode
+                    ? "line-clamp-3 block text-sm leading-6 text-zinc-800"
+                    : "block text-base leading-7 text-zinc-800"
+                }
+              >
                 {memory.excerpt}
               </span>
-              <time className="mt-1 block text-xs text-zinc-500">
-                {formatShortDate(memory.createdAt.toISOString())}
-              </time>
+              {workspaceMode ? null : (
+                <time className="mt-1 block text-xs text-zinc-500">
+                  {formatShortDate(memory.createdAt.toISOString())}
+                </time>
+              )}
             </button>
           ) : (
             <Link
@@ -1052,16 +1050,33 @@ function RepresentativeMemories({
                 {memory.identityLabels.join(" · ")}
               </span>
             ) : null}
-            <span className="block text-base leading-7 text-zinc-800">
+            <span
+              className={
+                workspaceMode
+                  ? "line-clamp-3 block text-sm leading-6 text-zinc-800"
+                  : "block text-base leading-7 text-zinc-800"
+              }
+            >
               {memory.excerpt}
             </span>
-            <time className="mt-1 block text-xs text-zinc-500">
-              {formatShortDate(memory.createdAt.toISOString())}
-            </time>
+            {workspaceMode ? null : (
+              <time className="mt-1 block text-xs text-zinc-500">
+                {formatShortDate(memory.createdAt.toISOString())}
+              </time>
+            )}
             </Link>
           )
         ))}
       </div>
+      {!expanded && memories.length > defaultLimit ? (
+        <button
+          type="button"
+          className="text-sm font-medium text-zinc-700 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
+          onClick={() => setExpanded(true)}
+        >
+          Ver los {memories.length} recuerdos
+        </button>
+      ) : null}
     </section>
   );
 }
@@ -1074,6 +1089,7 @@ function RecentMemories({
   onOpenMemory,
   onOpenMemoryIndex,
   onNavigateToConcept,
+  workspaceMode = false,
 }: {
   conceptId: string;
   memories: Node[];
@@ -1082,15 +1098,20 @@ function RecentMemories({
   onOpenMemory?: (nodeId: string) => void;
   onOpenMemoryIndex?: () => void;
   onNavigateToConcept?: (contextId: string) => void;
+  workspaceMode?: boolean;
 }) {
   return (
-    <section className="space-y-4" aria-label="Recuerdos recientes">
+    <section className={workspaceMode ? "space-y-3" : "space-y-4"} aria-label="Recuerdos recientes">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="text-sm font-medium text-zinc-500">Recuerdos recientes</h2>
-          <p className="mt-1 text-sm leading-6 text-zinc-600">
-            Últimas capturas donde este concepto aparece.
-          </p>
+          <h2 className="text-sm font-medium text-zinc-500">
+            {workspaceMode ? "Recuerdos" : "Recuerdos recientes"}
+          </h2>
+          {workspaceMode ? null : (
+            <p className="mt-1 text-sm leading-6 text-zinc-600">
+              Últimas capturas donde este concepto aparece.
+            </p>
+          )}
         </div>
         {onOpenMemoryIndex ? (
           <button
@@ -1209,10 +1230,6 @@ function MemoryItem({
       </time>
     </article>
   );
-}
-
-function formatProfileDate(date: Date | null) {
-  return date ? formatShortDate(date.toISOString()) : "Aún sin recuerdos";
 }
 
 function ConceptExplorationMessage({

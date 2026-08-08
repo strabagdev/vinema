@@ -90,6 +90,11 @@ Cada relacion conserva hasta tres recuerdos compartidos:
 La evidencia muestra fragmentos reales, fecha e identidad emergente. No fabrica
 una explicacion textual.
 
+En la interfaz del perfil, esa evidencia no aparece en todas las filas por
+defecto. La fila normal de una relacion es compacta: nombre del concepto y
+cantidad de recuerdos compartidos. Los fragmentos, la fecha precisa y las
+senales derivadas se muestran al pedir `Ver evidencia`.
+
 ## Temporalidad
 
 La relacion deriva:
@@ -103,20 +108,24 @@ Esto permite observar persistencia sin afirmar causalidad.
 
 ## Perfiles
 
-`/concepts/detail` usa las relaciones derivadas en un perfil vivo de concepto.
-La pantalla ya no separa el concepto en modos manuales; muestra una lectura
-continua con identidad, actividad, conexiones principales, evolucion,
-significados, patrones y recuerdos.
+`/concepts/detail` usa las relaciones derivadas en un perfil de concepto. La
+pantalla ya no separa el concepto en modos manuales; muestra una lectura
+continua con identidad, conexiones principales, evidencia representativa y
+senales progresivas cuando aportan valor.
 
-La vista muestra:
+La vista normal de relaciones muestra:
 
 - concepto relacionado;
-- fuerza visual y textual;
-- cantidad de recuerdos compartidos;
-- ultima actividad;
-- fragmento de evidencia con acceso al detalle.
+- cantidad de recuerdos compartidos.
 
-No muestra scores ni coeficientes.
+La vista expandida de una relacion puede mostrar:
+
+- fragmentos de evidencia con acceso al detalle;
+- ultima actividad;
+- una senal excepcional, por ejemplo relacion fuerte por evidencia.
+
+No muestra scores, coeficientes ni badges constantes como `Reciente`, `Estable`,
+`Frecuente`, `Recurrente` u `Ocasional` cuando no representan una excepcion.
 
 ## Exploracion Global
 
@@ -132,10 +141,120 @@ perfiles y cambiar el foco sin depender del hover.
 
 ## Workspace Modal de Conceptos
 
-Dentro de `ApplicationWorkspaceDialog`, Conceptos es un unico workspace navegable
-compuesto por indice, mapa y perfil. El usuario no navega paginas separadas para
-explorar conceptos: seleccionar un concepto desde el indice, desde un nodo del
-mapa o desde una relacion actualiza un unico `selectedConceptId` compartido.
+Dentro de `ApplicationWorkspaceDialog`, Conceptos utiliza una unica superficie de
+exploracion. La composicion vigente usa una franja superior compacta que integra
+titulo `Conceptos`, busqueda, navegacion horizontal y cierre; el area inferior se
+dedica al perfil del concepto seleccionado y al mapa conceptual interactivo.
+
+En desktop, el area inferior mantiene una distribucion aproximada 40/60: perfil
+a la izquierda, mapa a la derecha. En tablet la proporcion puede acercarse a
+44/56 para conservar legibilidad. En movil se mantiene la franja superior y las
+vistas internas `Perfil` / `Mapa`.
+
+El usuario no navega paginas separadas para explorar conceptos: seleccionar un
+concepto desde el carrusel, desde un nodo del mapa o desde una relacion actualiza
+un unico `selectedConceptId` compartido.
+
+El listado vertical permanente fue reemplazado por un carrusel horizontal de
+nombres. La franja superior no muestra descripcion, contadores, estado ni
+metadata por concepto; solo busqueda y nombres navegables.
+
+El perfil vive en el area inferior izquierda para ayudar a comprender el
+concepto seleccionado sin hacer desaparecer el mapa.
+
+Principio visual:
+
+> La interfaz solo muestra metadatos cuando aportan comprension, navegacion o
+> capacidad de decision. Los estados normales permanecen implicitos; las
+> excepciones se hacen visibles.
+
+Reglas aplicadas en el workspace:
+
+- el carrusel muestra solamente nombres;
+- `Activo` y `Perfil vivo` permanecen implicitos;
+- `Archivado` no se muestra; ya no es un estado visible de producto y los datos
+  legacy se leen como memoria disponible;
+- los contadores se resumen como `N recuerdos · N conexiones`;
+- descripciones, aliases, relaciones y recuerdos solo aparecen si tienen
+  contenido real;
+- fechas como primera aparicion o ultima actividad no ocupan una franja
+  permanente;
+- recuerdos y relaciones navegan dentro del mismo workspace/modal y no cambian
+  la URL.
+
+## Mapa De Dos Niveles
+
+El mapa conceptual es una superficie de navegacion 2D interactiva, no una
+visualizacion estatica. Muestra relaciones directas y una vista previa acotada
+de segundo nivel para anticipar caminos de navegacion:
+
+```text
+centro -> relaciones directas -> preview de relaciones secundarias
+```
+
+No se muestra un tercer nivel simultaneamente. El segundo nivel se prepara desde
+las relaciones derivadas existentes usando `deriveConceptRelationships`; no crea
+otro motor de grafo ni persiste posiciones.
+
+Limites actuales:
+
+- hasta 8 relaciones directas;
+- hasta 4 previews secundarios por relacion directa;
+- hasta 32 nodos visibles en total.
+
+Si existen mas relaciones secundarias para una rama, se muestra una indicacion
+discreta `+N`. Si un concepto secundario aparece por mas de una rama, se
+representa como un unico nodo visual compartido cuando el `conceptId` coincide.
+
+El espacio negativo no se rellena artificialmente cuando existen pocas
+relaciones. Un concepto con dos vinculos debe seguir viendose simple.
+
+Interaccion:
+
+- rueda o gesto equivalente: zoom centrado en la posicion del cursor;
+- drag sobre fondo: pan interno del mapa;
+- drag sobre nodo: posicion manual temporal durante la sesion del workspace;
+- hover sobre nodo: destaca nodo y relaciones inmediatas;
+- click o teclado sobre nodo: selecciona el concepto y sincroniza listado,
+  perfil y mapa;
+- doble click sobre nodo: usa el mismo `selectedConceptId` para convertirlo en
+  centro logico sin cambiar URL;
+- `centrar`: recupera escala y pan utiles alrededor del concepto seleccionado.
+
+La distribucion usa un force-directed layout controlado sobre el SVG propio de
+Vinema: repulsion entre nodos, distancia de enlace por nivel, atraccion moderada
+al centro y colision simple. La simulacion es deterministica y se estabiliza al
+calcular posiciones; no deja nodos vibrando ni animacion continua.
+
+No se incorporo una dependencia externa. La implementacion actual usa SVG propio
+en React; se eligio evolucionarla antes que introducir D3-force porque las
+interacciones requeridas caben en el componente existente sin cambiar la
+identidad visual ni el modelo de datos.
+
+La accion `Explorar conexiones` fue eliminada del perfil: el mapa permanente es
+el explorador. Seleccionar una relacion en el perfil actualiza el mismo
+`selectedConceptId` compartido.
+
+El workspace no usa un header separado del dialogo para Conceptos. La franja
+superior propia mantiene titulo, busqueda, carrusel y accion de cierre en una
+misma fila, sin subtitulo visible ni divisor redundante.
+
+Cuando la navegacion modal profundiza desde Conceptos hacia una relacion o hacia
+un recuerdo, el stack de `CaptureSurface` conserva entradas con forma logica:
+
+```text
+WorkspaceHistoryEntry {
+  view
+  params
+  state
+}
+```
+
+Los cambios internos del workspace, como busqueda, seleccion desde carrusel,
+foco del mapa, scroll del perfil o transform del mapa, actualizan el snapshot de
+la entrada activa. Abrir una relacion o un recuerdo hace `PUSH`; cambiar
+busqueda o foco dentro de la misma superficie hace `REPLACE` sobre el estado.
+`BACK` restaura el snapshot anterior sin cambiar URL ni cerrar el modal.
 
 Las rutas externas `/concepts`, `/concepts/detail` y `/concepts/explore` se
 mantienen para compatibilidad, pero la experiencia modal conserva el canvas como

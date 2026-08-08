@@ -45,7 +45,7 @@ export function deriveCaptureEmergentIdentity({
       ): candidate is {
         context: Context;
         relation: NodeContextRelation;
-      } => candidate.context !== null && candidate.context.archivedAt === null,
+      } => candidate.context !== null,
     )
     .sort(compareIdentityCandidates);
 

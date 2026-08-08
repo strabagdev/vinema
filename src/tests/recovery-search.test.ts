@@ -4,7 +4,6 @@ import type { Device } from "@/domain/device/device";
 import { DevicePlatform } from "@/domain/device/device";
 import type { NodeContextRelation } from "@/domain/context/node-context-relation";
 import type { Node } from "@/domain/node/node";
-import { archiveNode } from "@/features/node/archive-node";
 import { updateNode } from "@/features/node/update-node";
 import { getNodeDetailPath } from "@/features/node/node-routes";
 import { getContextDetailPath } from "@/features/context/context-routes";
@@ -155,7 +154,6 @@ describe("local recovery search", () => {
         id: "context-1",
         name: "Masa madre",
         type: "PROJECT",
-        archivedAt: null,
       },
     ]);
   });
@@ -308,9 +306,9 @@ describe("local recovery search", () => {
     expect(results.map((result) => result.nodeId)).toEqual(["node-1"]);
   });
 
-  it("removes archived and deleted sources from recovery results", async () => {
+  it("removes deleted sources and keeps legacy archived sources in recovery results", async () => {
     const nodeRepository = new InMemoryNodeRepository([
-      makeNode({ id: "node-1", content: "Pan humedo" }),
+      makeNode({ id: "node-1", content: "Pan humedo", status: "ARCHIVED" }),
       makeNode({
         id: "node-2",
         content: "Pan humedo eliminado",
@@ -323,11 +321,9 @@ describe("local recovery search", () => {
       nodeRepository,
     };
 
-    await archiveNode(nodeRepository, "node-1", device);
-
     await expect(
       searchNodes(repositories, { workspaceId, query: "pan" }),
-    ).resolves.toEqual([]);
+    ).resolves.toMatchObject([{ nodeId: "node-1" }]);
   });
 
   it("builds recovery navigation paths for source detail", () => {

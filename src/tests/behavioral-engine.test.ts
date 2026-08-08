@@ -156,7 +156,7 @@ describe("Behavioral Engine v1", () => {
     const patterns = deriveBehavioralPatterns({ contexts, nodes, relations, now });
 
     expect(kindIds(patterns)).toContain("RECURRENT_PAIR:mitcom+tracking");
-    expect(patterns.some((pattern) => pattern.conceptIds.includes("archived"))).toBe(false);
+    expect(patterns.some((pattern) => pattern.conceptIds.includes("archived"))).toBe(true);
     expect(patterns.some((pattern) => pattern.conceptIds.includes("discarded"))).toBe(false);
   });
 

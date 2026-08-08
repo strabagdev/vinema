@@ -40,7 +40,7 @@ export function deriveConceptNeighborhood({
   const contextsById = new Map(contexts.map((context) => [context.id, context]));
   const activeNodesById = new Map(
     nodes
-      .filter((node) => node.status === "ACTIVE" && node.deletedAt === null)
+      .filter((node) => node.deletedAt === null)
       .map((node) => [node.id, node]),
   );
   const nodeIdsForCenter = new Set(
@@ -62,7 +62,7 @@ export function deriveConceptNeighborhood({
     const context = contextsById.get(relation.contextId);
     const node = activeNodesById.get(relation.nodeId);
 
-    if (!context || !node || context.archivedAt !== null) {
+    if (!context || !node) {
       continue;
     }
 

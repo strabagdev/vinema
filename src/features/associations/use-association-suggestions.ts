@@ -21,6 +21,7 @@ import {
 } from "@/features/associations/association-errors";
 
 const ASSOCIATION_DEBOUNCE_MS = 320;
+const ASSOCIATION_LOADING_TIMEOUT_MS = 3500;
 
 export type AssociationSuggestionState =
   | {
@@ -131,6 +132,24 @@ export function useAssociationSuggestions({
       }));
     });
 
+    const loadingTimeout = setTimeout(() => {
+      if (cancelled || requestId !== latestRequestId.current) {
+        return;
+      }
+
+      setState((current) =>
+        current.status === "loading"
+          ? {
+              ...current,
+              status: "ready",
+              error: null,
+              elapsedMs: Math.round(performance.now() - effectStartedAt),
+              retry,
+            }
+          : current,
+      );
+    }, ASSOCIATION_LOADING_TIMEOUT_MS);
+
     const timer = setTimeout(() => {
       async function runSuggestions() {
         const startedAt = performance.now();
@@ -157,7 +176,6 @@ export function useAssociationSuggestions({
           const contextReadStartedAt = performance.now();
           const contexts = await contextRepository.list({
             workspaceId,
-            includeArchived: false,
           });
           contextReadMs = performance.now() - contextReadStartedAt;
           contextCount = contexts.length;
@@ -281,6 +299,7 @@ export function useAssociationSuggestions({
 
     return () => {
       cancelled = true;
+      clearTimeout(loadingTimeout);
       clearTimeout(timer);
     };
   }, [

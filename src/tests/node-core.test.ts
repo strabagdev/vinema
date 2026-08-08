@@ -3,11 +3,9 @@ import type { Device } from "@/domain/device/device";
 import { DevicePlatform } from "@/domain/device/device";
 import type { Node } from "@/domain/node/node";
 import type { Workspace } from "@/domain/workspace/workspace";
-import { archiveNode } from "@/features/node/archive-node";
 import { convertIdeaToNote } from "@/features/node/convert-idea-to-note";
 import { createNode } from "@/features/node/create-node";
 import { listActiveNodes, listInboxNodes } from "@/features/node/list-nodes";
-import { restoreNode } from "@/features/node/restore-node";
 import { updateNode } from "@/features/node/update-node";
 import { InMemoryNodeRepository } from "@/tests/fakes/in-memory-node-repository";
 
@@ -102,21 +100,6 @@ describe("Node core", () => {
     expect(updatedNode.content).toBe("Contenido editado");
   });
 
-  it("archives and restores without deleting", async () => {
-    const repository = new InMemoryNodeRepository([makeNode({ id: "note-1" })]);
-
-    const archivedNode = await archiveNode(repository, "note-1", device);
-
-    expect(archivedNode.status).toBe("ARCHIVED");
-    expect(archivedNode.version).toBe(2);
-    expect(archivedNode.deletedAt).toBeNull();
-
-    const restoredNode = await restoreNode(repository, "note-1", device);
-
-    expect(restoredNode.status).toBe("ACTIVE");
-    expect(restoredNode.version).toBe(3);
-  });
-
   it("lists active notes and inbox ideas separately", async () => {
     const activeNote = makeNode({ id: "active-note", type: "NOTE" });
     const inboxIdea = makeNode({
@@ -131,7 +114,10 @@ describe("Node core", () => {
       archivedNote,
     ]);
 
-    await expect(listActiveNodes(repository)).resolves.toEqual([activeNote]);
+    await expect(listActiveNodes(repository)).resolves.toMatchObject([
+      { id: "active-note" },
+      { id: "archived-note", status: "ACTIVE" },
+    ]);
     await expect(listInboxNodes(repository)).resolves.toEqual([inboxIdea]);
   });
 

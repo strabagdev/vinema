@@ -63,7 +63,7 @@ export function detectExplicitSemanticStatements({
 }: Omit<DeriveSemanticStatementsOptions, "now">): SemanticStatementCandidate[] {
   const activeNodesById = new Map(
     nodes
-      .filter((node) => node.status === "ACTIVE" && node.deletedAt === null)
+      .filter((node) => node.deletedAt === null)
       .map((node) => [node.id, node]),
   );
   const conceptRecords = getConceptRecords(contexts);
@@ -161,7 +161,7 @@ function deriveContextualSemanticCandidates({
   const conceptsById = new Map(contexts.map((context) => [context.id, context]));
   const activeNodesById = new Map(
     nodes
-      .filter((node) => node.status === "ACTIVE" && node.deletedAt === null)
+      .filter((node) => node.deletedAt === null)
       .map((node) => [node.id, node]),
   );
 
@@ -215,10 +215,6 @@ function getConceptRecords(contexts: Context[]) {
   const records = new Map<string, ConceptRecord>();
 
   for (const context of contexts) {
-    if (context.archivedAt !== null) {
-      continue;
-    }
-
     const identity = createConceptIdentity(context);
     const labels = [
       identity.canonicalLabel,

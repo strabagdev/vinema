@@ -76,6 +76,7 @@ describe("VIN-013 consolidation", () => {
     });
 
     expect(captures.map((capture) => capture.id)).toEqual([
+      "archived-1",
       "idea-1",
       "capture-1",
     ]);

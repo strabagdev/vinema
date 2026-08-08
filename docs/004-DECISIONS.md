@@ -1,16 +1,16 @@
 # Decisiones oficiales de Vinema
 
-**Versión:** 1.0  
-**Estado:** Vigente  
-**Última actualización:** 2026-08-04  
+**Versión:** 1.0
+**Estado:** Vigente
+**Última actualización:** 2026-08-04
 **Propósito:** Registrar las decisiones consolidadas que explican la forma actual del producto y proteger su coherencia futura.
 
 > Una decisión vigente solo puede modificarse mediante una nueva decisión que la reemplace explícitamente. Las decisiones anteriores no se eliminan: cambian de estado y conservan su trazabilidad.
 
 ## DEC-001 — Vinema no es una aplicación de notas
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** Producto
 
 ### Decisión
@@ -37,8 +37,8 @@ memoria, acceso, relaciones y confianza, no por parecerse a gestores de notas.
 
 ## DEC-002 — La unidad original es la captura
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** Producto
 
 ### Decisión
@@ -63,8 +63,8 @@ archivar manualmente.
 
 ## DEC-003 — Las capturas no requieren título obligatorio
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** UX
 
 ### Decisión
@@ -90,8 +90,8 @@ aceptados, no de un campo de título.
 
 ## DEC-004 — El usuario no organiza antes de capturar
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** Producto
 
 ### Decisión
@@ -118,8 +118,8 @@ sin bloquearlo.
 
 ## DEC-005 — Los conceptos emergen desde capturas
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** Dominio
 
 ### Decisión
@@ -145,8 +145,8 @@ aceptarlos o confirmarlos.
 
 ## DEC-006 — Concepto no equivale a etiqueta
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** Producto
 
 ### Decisión
@@ -172,8 +172,8 @@ trazabilidad; no deben convertirse en mantenimiento administrativo.
 
 ## DEC-007 — Contexto permanece como término transicional
 
-**Fecha:** 2026-08-04  
-**Estado:** En transición  
+**Fecha:** 2026-08-04
+**Estado:** En transición
 **Ámbito:** Dominio
 
 ### Decisión
@@ -199,8 +199,8 @@ interprete como carpeta, taxonomía obligatoria o ubicación física.
 
 ## DEC-008 — Memoria reemplaza a Historial como nombre de producto
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** UX
 
 ### Decisión
@@ -225,8 +225,8 @@ Las rutas heredadas pueden permanecer por compatibilidad.
 
 ## DEC-009 — Memoria se navega principalmente mediante hilos
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** UX
 
 ### Decisión
@@ -251,8 +251,8 @@ capturas individuales permanecen visibles sin envoltorios innecesarios.
 
 ## DEC-010 — Tiempo no es navegación principal de Memoria
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** UX
 
 ### Decisión
@@ -276,8 +276,8 @@ presentar un selector principal Hilos/Tiempo.
 
 ## DEC-011 — Los hilos son derivados y no persistidos
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** Arquitectura
 
 ### Decisión
@@ -299,15 +299,15 @@ una decisión futura reemplace esta regla.
 - `product/VIN-014-BASE-CONOCIMIENTO-ROBUSTA.md`
 - `implementation/VIN-013D-complete-user-memory-lifecycle.md`
 
-## DEC-012 — El perfil de concepto es lectura viva
+## DEC-012 — El perfil de concepto es lectura de evidencia
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** Producto
 
 ### Decisión
 
-El detalle de un concepto funciona como perfil vivo de lectura continua.
+El detalle de un concepto funciona como una lectura continua de evidencia.
 
 ### Motivo
 
@@ -316,9 +316,10 @@ clasificarlo o asignarle un tipo.
 
 ### Consecuencias
 
-El perfil muestra evidencia, recuerdos, conexiones, actividad y evolución
-derivada; no introduce taxonomías, categorías ni relaciones persistidas
-concepto-concepto.
+El perfil muestra identidad, densidad, relaciones compactas y evidencia
+representativa. No debe exponer como estado normal etiquetas como `Activo`,
+`Perfil`, `Perfil vivo`, fechas rutinarias, metricas internas ni relaciones
+persistidas concepto-concepto.
 
 ### Evidencia
 
@@ -326,26 +327,29 @@ concepto-concepto.
 - `implementation/VIN-011C-knowledge-base-surface.md`
 - `002-LANGUAGE.md`
 
-## DEC-013 — El mapa no pertenece al perfil individual de concepto
+## DEC-013 — El mapa complementa al perfil individual de concepto
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** UX
 
 ### Decisión
 
-El mapa y la exploración gráfica no forman parte del perfil individual de un
-concepto.
+El mapa y la exploración gráfica no deben duplicarse dentro del perfil
+individual de un concepto.
 
 ### Motivo
 
-El perfil debe mantenerse como lectura viva de evidencia del concepto actual,
-sin mezclarlo con una navegación global de conexiones.
+El perfil debe mantenerse como lectura de evidencia del concepto actual. Las
+relaciones del perfil funcionan como navegacion compacta y dejan la evidencia
+detallada bajo demanda; el mapa comunica la estructura visual de conexiones.
 
 ### Consecuencias
 
-La ruta de detalle de conceptos mantiene el perfil vivo; la exploración global de conexiones
-vive en una superficie separada.
+La ruta de detalle de conceptos mantiene el perfil como lectura de evidencia. En
+el workspace modal de Conceptos, el mapa puede permanecer visible junto al
+perfil como superficie complementaria, sin convertir cada relacion del perfil en
+una ficha grafica completa.
 
 ### Evidencia
 
@@ -354,8 +358,8 @@ vive en una superficie separada.
 
 ## DEC-014 — Explorar conocimiento es navegación global
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** UX
 
 ### Decisión
@@ -379,8 +383,8 @@ con una portada genérica ni con una carpeta visual.
 
 ## DEC-015 — La interfaz principal funciona como canvas de captura
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** UX
 
 ### Decisión
@@ -403,26 +407,36 @@ editor y las señales cognitivas son el centro de la experiencia.
 - `implementation/VIN-010C-primary-thinking-surface-redesign.md`
 - `product/VIN-020-SUPERFICIE-UNICA.md`
 
-## DEC-016 — La navegación principal usa destinos
+## DEC-016 — La navegación principal separa administración, exploración y sugerencias
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** UX
 
 ### Decisión
 
-La navegación principal utiliza destinos estables: Capturar, Memoria, Conceptos
-y Administrar.
+La navegacion global distingue tres responsabilidades:
+
+- menu de tres puntos: `Conocimiento`, solo para administrar memoria local
+  mediante importar, exportar y vaciar;
+- rail izquierdo: exploracion global permanente, con `Brain` para Explorar
+  conocimiento y `Network` para Explorar conceptos, ademas de Canvas y Estado;
+- barra contextual del canvas: Memoria y Conceptos derivados del contenido
+  actual.
 
 ### Motivo
 
-La navegación describe lugares del producto; los verbos se reservan para
-acciones reales.
+Administrar conocimiento, explorar el conocimiento acumulado y revisar
+sugerencias de la captura actual son tareas distintas aunque compartan dominio.
+Separarlas evita que el menu de cuenta se convierta en navegacion general y que
+el rail duplique acciones destructivas.
 
 ### Consecuencias
 
-No deben coexistir opciones duplicadas como Ver memoria, Explorar memoria o Ver
-conceptos cuando llevan al mismo destino.
+No debe existir `Administrar` en el rail si abre el mismo centro administrativo
+que `Conocimiento`. El centro administrativo no abre exploracion global. Los
+workspaces globales se abren embedded mediante `ApplicationWorkspaceDialog` sin
+cambiar URL ni desmontar el canvas.
 
 ### Evidencia
 
@@ -431,8 +445,8 @@ conceptos cuando llevan al mismo destino.
 
 ## DEC-017 — La complejidad técnica no se expone en la interfaz normal
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** UX
 
 ### Decisión
@@ -455,10 +469,41 @@ ni diagnósticos salvo cuando exista un problema que explicar.
 - `002-LANGUAGE.md`
 - `implementation/VIN-007E2-sync-state-engine.md`
 
+## DEC-017A — Las vistas embedded no renderizan chrome de página
+
+**Fecha:** 2026-08-08
+**Estado:** Vigente
+**Ámbito:** UX
+
+### Decisión
+
+Las vistas embedded no renderizan chrome de página. `ApplicationWorkspaceDialog`
+es responsable de título, volver, cerrar, estructura exterior y límites del
+viewport.
+
+### Motivo
+
+Una vista de ruta incrustada dentro de un modal produce títulos duplicados,
+segundos botones de volver, acciones colocadas como página completa y capas
+visuales innecesarias.
+
+### Consecuencias
+
+`NoteDetailClient`, Memoria y Conceptos deben renderizar dentro del modal sólo
+el contenido y las acciones propias de la vista. La navegación modal conserva
+historial y estado de cada paso relevante. `Volver` restaura el contexto
+anterior en lugar de reconstruirlo.
+
+### Evidencia
+
+- `product/VIN-014-BASE-CONOCIMIENTO-ROBUSTA.md`
+- `implementation/VIN-014D-derived-concept-relationships.md`
+- `002-LANGUAGE.md`
+
 ## DEC-018 — La simplicidad tiene prioridad
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** Producto
 
 ### Decisión
@@ -482,8 +527,8 @@ descartadas aunque sean técnicamente posibles.
 
 ## DEC-019 — Offline-first es requisito permanente
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** Arquitectura
 
 ### Decisión
@@ -509,8 +554,8 @@ núcleo local.
 
 ## DEC-020 — La sincronización tiende a una memoria lógica común
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** Arquitectura
 
 ### Decisión
@@ -536,8 +581,8 @@ sobrescrituras silenciosas.
 
 ## DEC-021 — Estado de la memoria es simple para el usuario
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** UX
 
 ### Decisión
@@ -561,8 +606,8 @@ memoria. Los detalles aparecen solo ante problemas.
 
 ## DEC-022 — Cada estado importante tiene una fuente de verdad
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** Arquitectura
 
 ### Decisión
@@ -587,8 +632,8 @@ mismo modelo derivado cuando representan el mismo estado.
 
 ## DEC-023 — Los conflictos se representan por entidad lógica
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** Arquitectura
 
 ### Decisión
@@ -613,8 +658,8 @@ conflicto visible que requiere atención.
 
 ## DEC-024 — El Motor Cognitivo propone, pero no impone
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** Producto
 
 ### Decisión
@@ -639,8 +684,8 @@ evidencia.
 
 ## DEC-025 — Toda afirmación cognitiva conserva evidencia
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** Producto
 
 ### Decisión
@@ -665,8 +710,8 @@ capturas o relaciones existentes.
 
 ## DEC-026 — La captura original permanece como fuente trazable
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** Producto
 
 ### Decisión
@@ -690,8 +735,8 @@ captura original.
 
 ## DEC-027 — Seleccionar texto declara relevancia
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** UX
 
 ### Decisión
@@ -717,8 +762,8 @@ emergente o crear uno nuevo con confirmación, sin inferir tipos adicionales.
 
 ## DEC-028 — Capturar selección crea o asocia conceptos
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** UX
 
 ### Decisión
@@ -743,8 +788,8 @@ coincidencia válida, el usuario confirma antes de crear un concepto nuevo.
 
 ## DEC-029 — El mapa y sus posiciones son derivados
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** Arquitectura
 
 ### Decisión
@@ -770,8 +815,8 @@ decisión futura explícita.
 
 ## DEC-030 — La documentación oficial consolida los documentos VIN
 
-**Fecha:** 2026-08-04  
-**Estado:** Vigente  
+**Fecha:** 2026-08-04
+**Estado:** Vigente
 **Ámbito:** Producto
 
 ### Decisión
@@ -794,6 +839,38 @@ se borran al consolidarlo.
 - `000-VINEMA-CONSTITUTION.md`
 - `001-PRODUCT-VISION.md`
 - `002-LANGUAGE.md`
+
+## DEC-031 — Vinema no usa Archivado como ciclo de vida de producto
+
+**Fecha:** 2026-08-08
+**Estado:** Vigente
+**Ámbito:** Producto / Dominio
+
+### Decisión
+
+Vinema no expone Archivado como estado de ciclo de vida para capturas ni
+conceptos. Las experiencias principales no deben ofrecer `Archivar`,
+`Restaurar`, vistas de archivo ni filtros Activos/Archivados.
+
+### Motivo
+
+El archivado introduce una capa administrativa que compite con el principio de
+memoria disponible y con la recuperacion desde relaciones. La ausencia de una
+captura o concepto debe modelarse mediante eliminacion real cuando exista esa
+decision, no mediante una segunda memoria escondida.
+
+### Consecuencias
+
+Los registros historicos con campos de archivado se leen como memoria disponible
+mientras no esten eliminados. Los tombstones tecnicos necesarios para propagar
+borrado de relaciones en sincronizacion no habilitan una funcion visible de
+Archivo.
+
+### Evidencia
+
+- `product/VIN-014-BASE-CONOCIMIENTO-ROBUSTA.md`
+- `implementation/VIN-014C-concept-profiles.md`
+- `implementation/VIN-014D-derived-concept-relationships.md`
 
 ## Decisiones pendientes de consolidación
 

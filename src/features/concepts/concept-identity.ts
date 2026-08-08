@@ -50,14 +50,13 @@ export function resolveConceptIdentity(
   matchedText: string,
   contexts: Context[],
 ): ConceptResolutionResult {
-  const visibleContexts = contexts.filter((context) => context.archivedAt === null);
   const text = matchedText.trim();
 
   if (!isConceptIdentityLookupCandidate(text)) {
     return { status: "NEW", matchedText };
   }
 
-  const exactCanonical = visibleContexts.filter(
+  const exactCanonical = contexts.filter(
     (context) => context.name.trim() === text,
   );
   const exactCanonicalResolution = resolveUniqueOrAmbiguous(exactCanonical, text, "EXACT");
@@ -68,7 +67,7 @@ export function resolveConceptIdentity(
 
   const normalizedText = normalizeConceptIdentityLabel(text);
   const normalizedCompactText = createCompactConceptIdentityKey(text);
-  const normalizedCanonical = visibleContexts.filter((context) => {
+  const normalizedCanonical = contexts.filter((context) => {
     const identity = createConceptIdentity(context);
     return (
       identity.normalizedCanonicalLabel === normalizedText ||
@@ -85,7 +84,7 @@ export function resolveConceptIdentity(
     return normalizedCanonicalResolution;
   }
 
-  const exactAlias = visibleContexts.filter((context) =>
+  const exactAlias = contexts.filter((context) =>
     (context.aliases ?? []).some((alias) => alias.trim() === text),
   );
   const exactAliasResolution = resolveUniqueOrAmbiguous(exactAlias, text, "ALIAS");
@@ -94,7 +93,7 @@ export function resolveConceptIdentity(
     return withMatchedAlias(exactAliasResolution, text);
   }
 
-  const normalizedAlias = visibleContexts.filter((context) => {
+  const normalizedAlias = contexts.filter((context) => {
     const identity = createConceptIdentity(context);
     return identity.normalizedAliases.some((alias) => alias === normalizedText) ||
       identity.aliases.some(
@@ -112,7 +111,7 @@ export function resolveConceptIdentity(
   }
 
   const acronymMatches = isDerivedAcronymLookupCandidate(text)
-    ? visibleContexts.filter(
+    ? contexts.filter(
         (context) => deriveConceptAcronym(context.name) === normalizeAcronym(text),
       )
     : [];

@@ -4,7 +4,7 @@ export type RecoveryMatchedField = "content" | "context";
 
 export type RecoveryResultContext = Pick<
   Context,
-  "id" | "name" | "type" | "archivedAt"
+  "id" | "name" | "type"
 >;
 
 export type RecoveryResult = {

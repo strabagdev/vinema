@@ -34,7 +34,6 @@ export async function updateContext(
   const existingContexts = await repository.list({
     workspaceId: existingContext.workspaceId,
     type: existingContext.type,
-    includeArchived: true,
   });
 
   assertContextNameIsAvailable(existingContexts, {

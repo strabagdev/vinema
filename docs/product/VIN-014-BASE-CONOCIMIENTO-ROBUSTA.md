@@ -164,9 +164,15 @@ resultados, el enlace incluye:
 returnTo=/memory?q=<consulta>
 ```
 
-El detalle ya respeta `returnTo`, por lo que `Volver` restaura la busqueda activa.
-No se implemento persistencia compleja de scroll; el estado minimo conservado es
-la consulta y la ruta de retorno.
+El detalle ya respeta `returnTo`, por lo que `Volver` restaura la busqueda activa
+en ruta completa.
+
+Cuando Memoria se abre dentro de `ApplicationWorkspaceDialog`, no cambia la URL:
+la navegacion usa el stack modal existente. Cada entrada conserva un snapshot
+minimo de estado. Para Memoria, el snapshot conserva la busqueda embebida; para
+detalle de captura conserva el modo lectura/edicion; para Conceptos conserva la
+seleccion, busqueda y estado visual relevante del workspace. `Volver` restaura
+el contexto anterior en lugar de reconstruirlo como una vista nueva.
 
 ## 11. Detalle y edicion
 
@@ -176,19 +182,33 @@ El detalle sigue abriendo en modo lectura. Ahora muestra:
 - fecha de creacion;
 - fecha de actualizacion cuando difiere;
 - `Editar`;
-- `Volver`;
-- `Archivar`.
+- `Volver`.
+
+En modo embedded, `ApplicationWorkspaceDialog` es dueno de titulo, `Volver`,
+cerrar, estructura exterior y limites de viewport. El detalle de captura no
+renderiza chrome de pagina: no muestra badge/titulo generico `Captura`, no
+renderiza un segundo `Volver` y no envuelve el contenido en una tarjeta exterior
+si el modal ya provee la superficie. Mantiene contenido, conceptos relacionados,
+metadatos utiles y acciones como `Editar` cuando corresponden.
+
+La superficie embedded de captura conserva una composicion compacta y estable
+dentro del modal. No fuerza una reticula lateral ni una ampliacion especial de
+ancho: mantiene lectura, acciones y conceptos en la misma columna de detalle,
+sin chrome duplicado ni tarjeta exterior.
 
 La validacion existente impide consolidar una captura vacia. No se convierte una
 captura vacia en eliminacion.
 
-## 12. Archivado
+## 12. Sin archivado de producto
 
-Archivar conserva el registro, relaciones y datos locales. La Base y busqueda
-activa excluyen capturas archivadas por defecto, por lo que una captura archivada
-desaparece visualmente del listado activo al volver.
+Vinema no expone Archivado como ciclo de vida de capturas o conceptos. No hay
+accion `Archivar`, `Restaurar`, listados de archivados ni filtros
+Activos/Archivados en la experiencia vigente.
 
-No se implementa papelera ni vista completa de archivo en este paquete.
+Los campos historicos de archivado se toleran al leer datos previos y se tratan
+como memoria disponible mientras el registro no este eliminado. Los tombstones
+tecnicos de relaciones pueden seguir existiendo en sincronizacion para propagar
+borrado de vinculos, sin convertirse en una funcion de producto.
 
 ## 13. Rendimiento
 

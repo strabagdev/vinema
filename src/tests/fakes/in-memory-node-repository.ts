@@ -40,7 +40,6 @@ export class InMemoryNodeRepository implements NodeRepository {
       .filter(
         (node) =>
           node.deletedAt === null &&
-          node.status === "ACTIVE" &&
           node.organizationStatus === "ORGANIZED",
       )
       .sort(byNewestUpdatedAt);
@@ -51,28 +50,17 @@ export class InMemoryNodeRepository implements NodeRepository {
       .filter(
         (node) =>
           node.deletedAt === null &&
-          node.status === "ACTIVE" &&
           node.organizationStatus === "INBOX",
       )
       .sort(byNewestUpdatedAt);
   }
 
-  async listArchived(): Promise<Node[]> {
-    return Array.from(this.nodes.values())
-      .filter((node) => node.deletedAt === null && node.status === "ARCHIVED")
-      .sort(byNewestUpdatedAt);
-  }
-
-  async listByWorkspace(
-    workspaceId: string,
-    options: { includeArchived?: boolean } = {},
-  ): Promise<Node[]> {
+  async listByWorkspace(workspaceId: string): Promise<Node[]> {
     return Array.from(this.nodes.values())
       .filter(
         (node) =>
           node.workspaceId === workspaceId &&
-          node.deletedAt === null &&
-          (options.includeArchived || node.status !== "ARCHIVED"),
+          node.deletedAt === null,
       )
       .sort(byNewestUpdatedAt);
   }

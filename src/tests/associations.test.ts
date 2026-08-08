@@ -122,7 +122,10 @@ describe("association scoring", () => {
       currentNodeId: "current",
     });
 
-    expect(suggestions.map((suggestion) => suggestion.node.id)).toEqual(["mitcom"]);
+    expect(suggestions.map((suggestion) => suggestion.node.id)).toEqual([
+      "archived",
+      "mitcom",
+    ]);
     expect(suggestions[0].score).toBeGreaterThan(0);
     expect(suggestions[0].score).toBeLessThanOrEqual(1);
     expect(suggestions[0].reasons.map((reason) => reason.type)).toContain(
@@ -799,15 +802,18 @@ describe("persisted concept label normalization", () => {
     });
     const relations = await relationRepository.listByWorkspace("workspace-1");
 
-    expect(activeContexts).toHaveLength(1);
-    expect(activeContexts[0]).toMatchObject({
+    expect(activeContexts).toHaveLength(2);
+    expect(activeContexts.find((context) => context.id === "rare-carbon")).toMatchObject({
       id: "rare-carbon",
       name: "Rare Carbon",
       archivedAt: null,
     });
     expect(
       allContexts.find((storedContext) => storedContext.id === "carbon-rare"),
-    ).toMatchObject({ archivedAt: expect.any(String) });
+    ).toMatchObject({
+      archivedAt: null,
+      description: expect.stringContaining("Fusionado en Rare Carbon"),
+    });
     expect(
       relations.filter((relation) => relation.contextId === "rare-carbon"),
     ).toHaveLength(3);
@@ -887,8 +893,8 @@ describe("persisted concept label normalization", () => {
     });
     const contexts = await contextRepository.list({ workspaceId: "workspace-1" });
 
-    expect(contexts).toHaveLength(1);
-    expect(contexts[0].name).toBe("Ombré Leather");
+    expect(contexts).toHaveLength(2);
+    expect(contexts.map((context) => context.name)).toContain("Ombré Leather");
   });
 
   it("keeps ambiguous concepts unchanged without clear evidence", async () => {

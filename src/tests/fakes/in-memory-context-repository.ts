@@ -22,7 +22,6 @@ export class InMemoryContextRepository implements ContextRepository {
     return Array.from(this.contexts.values())
       .filter((context) => context.workspaceId === options.workspaceId)
       .filter((context) => !options.type || context.type === options.type)
-      .filter((context) => options.includeArchived || context.archivedAt === null)
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
@@ -32,11 +31,4 @@ export class InMemoryContextRepository implements ContextRepository {
     return stored;
   }
 
-  async archive(context: Context): Promise<Context> {
-    return this.save(context);
-  }
-
-  async restore(context: Context): Promise<Context> {
-    return this.save(context);
-  }
 }

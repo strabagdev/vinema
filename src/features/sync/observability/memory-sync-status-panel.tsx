@@ -239,7 +239,11 @@ export function MemorySyncStatusPanel({
             baseUrl: apiBaseUrl,
             accessToken: auth.accessToken,
           });
-          return client.getCapture({ workspaceId, entityId });
+          const capture = await client.getCapture({ workspaceId, entityId });
+          return {
+            ...capture,
+            archivedAt: capture.archivedAt ?? null,
+          };
         }
         : undefined,
     });

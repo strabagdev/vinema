@@ -2,8 +2,12 @@ import { act, createElement, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  areMapTransformsEqual,
+  areWorkspaceStatesEquivalent,
   CaptureSurface,
   ConceptPanelContent,
+  mergeWorkspaceState,
+  replaceWorkspaceHistoryState,
 } from "@/features/capture/capture-surface";
 import {
   CANVAS_PREFERENCES_KEY,
@@ -150,13 +154,21 @@ vi.mock("@/app/concepts/concept-index-client", () => ({
 vi.mock("@/app/concepts/concept-workspace-client", () => ({
   ConceptWorkspaceClient: ({
     initialConceptId,
+    initialState,
     onOpenMemory,
+    onOpenConcept,
+    onClose,
+    onStateChange,
   }: {
     initialConceptId?: string | null;
+    initialState?: { selectedConceptId?: string | null; query?: string };
     onOpenMemory?: (nodeId: string) => void;
+    onOpenConcept?: (conceptId: string) => void;
+    onClose?: () => void;
+    onStateChange?: (state: { selectedConceptId?: string | null; query?: string }) => void;
   }) => {
     const [selectedConceptId, setSelectedConceptId] = useState<string | null>(
-      initialConceptId ?? null,
+      initialState?.selectedConceptId ?? initialConceptId ?? null,
     );
 
     return createElement(
@@ -175,8 +187,19 @@ vi.mock("@/app/concepts/concept-workspace-client", () => ({
           "button",
           {
             type: "button",
+            onClick: onClose,
+          },
+          "Cerrar conceptos",
+        ),
+        createElement(
+          "button",
+          {
+            type: "button",
             "aria-pressed": selectedConceptId === "railway",
-            onClick: () => setSelectedConceptId("railway"),
+            onClick: () => {
+              setSelectedConceptId("railway");
+              onStateChange?.({ selectedConceptId: "railway", query: initialState?.query });
+            },
           },
           "Railway",
         ),
@@ -192,7 +215,10 @@ vi.mock("@/app/concepts/concept-workspace-client", () => ({
           "button",
           {
             type: "button",
-            onClick: () => setSelectedConceptId("sync"),
+            onClick: () => {
+              setSelectedConceptId("sync");
+              onStateChange?.({ selectedConceptId: "sync", query: initialState?.query });
+            },
           },
           "Nodo Sync",
         ),
@@ -211,7 +237,7 @@ vi.mock("@/app/concepts/concept-workspace-client", () => ({
               "button",
               {
                 type: "button",
-                onClick: () => setSelectedConceptId("mitcom"),
+                onClick: () => onOpenConcept?.("mitcom"),
               },
               "Concepto relacionado",
             )
@@ -417,6 +443,69 @@ const device: Device = {
   createdAt: "2026-01-01T00:00:00.000Z",
   lastSeenAt: "2026-01-01T00:00:00.000Z",
 };
+
+describe("workspace navigation snapshots", () => {
+  it("treats equivalent map transforms as unchanged even with a new object", () => {
+    expect(
+      areMapTransformsEqual(
+        { scale: 1, x: 12, y: -4 },
+        { scale: 1, x: 12, y: -4 },
+      ),
+    ).toBe(true);
+  });
+
+  it("detects real map transform changes", () => {
+    expect(
+      areMapTransformsEqual(
+        { scale: 1, x: 12, y: -4 },
+        { scale: 1.1, x: 12, y: -4 },
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps workspace state equivalent when replacing identical snapshot values", () => {
+    const current = {
+      concept: {
+        selectedConceptId: "mitcom",
+        query: "mit",
+        profileScrollTop: 42,
+        mapTransform: { scale: 1, x: 10, y: 5 },
+      },
+    };
+    const merged = mergeWorkspaceState(current, {
+      concept: {
+        mapTransform: { scale: 1, x: 10, y: 5 },
+      },
+    });
+
+    expect(areWorkspaceStatesEquivalent(current, merged)).toBe(true);
+  });
+
+  it("returns the same history array when the replacement is semantically identical", () => {
+    const current = [
+      {
+        view: { kind: "concept-workspace" as const, selectedConceptId: "mitcom" },
+        params: {},
+        state: {
+          concept: {
+            selectedConceptId: "mitcom",
+            query: "mit",
+            profileScrollTop: 42,
+            mapTransform: { scale: 1, x: 10, y: 5 },
+          },
+        },
+      },
+    ];
+
+    expect(
+      replaceWorkspaceHistoryState(current, {
+        concept: {
+          mapTransform: { scale: 1, x: 10, y: 5 },
+        },
+      }),
+    ).toBe(current);
+  });
+});
 
 describe("CaptureSurface", () => {
   beforeEach(() => {
@@ -872,18 +961,20 @@ describe("CaptureSurface", () => {
     const initialScrollViewportClassName = scrollViewport?.className;
     const initialWritingTrackClassName = writingTrack?.className;
 
-    expect(emptyRail?.querySelectorAll("[data-canvas-panel-trigger]")).toHaveLength(3);
+    expect(emptyRail?.querySelectorAll("[data-canvas-panel-trigger]")).toHaveLength(4);
     expect(emptyRail?.querySelectorAll("[data-context-indicator]")).toHaveLength(0);
     expect(screen.container.querySelector("[data-canvas-context-bar]")).toBeNull();
     expect(getLinkByLabel(screen.container, "Memoria")).toBeUndefined();
     expect(screen.container.querySelector("[data-canvas-memory-nav]")).toBeNull();
     expect(getContextIndicator(screen.container, "Memoria")).toBeUndefined();
     expect(getButtonByLabel(screen.container, "Conceptos")).toBeUndefined();
+    expect(getButtonByLabel(screen.container, "Explorar conocimiento")).toBeDefined();
+    expect(getButtonByLabel(screen.container, "Explorar conceptos")).toBeDefined();
     expect(getButtonByLabel(screen.container, "Canvas")).toBeDefined();
-    expect(getButtonByLabel(screen.container, "Administrar")).toBeDefined();
+    expect(getButtonByLabel(screen.container, "Administrar")).toBeUndefined();
     expect(
       screen.container.querySelectorAll("[data-knowledge-management-trigger]"),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
     expect(getButtonByLabel(screen.container, "Estado")).toBeDefined();
 
     await changeTextarea(screen.container, "Revisar Railway");
@@ -903,10 +994,56 @@ describe("CaptureSurface", () => {
     expect(writingSurface?.className).toBe(initialWritingSurfaceClassName);
     expect(scrollViewport?.className).toBe(initialScrollViewportClassName);
     expect(writingTrack?.className).toBe(initialWritingTrackClassName);
-    expect(rail?.querySelectorAll("[data-canvas-panel-trigger]")).toHaveLength(3);
+    expect(rail?.querySelectorAll("[data-canvas-panel-trigger]")).toHaveLength(4);
     expect(rail?.querySelectorAll("[data-context-indicator]")).toHaveLength(0);
     expect(getContextIndicator(screen.container, "Memoria")).toBeUndefined();
     expect(getButtonByLabel(screen.container, "Canvas")).toBeDefined();
+  });
+
+  it("opens global knowledge and concepts workspaces from permanent rail actions", async () => {
+    const screen = await renderCaptureSurface();
+    const canvas = screen.container.querySelector("[data-capture-canvas]");
+    const knowledgeTrigger = getButtonByLabel(
+      screen.container,
+      "Explorar conocimiento",
+    );
+    const conceptsTrigger = getButtonByLabel(screen.container, "Explorar conceptos");
+
+    expect(knowledgeTrigger?.querySelector("[data-canvas-rail-icon='knowledge']")).toBeDefined();
+    expect(
+      conceptsTrigger?.querySelector("[data-canvas-rail-icon='concept-network']"),
+    ).toBeDefined();
+    expect(canvas).toBeDefined();
+
+    await click(knowledgeTrigger!);
+
+    const memoryDialog = getDialog(document.body, "Memoria") as HTMLElement;
+    expect(memoryDialog).toBeDefined();
+    expect(memoryDialog.hasAttribute("data-application-workspace-dialog")).toBe(true);
+    expect(memoryDialog.querySelector("[data-knowledge-base-client]")?.getAttribute(
+      "data-embedded",
+    )).toBe("true");
+    expect(screen.container.contains(canvas)).toBe(true);
+    expect(window.location.pathname).toBe("/");
+
+    await click(getButtonByLabel(document.body, "Cerrar Memoria")!);
+    expect(getDialog(document.body, "Memoria")).toBeUndefined();
+
+    await click(conceptsTrigger!);
+
+    const conceptsDialog = getDialog(document.body, "Conceptos") as HTMLElement;
+    expect(conceptsDialog).toBeDefined();
+    expect(conceptsDialog.hasAttribute("data-application-workspace-dialog")).toBe(
+      true,
+    );
+    expect(conceptsDialog.querySelector("[data-concept-workspace]")).toBeDefined();
+    expect(conceptsDialog.querySelector("[data-knowledge-explorer-canvas]")).toBeDefined();
+    expect(screen.container.contains(canvas)).toBe(true);
+    expect(window.location.pathname).toBe("/");
+
+    await click(getButton(document.body, "Cerrar conceptos"));
+    expect(getDialog(document.body, "Conceptos")).toBeUndefined();
+    expect(screen.container.contains(canvas)).toBe(true);
   });
 
   it("shows cognitive indicators in the canvas context bar without visible counters", async () => {
@@ -1387,6 +1524,69 @@ describe("CaptureSurface", () => {
     expect(screen.container.textContent).not.toContain("Recordando...");
   });
 
+  it("resolves a memory panel opened while a newer recall is still loading", async () => {
+    const nodeRepository = new InMemoryNodeRepository([
+      createStoredNode({
+        id: "mitcom",
+        content: "Proveedor Mitcom pendiente de seguimiento",
+        updatedAt: "2026-01-05T00:00:00.000Z",
+      }),
+      createStoredNode({
+        id: "railway",
+        content: "Railway queda pendiente para revisar despliegues.",
+        updatedAt: "2026-01-06T00:00:00.000Z",
+      }),
+    ]);
+    const screen = await renderCaptureSurface({ nodeRepository });
+
+    await changeTextarea(screen.container, "mitcom");
+    await advanceTime(500);
+    expect(getContextIndicator(screen.container, "Memoria")).toBeDefined();
+
+    await changeTextarea(screen.container, "railway");
+    await advanceTime(100);
+    await openMemoryPanel(screen.container);
+
+    expect(getDialog(screen.container, "Me recuerda a…")).toBeDefined();
+    expect(screen.container.textContent).toContain("Recordando...");
+
+    await advanceTime(500);
+
+    expect(getDialog(screen.container, "Me recuerda a…")).toBeDefined();
+    expect(screen.container.textContent).toContain("Railway queda pendiente");
+    expect(screen.container.textContent).not.toContain("Recordando...");
+  });
+
+  it("does not leave memory recall loading indefinitely when a local query hangs", async () => {
+    const nodeRepository = new InMemoryNodeRepository([
+      createStoredNode({
+        id: "mitcom",
+        content: "Proveedor Mitcom pendiente de seguimiento",
+        updatedAt: "2026-01-05T00:00:00.000Z",
+      }),
+    ]);
+    const screen = await renderCaptureSurface({ nodeRepository });
+
+    await changeTextarea(screen.container, "mitcom");
+    await advanceTime(500);
+    expect(getContextIndicator(screen.container, "Memoria")).toBeDefined();
+
+    nodeRepository.listByWorkspace = async () =>
+      new Promise<Node[]>(() => {
+        // Intentionally unresolved to exercise the visual safety timeout.
+      });
+
+    await changeTextarea(screen.container, "mitcom pendiente nuevo");
+    await advanceTime(100);
+    await openMemoryPanel(screen.container);
+
+    expect(screen.container.textContent).toContain("Recordando...");
+
+    await advanceTime(3600);
+
+    expect(screen.container.textContent).not.toContain("Recordando...");
+  });
+
   it("finishes recovery for a short specific query without results", async () => {
     const screen = await renderCaptureSurface();
 
@@ -1785,7 +1985,7 @@ describe("CaptureSurface", () => {
     expect(screen.container.textContent).toContain("Captura antigua disponible");
   });
 
-  it("shows recovered captures as navigable suggestions with one final memory action", async () => {
+  it("shows recovered captures as compact navigable suggestions without global CTAs", async () => {
     const storage = new MemoryStorageAdapter();
     const nodeRepository = new InMemoryNodeRepository([
       createStoredNode({
@@ -1813,13 +2013,14 @@ describe("CaptureSurface", () => {
     expect(screen.container.querySelector("input[type='checkbox']")).toBeNull();
 
     const recoveryLink = getLinkByHref(screen.container, "nodeId=mitcom");
-    const memoryAction = getButton(screen.container, "Explorar memoria");
 
     expect(recoveryLink).toBeDefined();
     expect(recoveryLink?.textContent).toContain(
       "Reunion de control de gestion con proveedor Mitcom",
     );
-    expect(memoryAction).toBeDefined();
+    expect(screen.container.textContent).not.toContain("Explorar memoria");
+    expect(screen.container.textContent).not.toContain("Explorar conocimiento");
+    expect(screen.container.textContent).not.toContain("Explorar conceptos");
     expect(getLinksByExactHref(screen.container, "/memory")).toHaveLength(0);
     expect(screen.container.querySelector("article span")?.className).toContain("truncate");
     await expect(relationRepository.listByWorkspace(workspace.id)).resolves.toEqual(
@@ -1827,7 +2028,37 @@ describe("CaptureSurface", () => {
     );
   });
 
-  it("opens the memory explorer in a workspace dialog without leaving the canvas", async () => {
+  it("shows more compact memory rows in the same contextual panel", async () => {
+    const nodeRepository = new InMemoryNodeRepository(
+      Array.from({ length: 6 }, (_, index) =>
+        createStoredNode({
+          id: `delta-${index + 1}`,
+          content: `Proyecto Delta seguimiento ${index + 1} con acuerdos y pendientes compartidos.`,
+          updatedAt: `2026-01-0${index + 1}T00:00:00.000Z`,
+        }),
+      ),
+    );
+    const screen = await renderCaptureSurface({ nodeRepository });
+
+    await changeTextarea(screen.container, "Proyecto Delta seguimiento");
+    await advanceTime(500);
+    await openMemoryPanel(screen.container);
+
+    const panel = getDialog(screen.container, "Me recuerda a…") as HTMLElement;
+    const rows = Array.from(panel.querySelectorAll("article"));
+
+    expect(rows).toHaveLength(5);
+    expect(panel.textContent).toContain("Proyecto Delta seguimiento 6");
+    expect(panel.textContent).toContain("Proyecto Delta seguimiento 5");
+    expect(panel.textContent).not.toContain("Proyecto Delta seguimiento 1");
+    expect(panel.textContent).not.toContain("Explorar memoria");
+    expect(rows[0]?.querySelector("a")?.getAttribute("href")).toContain(
+      "nodeId=delta-6",
+    );
+    expect(rows[0]?.querySelector("a")?.className).toContain("py-1.5");
+  });
+
+  it("opens the memory explorer from the rail without leaving the canvas", async () => {
     const nodeRepository = new InMemoryNodeRepository([
       createStoredNode({
         id: "mitcom",
@@ -1839,11 +2070,9 @@ describe("CaptureSurface", () => {
 
     await changeTextarea(screen.container, "Planificar control con Mitcom");
     await advanceTime(500);
-    await openMemoryPanel(screen.container);
+    const exploreButton = getButtonByLabel(screen.container, "Explorar conocimiento");
 
-    const exploreButton = getButton(screen.container, "Explorar memoria");
-
-    await click(exploreButton);
+    await click(exploreButton!);
 
     const dialog = getDialog(document.body, "Memoria");
     expect(dialog).toBeDefined();
@@ -2054,8 +2283,10 @@ describe("CaptureSurface", () => {
     const contextBar = screen.container.querySelector("[data-canvas-context-bar]");
 
     expect(getLinkByLabel(screen.container, "Memoria")).toBeUndefined();
-    expect(getButtonByLabel(screen.container, "Administrar")).toBeDefined();
-    expect(rail?.querySelectorAll("[data-canvas-panel-trigger]")).toHaveLength(3);
+    expect(getButtonByLabel(screen.container, "Administrar")).toBeUndefined();
+    expect(getButtonByLabel(screen.container, "Explorar conocimiento")).toBeDefined();
+    expect(getButtonByLabel(screen.container, "Explorar conceptos")).toBeDefined();
+    expect(rail?.querySelectorAll("[data-canvas-panel-trigger]")).toHaveLength(4);
     expect(rail?.querySelectorAll("[data-context-indicator]")).toHaveLength(0);
     expect(contextBar?.querySelectorAll("[data-context-indicator]")).toHaveLength(2);
     expect(conceptPanel.className).toContain("w-[var(--vinema-canvas-panel-preferred-width)]");
@@ -2176,6 +2407,31 @@ describe("CaptureSurface", () => {
     consoleErrorSpy.mockRestore();
   });
 
+  it("keeps contextual indicators stable while a new evaluation is loading", async () => {
+    const nodeRepository = new InMemoryNodeRepository([
+      createStoredNode({
+        id: "mitcom",
+        content: "Proveedor Mitcom pendiente de seguimiento",
+        updatedAt: "2026-01-05T00:00:00.000Z",
+      }),
+    ]);
+    const screen = await renderCaptureSurface({ nodeRepository });
+
+    await changeTextarea(screen.container, "Revisar Mitcom");
+    await advanceTime(500);
+
+    expect(getContextIndicator(screen.container, "Memoria")).toBeDefined();
+
+    await changeTextarea(screen.container, "Texto sin coincidencias qwerty");
+    await advanceTime(100);
+
+    expect(getContextIndicator(screen.container, "Memoria")).toBeDefined();
+
+    await advanceTime(400);
+
+    expect(getContextIndicator(screen.container, "Memoria")).toBeUndefined();
+  });
+
   it("keeps hover preview interactive when the pointer enters the panel corridor", async () => {
     const screen = await renderCaptureSurface();
 
@@ -2225,6 +2481,102 @@ describe("CaptureSurface", () => {
 
     await click(getButtonByLabel(screen.container, "Cerrar panel")!);
     expect(getDialog(screen.container, "Conceptos detectados")).toBeUndefined();
+  });
+
+  it("keeps hover preview alive across panel header, padding and content", async () => {
+    const screen = await renderCaptureSurface();
+
+    await changeTextarea(screen.container, "Revisar Railway");
+    await advanceTime(500);
+
+    const conceptIcon = getContextIndicator(screen.container, "conceptos sugeridos");
+
+    await hoverElement(conceptIcon);
+    const panel = getDialog(screen.container, "Conceptos detectados") as HTMLElement;
+    const interactionRegion = screen.container.querySelector(
+      "[data-canvas-panel-interaction-region]",
+    ) as HTMLElement;
+    const panelAnchor = screen.container.querySelector(
+      "[data-canvas-context-panel-anchor]",
+    ) as HTMLElement;
+    const panelHeader = panel.querySelector(
+      "[data-canvas-side-panel-header]",
+    ) as HTMLElement;
+    const panelContent = panel.querySelector(
+      "[data-canvas-side-panel-content]",
+    ) as HTMLElement;
+
+    expect(interactionRegion).toBeDefined();
+    expect(interactionRegion.className).toContain("pointer-events-auto");
+    expect(interactionRegion.className).toContain("gap-2");
+    expect(panelAnchor.className).not.toContain("mt-2");
+
+    await unhoverElement(conceptIcon);
+    await hoverElement(panelAnchor);
+    await advanceTime(240);
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
+
+    await unhoverElement(panelAnchor);
+    await hoverElement(panelHeader);
+    await advanceTime(240);
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
+
+    await unhoverElement(panelHeader);
+    await hoverElement(panelContent);
+    panelContent.dispatchEvent(new Event("scroll", { bubbles: true }));
+    await advanceTime(240);
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
+
+    await unhoverElement(panelContent);
+    await unhoverElement(interactionRegion);
+    await advanceTime(240);
+    expect(screen.container.querySelector("[data-canvas-side-panel]")?.getAttribute(
+      "data-panel-state",
+    )).toBe("closing");
+  });
+
+  it("updates contextual snapshots silently without asking for manual refresh", async () => {
+    const contextRepository = new InMemoryContextRepository([
+      createContext({ id: "mitcom", name: "Mitcom" }),
+    ]);
+    const screen = await renderCaptureSurface({ contextRepository });
+
+    await changeTextarea(screen.container, "Revisar Mitcom");
+    await advanceTime(500);
+    await openConceptPanel(screen.container);
+
+    const mitcomRow = getConceptSuggestionRow(screen.container, "mitcom");
+    expect(mitcomRow?.textContent).toContain("Mitcom");
+    await click(selectedButtonFromRow(mitcomRow));
+    expect(
+      selectedButtonFromRow(getConceptSuggestionRow(screen.container, "mitcom"))
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+
+    await changeTextarea(screen.container, "Revisar Mitcom y Railway");
+    await advanceTime(500);
+
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
+    expect(screen.container.textContent).not.toContain("Actualizar sugerencias");
+    expect(screen.container.querySelector("[data-canvas-panel-refresh]")).toBeNull();
+    expect(getConceptSuggestionRow(screen.container, "railway")).toBeNull();
+    expect(
+      selectedButtonFromRow(getConceptSuggestionRow(screen.container, "mitcom"))
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+
+    await openConceptPanel(screen.container);
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeUndefined();
+
+    await openConceptPanel(screen.container);
+
+    expect(getConceptSuggestionRow(screen.container, "mitcom")).toBeDefined();
+    expect(getConceptSuggestionRow(screen.container, "railway")).toBeDefined();
+    expect(screen.container.textContent).not.toContain("Actualizar sugerencias");
+    expect(
+      selectedButtonFromRow(getConceptSuggestionRow(screen.container, "mitcom"))
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
   });
 
   it("keeps an accepted suggested concept selected across preview, pinned panel and reopen", async () => {
@@ -2489,7 +2841,7 @@ describe("CaptureSurface", () => {
     );
   });
 
-  it("expands existing concept suggestions into the knowledge base and preserves the draft", async () => {
+  it("opens the concept workspace from the rail and preserves the draft", async () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
     const storage = new MemoryStorageAdapter();
     const nodeRepository = new InMemoryNodeRepository([
@@ -2539,11 +2891,14 @@ describe("CaptureSurface", () => {
     await advanceTime(500);
     await openConceptPanel(screen.container);
 
-    const exploreButton = getButton(screen.container, "Explorar conceptos");
+    expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
+    expect(screen.container.textContent).not.toContain("Explorar conceptos");
+
+    const exploreButton = getButtonByLabel(screen.container, "Explorar conceptos");
 
     expect(exploreButton).toBeDefined();
 
-    await click(exploreButton);
+    await click(exploreButton!);
 
     expect(getDialog(document.body, "Conceptos")).toBeDefined();
     expect(document.body.querySelector("[data-concept-workspace]")).toBeTruthy();
@@ -2592,6 +2947,19 @@ describe("CaptureSurface", () => {
     expect(document.body.querySelectorAll("[data-application-workspace-dialog]")).toHaveLength(1);
     expect(window.location.pathname).toBe("/");
     expect(openSpy).not.toHaveBeenCalled();
+
+    await click(getButtonByLabel(document.body, "Volver") as HTMLButtonElement);
+
+    expect(getDialog(document.body, "Conceptos")).toBeDefined();
+    expect(document.body.textContent).toContain("Perfil concepto mitcom");
+    expect(window.location.pathname).toBe("/");
+
+    await click(getButtonByLabel(document.body, "Volver") as HTMLButtonElement);
+
+    expect(getDialog(document.body, "Conceptos")).toBeDefined();
+    expect(document.body.textContent).toContain("Perfil concepto sync");
+    expect(window.location.pathname).toBe("/");
+
     openSpy.mockRestore();
   });
 
@@ -2755,9 +3123,11 @@ describe("CaptureSurface", () => {
     await advanceTime(500);
     await openMemoryPanel(screen.container);
 
-    const expandButton = getButton(screen.container, "Explorar memoria");
-
-    expect(expandButton).toBeDefined();
+    expect(screen.container.textContent).toContain(
+      "Las reuniones extensas reducen",
+    );
+    expect(screen.container.textContent).not.toContain("Reuniones");
+    expect(screen.container.textContent).not.toContain("Explorar memoria");
     expect(getLinksByExactHref(screen.container, "/memory")).toHaveLength(0);
     expect(screen.container.textContent).not.toContain("Ver en Explorar");
   });
@@ -3537,6 +3907,7 @@ async function hoverElement(target: HTMLElement | undefined) {
   }
 
   await act(async () => {
+    target.dispatchEvent(createPointerEvent("pointerover"));
     target.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
     await flushPromises();
   });
@@ -3548,9 +3919,16 @@ async function unhoverElement(target: HTMLElement | undefined) {
   }
 
   await act(async () => {
+    target.dispatchEvent(createPointerEvent("pointerout"));
     target.dispatchEvent(new MouseEvent("mouseout", { bubbles: true }));
     await flushPromises();
   });
+}
+
+function createPointerEvent(type: "pointerover" | "pointerout") {
+  return typeof PointerEvent === "undefined"
+    ? new Event(type, { bubbles: true })
+    : new PointerEvent(type, { bubbles: true });
 }
 
 function setNativeValue(

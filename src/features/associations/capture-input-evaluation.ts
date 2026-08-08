@@ -159,7 +159,7 @@ export function evaluateCaptureInput({
     .map((suggestion): Extract<ConceptSuggestion, { kind: "existing" }> | null => {
       const context = contexts.find((item) => item.id === suggestion.conceptId);
 
-      if (!context || context.archivedAt !== null) {
+      if (!context) {
         return null;
       }
 
@@ -230,7 +230,7 @@ export function evaluateCaptureInput({
       stateUpdateMs: 0,
       totalMs: Math.round(performance.now() - startedAt),
       captureCount: index.captures.length,
-      contextCount: contexts.filter((context) => context.archivedAt === null).length,
+      contextCount: contexts.length,
       relationCount: relations.length,
       recoveryResultCount: recoveryMatches.length,
       conceptResultCount: conceptSuggestions.length,

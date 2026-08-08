@@ -76,13 +76,13 @@ export function deriveConceptProfile({
 }): ConceptProfile | null {
   const concept = contexts.find((context) => context.id === currentContextId);
 
-  if (!concept || concept.archivedAt !== null) {
+  if (!concept) {
     return null;
   }
 
   const activeNodesById = new Map(
     nodes
-      .filter((node) => node.status === "ACTIVE" && node.deletedAt === null)
+      .filter((node) => node.deletedAt === null)
       .map((node) => [node.id, node]),
   );
   const relationNodeIds = unique(

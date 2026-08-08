@@ -6,7 +6,6 @@ export interface NodeRepository {
   findById(id: string): Promise<Node | null>;
   listActive(): Promise<Node[]>;
   listInbox(): Promise<Node[]>;
-  listArchived(): Promise<Node[]>;
   listByWorkspace(
     workspaceId: string,
     options?: { includeArchived?: boolean },

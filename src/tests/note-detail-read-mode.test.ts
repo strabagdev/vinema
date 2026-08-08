@@ -108,6 +108,78 @@ describe("NoteDetailView read mode", () => {
     expect(getButton(screen, "Editar")).toBeTruthy();
   });
 
+  it("renders embedded capture detail without duplicated page chrome", async () => {
+    const screen = await renderNoteDetail({ embedded: true });
+
+    const surface = screen.querySelector("[data-note-detail-embedded]");
+    const readingColumn = screen.querySelector("[data-note-detail-reading-column]");
+    const layout = screen.querySelector("[data-note-detail-embedded-layout]");
+    const secondaryColumn = screen.querySelector("[data-note-detail-secondary-column]");
+    const actions = screen.querySelector("[data-note-detail-actions]");
+
+    expect(surface).toBeTruthy();
+    expect(surface?.className).toContain("max-w-5xl");
+    expect(surface?.className).not.toContain("max-w-3xl");
+    expect(surface?.className).toContain("sm:px-6");
+    expect(surface?.className).toContain("lg:px-8");
+    expect(surface?.className).toContain("overflow-y-auto");
+    expect(surface?.className).not.toContain("sm:w-[min(94%,82rem)]");
+    expect(surface?.className).not.toContain("max-w-none");
+    expect(layout?.className).toContain("sm:flex-row");
+    expect(layout?.className).not.toContain("grid-cols");
+    expect(readingColumn?.className).not.toContain("max-w-[62rem]");
+    expect(secondaryColumn).toBeNull();
+    expect(actions?.className).not.toContain("absolute");
+    expect(screen.textContent).toContain("Contenido guardado");
+    expect(screen.textContent).toContain("Creada");
+    expect(screen.textContent).not.toContain("Editar captura");
+    expect(screen.textContent).not.toContain("CapturaCaptura");
+    expect(getButton(screen, "← Volver")).toBeUndefined();
+    expect(getButton(screen, "Editar")).toBeTruthy();
+    expect(getButton(screen, "Archivar")).toBeUndefined();
+    expect(getButton(screen, "Restaurar")).toBeUndefined();
+    expect(screen.querySelector("article")?.className).not.toContain("border");
+  });
+
+  it("keeps embedded read and edit modes on the restored compact geometry", async () => {
+    const screen = await renderNoteDetail({
+      embedded: true,
+      relatedContexts: [areaContext],
+      relatedRelations: [createRelation({ contextId: "area-1" })],
+    });
+    const readLayout = screen.querySelector("[data-note-detail-embedded-layout]");
+    const readActions = screen.querySelector("[data-note-detail-actions]");
+    const readingColumn = screen.querySelector("[data-note-detail-reading-column]");
+
+    expect(readLayout?.className).toContain("flex flex-col gap-4");
+    expect(readLayout?.className).toContain("sm:flex-row");
+    expect(readLayout?.className).not.toContain("grid-cols");
+    expect(readLayout?.className).not.toContain("absolute");
+    expect(readingColumn?.className).toContain("min-w-0");
+    expect(readingColumn?.className).not.toContain("max-w-[62rem]");
+    expect(readActions?.textContent).toContain("Editar");
+    expect(readActions?.textContent).not.toContain("Archivar");
+    expect(readActions?.textContent).not.toContain("Restaurar");
+    expect(screen.textContent).toContain("Conceptos");
+    expect(screen.textContent).toContain("Trabajo");
+
+    await click(getButton(screen, "Editar"));
+
+    const editLayout = screen.querySelector("[data-note-detail-embedded-layout]");
+    const editActions = screen.querySelector("[data-note-detail-actions]");
+    const editorColumn = screen.querySelector("[data-note-detail-editor-column]");
+
+    expect(editLayout?.className).toBe(readLayout?.className);
+    expect(editorColumn?.className).toContain("min-w-0");
+    expect(editorColumn?.className).not.toContain("max-w-[62rem]");
+    expect(editActions?.textContent).toContain("Cancelar");
+    expect(editActions?.textContent).toContain("Listo");
+    expect(screen.textContent).toContain("Conceptos");
+    expect(screen.querySelector("[data-note-detail-embedded]")?.className).toContain(
+      "max-w-5xl",
+    );
+  });
+
   it("shows concepts in read mode with compact links", async () => {
     const screen = await renderNoteDetail({
       relatedContexts: [areaContext, projectContext, archivedPersonContext],
@@ -123,7 +195,8 @@ describe("NoteDetailView read mode", () => {
     expect(screen.textContent).toContain("Conceptos");
     expect(screen.textContent).toContain("Trabajo");
     expect(screen.textContent).toContain("Vinema");
-    expect(screen.textContent).toContain("Juan Perez · Archivado");
+    expect(screen.textContent).toContain("Juan Perez");
+    expect(screen.textContent).not.toContain("Archivado");
     expect(getLink(screen, "Trabajo")?.getAttribute("href")).toBe(
       "/concepts/detail?contextId=area-1",
     );
@@ -142,8 +215,6 @@ describe("NoteDetailView read mode", () => {
           contextOptions: [areaContext, projectContext],
           onSave: vi.fn(async () => baseNode),
           onSaveContextRelations: vi.fn(async () => undefined),
-          onArchive: vi.fn(async () => undefined),
-          onRestore: vi.fn(async () => baseNode),
           onBack: vi.fn(),
           canvasPreferencesStorage,
         }),
@@ -169,8 +240,6 @@ describe("NoteDetailView read mode", () => {
           contextOptions: [areaContext, projectContext],
           onSave: vi.fn(async () => baseNode),
           onSaveContextRelations: vi.fn(async () => undefined),
-          onArchive: vi.fn(async () => undefined),
-          onRestore: vi.fn(async () => baseNode),
           onBack: vi.fn(),
           canvasPreferencesStorage,
         }),
@@ -730,48 +799,15 @@ describe("NoteDetailView read mode", () => {
     expect(screen.querySelector("textarea")).toBeTruthy();
   });
 
-  it("asks for confirmation before archiving", async () => {
-    const onArchive = vi.fn(async () => undefined);
-    const screen = await renderNoteDetail({ onArchive });
-
-    await click(getButton(screen, "Archivar"));
-
-    expect(onArchive).not.toHaveBeenCalled();
-    expect(screen.textContent).toContain("Archivar esta captura?");
-    expect(screen.textContent).toContain("Podras restaurarla desde Archivo.");
-
-    await click(getButton(screen, "Cancelar"));
-
-    expect(screen.textContent).not.toContain("Archivar esta captura?");
-
-    await click(getButton(screen, "Archivar"));
-    await click(getButton(screen, "Archivar"));
-
-    expect(onArchive).toHaveBeenCalledOnce();
-  });
-
-  it("opens archived captures in read mode with restore and without edit actions", async () => {
-    const onRestore = vi.fn(async (): Promise<Node> => ({
-      ...baseNode,
-      status: "ACTIVE",
-      version: 2,
-      updatedAt: "2026-01-02T00:00:00.000Z",
-    }));
+  it("treats legacy archived captures as regular read-mode captures", async () => {
     const screen = await renderNoteDetail({
       node: { ...baseNode, status: "ARCHIVED" },
-      onRestore,
     });
 
-    expect(screen.textContent).toContain("Captura archivada");
-    expect(getButton(screen, "Editar")).toBeUndefined();
+    expect(screen.textContent).not.toContain("Captura archivada");
+    expect(getButton(screen, "Editar")).toBeTruthy();
     expect(getButton(screen, "Archivar")).toBeUndefined();
-    expect(getButton(screen, "Restaurar")).toBeTruthy();
-
-    await click(getButton(screen, "Restaurar"));
-
-    expect(onRestore).toHaveBeenCalledOnce();
-    expect(screen.textContent).not.toContain("Captura restaurada.");
-    expect(screen.textContent).not.toContain("Ver en Base de Conocimiento");
+    expect(getButton(screen, "Restaurar")).toBeUndefined();
   });
 
   it("keeps a return action available for a missing note state", async () => {
@@ -792,13 +828,12 @@ async function renderNoteDetail({
   contextError = null,
   onSave = vi.fn(async () => node),
   onSaveContextRelations = vi.fn(async () => undefined),
-  onArchive = vi.fn(async () => undefined),
-  onRestore = vi.fn(async () => node),
   onBack = vi.fn(),
   onResolveCaptureSelection,
   onApplyCaptureSelection,
   feedbackService,
   canvasPreferencesStorage = new MemoryStorageAdapter(),
+  embedded = false,
 }: {
   node?: Node;
   relatedContexts?: Context[];
@@ -807,32 +842,30 @@ async function renderNoteDetail({
   contextError?: string | null;
   onSave?: (draft: { content: string }) => Promise<Node>;
   onSaveContextRelations?: (selectedContextIds: string[]) => Promise<void>;
-  onArchive?: () => Promise<void>;
-  onRestore?: () => Promise<Node>;
   onBack?: () => void;
   onResolveCaptureSelection?: Parameters<typeof NoteDetailView>[0]["onResolveCaptureSelection"];
   onApplyCaptureSelection?: Parameters<typeof NoteDetailView>[0]["onApplyCaptureSelection"];
   feedbackService?: VisualFeedbackService;
   canvasPreferencesStorage?: StorageAdapter;
+  embedded?: boolean;
 } = {}) {
   const { container, root } = createContainer();
 
   await act(async () => {
     const detail = createElement(NoteDetailView, {
-        node,
-        relatedContexts,
-        relatedRelations,
-        contextOptions,
-        contextError,
-        onSave,
-        onSaveContextRelations,
-        onArchive,
-        onRestore,
-        onBack,
-        onResolveCaptureSelection,
-        onApplyCaptureSelection,
-        canvasPreferencesStorage,
-      });
+      node,
+      relatedContexts,
+      relatedRelations,
+      contextOptions,
+      contextError,
+      onSave,
+      onSaveContextRelations,
+      onBack,
+      onResolveCaptureSelection,
+      onApplyCaptureSelection,
+      embedded,
+      canvasPreferencesStorage,
+    });
 
     root.render(
       feedbackService

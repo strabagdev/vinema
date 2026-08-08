@@ -9,7 +9,3 @@ export async function listActiveNodes(repository: NodeRepository): Promise<Node[
 export async function listInboxNodes(repository: NodeRepository): Promise<Node[]> {
   return repository.listInbox();
 }
-
-export async function listArchivedNodes(repository: NodeRepository): Promise<Node[]> {
-  return repository.listArchived();
-}

@@ -3,14 +3,12 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Archive } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { Context } from "@/domain/context/context";
 import type { Node } from "@/domain/node/node";
-import { archiveContext } from "@/features/context/archive-context";
 import {
   CONTEXT_TYPE_LABEL,
 } from "@/features/context/context-display";
@@ -21,7 +19,6 @@ import {
 } from "@/features/context/context-routes";
 import { getContextById } from "@/features/context/list-contexts";
 import { listNodesForContext } from "@/features/context/node-context-relations";
-import { restoreContext } from "@/features/context/restore-context";
 import { updateContext } from "@/features/context/update-context";
 import { useVinemaContext } from "@/features/node/hooks/use-vinema-context";
 import { getCapturePreview, getContentExcerpt } from "@/features/node/node-display";
@@ -182,20 +179,6 @@ function ContextDetailLoader({
         setContext(updatedContext);
         return updatedContext;
       }}
-      onArchive={async () => {
-        const archivedContext = await archiveContext(
-          localRepositories.contextRepository,
-          context.id,
-        );
-        setContext(archivedContext);
-      }}
-      onRestore={async () => {
-        const restoredContext = await restoreContext(
-          localRepositories.contextRepository,
-          context.id,
-        );
-        setContext(restoredContext);
-      }}
       returnTo={returnTo}
     />
   );
@@ -205,15 +188,11 @@ export function ContextDetailView({
   context,
   nodes,
   onSave,
-  onArchive,
-  onRestore,
   returnTo = null,
 }: {
   context: Context;
   nodes: Node[];
   onSave: (draft: Draft) => Promise<Context>;
-  onArchive: () => Promise<void>;
-  onRestore: () => Promise<void>;
   returnTo?: string | null;
 }) {
   const router = useRouter();
@@ -258,42 +237,6 @@ export function ContextDetailView({
     }
   }
 
-  async function handleArchive() {
-    setSaving(true);
-    setFormError(null);
-
-    try {
-      await onArchive();
-      setPersistedContext({ ...persistedContext, archivedAt: new Date().toISOString() });
-    } catch (caughtError) {
-      setFormError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : "No se pudo archivar el contexto.",
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleRestore() {
-    setSaving(true);
-    setFormError(null);
-
-    try {
-      await onRestore();
-      setPersistedContext({ ...persistedContext, archivedAt: null });
-    } catch (caughtError) {
-      setFormError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : "No se pudo restaurar el contexto.",
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
     <section className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -303,9 +246,6 @@ export function ContextDetailView({
             <h1 className="text-3xl font-semibold tracking-normal text-zinc-950">
               {mode === "edit" ? `Editar ${label.toLowerCase()}` : persistedContext.name}
             </h1>
-            <p className="mt-2 text-sm text-zinc-500">
-              {persistedContext.archivedAt ? "Archivado" : "Activo"}
-            </p>
           </div>
         </div>
         {mode === "read" ? (
@@ -313,21 +253,9 @@ export function ContextDetailView({
             <Button variant="ghost" onClick={() => router.push(returnTo ?? listPath)}>
               ← Volver
             </Button>
-            {!persistedContext.archivedAt ? (
-              <>
-                <Button variant="secondary" onClick={beginEdit}>
-                  Editar
-                </Button>
-                <Button variant="ghost" onClick={handleArchive} disabled={saving}>
-                  <Archive className="h-4 w-4" />
-                  Archivar
-                </Button>
-              </>
-            ) : (
-              <Button variant="secondary" onClick={handleRestore} disabled={saving}>
-                Restaurar
-              </Button>
-            )}
+            <Button variant="secondary" onClick={beginEdit}>
+              Editar
+            </Button>
           </div>
         ) : (
           <div className="flex flex-wrap gap-2">

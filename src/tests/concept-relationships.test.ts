@@ -188,6 +188,8 @@ describe("derived concept relationships", () => {
     });
 
     expect(relationships.map((relationship) => relationship.targetConceptId)).toEqual([
+      "removed",
+      "archived",
       "sync",
     ]);
   });
