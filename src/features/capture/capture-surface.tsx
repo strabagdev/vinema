@@ -170,6 +170,7 @@ export function CaptureSurface({
   const showConceptIndicator = hasContent && conceptSuggestions.length > 0;
   const showMemoryIndicator = hasContent && memorySuggestions.length > 0;
   const visiblePanel = pinnedPanel ?? previewPanel ?? closingPreviewPanel;
+  const visiblePanelIsContextual = isContextualCanvasPanel(visiblePanel);
   const previewClosing =
     pinnedPanel === null &&
     previewPanel === null &&
@@ -842,45 +843,6 @@ export function CaptureSurface({
     >
       <CanvasMainRegion>
         <CanvasIconRail>
-          {showMemoryIndicator ? (
-            <CanvasPanelIconButton
-              active={visiblePanel === "memories"}
-              pressed={pinnedPanel === "memories"}
-              icon="memories"
-              panelId="canvas-tool-panel"
-              indicatorPanel="memories"
-              label="Memoria"
-              onHover={() => activatePreviewPanel("memories")}
-              onHoverEnd={() => leavePreviewTrigger("memories")}
-              onClick={() => openPanel("memories")}
-            >
-              <Lightbulb
-                className="h-5 w-5"
-                aria-hidden="true"
-                data-canvas-rail-icon="lightbulb"
-              />
-            </CanvasPanelIconButton>
-          ) : null}
-          {showConceptIndicator ? (
-            <CanvasPanelIconButton
-              active={visiblePanel === "concepts"}
-              pressed={pinnedPanel === "concepts"}
-              icon="concepts"
-              panelId="canvas-tool-panel"
-              indicatorPanel="concepts"
-              label={`${conceptSuggestions.length} conceptos sugeridos`}
-              onHover={() => activatePreviewPanel("concepts")}
-              onHoverEnd={() => leavePreviewTrigger("concepts")}
-              onClick={() => openPanel("concepts")}
-            >
-              <Brain
-                className="h-5 w-5"
-                aria-hidden="true"
-                data-canvas-rail-icon="concepts"
-              />
-            </CanvasPanelIconButton>
-          ) : null}
-          <CanvasRailSeparator />
           <CanvasPanelIconButton
             active={visiblePanel === "preferences"}
             pressed={pinnedPanel === "preferences"}
@@ -915,23 +877,24 @@ export function CaptureSurface({
         </CanvasIconRail>
         <CanvasPanelColumn
           onMouseEnter={() => {
-            if (visiblePanel) {
+            if (visiblePanel && !visiblePanelIsContextual) {
               enterPreviewSurface(visiblePanel);
             }
           }}
           onMouseLeave={() => {
-            if (visiblePanel) {
+            if (visiblePanel && !visiblePanelIsContextual) {
               leavePreviewSurface(visiblePanel);
             }
           }}
           onFocus={() => {
-            if (visiblePanel) {
+            if (visiblePanel && !visiblePanelIsContextual) {
               enterPreviewSurface(visiblePanel);
             }
           }}
           onBlur={(event) => {
             if (
               visiblePanel &&
+              !visiblePanelIsContextual &&
               !(event.relatedTarget instanceof Element &&
                 event.currentTarget.contains(event.relatedTarget))
             ) {
@@ -939,7 +902,7 @@ export function CaptureSurface({
             }
           }}
         >
-          {visiblePanel ? (
+          {visiblePanel && !visiblePanelIsContextual ? (
             <CanvasSidePanel
               title={getActivePanelTitle(visiblePanel)}
               panel={visiblePanel}
@@ -947,53 +910,6 @@ export function CaptureSurface({
               closing={previewClosing}
               onClose={closePanels}
             >
-            {activePanelHasUpdates ? (
-              <button
-                type="button"
-                className="mb-3 inline-flex min-h-8 items-center rounded-md px-1 text-xs font-medium text-zinc-500 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
-                onClick={refreshActivePanel}
-                data-canvas-panel-refresh=""
-              >
-                Actualizar sugerencias
-              </button>
-            ) : null}
-            {visiblePanel === "concepts" && displayedPanelSnapshot ? (
-              <>
-                <ConceptPanelContent
-                  suggestions={displayedPanelSnapshot.conceptSuggestions}
-                  selectedContextIds={selectedContextIds}
-                  selectedEmergingCandidateIds={selectedEmergingConcepts.map(
-                    (concept) => concept.candidateId,
-                  )}
-                  highlightedConceptKeys={highlightedConceptKeys}
-                  onToggleExisting={toggleConcept}
-                  onToggleEmerging={toggleEmergingConcept}
-                />
-                <button
-                  type="button"
-                  className="mt-3 inline-flex h-8 items-center rounded-md px-1 text-xs font-medium text-zinc-500 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
-                  aria-label="Explorar conceptos"
-                  onClick={(event) =>
-                    openWorkspaceDialog({ kind: "concept-workspace" }, event)
-                  }
-                >
-                  Explorar conceptos
-                </button>
-              </>
-            ) : null}
-            {visiblePanel === "memories" && displayedPanelSnapshot ? (
-              <MemoryPanelContent
-                suggestions={displayedPanelSnapshot.memorySuggestions}
-                identities={displayedPanelSnapshot.memoryIdentities}
-                loading={displayedPanelSnapshot.memoryLoading}
-                error={displayedPanelSnapshot.memoryError}
-                onRetry={associationState.retry}
-                onOpenCapture={persistCurrentDraft}
-                onExploreMemory={(event) =>
-                  openWorkspaceDialog({ kind: "memory-index" }, event)
-                }
-              />
-            ) : null}
             {visiblePanel === "preferences" ? (
               <CanvasPreferencesContent
                 preferences={canvasPreferences.preferences}
@@ -1007,7 +923,42 @@ export function CaptureSurface({
             </CanvasSidePanel>
           ) : null}
         </CanvasPanelColumn>
-        <CanvasWritingSurface>
+        <CanvasWritingSurface
+          contextLayer={
+            <CanvasContextualLayer
+              visiblePanel={visiblePanel}
+              pinnedPanel={pinnedPanel}
+              previewClosing={previewClosing}
+              showMemoryIndicator={showMemoryIndicator}
+              showConceptIndicator={showConceptIndicator}
+              conceptCount={conceptSuggestions.length}
+              displayedPanelSnapshot={displayedPanelSnapshot}
+              selectedContextIds={selectedContextIds}
+              selectedEmergingCandidateIds={selectedEmergingConcepts.map(
+                (concept) => concept.candidateId,
+              )}
+              highlightedConceptKeys={highlightedConceptKeys}
+              activePanelHasUpdates={activePanelHasUpdates}
+              associationRetry={associationState.retry}
+              onRefreshActivePanel={refreshActivePanel}
+              onActivatePreviewPanel={activatePreviewPanel}
+              onLeavePreviewTrigger={leavePreviewTrigger}
+              onEnterPreviewSurface={enterPreviewSurface}
+              onLeavePreviewSurface={leavePreviewSurface}
+              onOpenPanel={openPanel}
+              onClosePanels={closePanels}
+              onToggleExisting={toggleConcept}
+              onToggleEmerging={toggleEmergingConcept}
+              onExploreConcepts={(event) =>
+                openWorkspaceDialog({ kind: "concept-workspace" }, event)
+              }
+              onOpenCapture={persistCurrentDraft}
+              onExploreMemory={(event) =>
+                openWorkspaceDialog({ kind: "memory-index" }, event)
+              }
+            />
+          }
+        >
           <VinemaCanvasEditor
             id="capture"
             ref={textareaRef}
@@ -1357,17 +1308,6 @@ function getPanelSignature(
   return "preferences";
 }
 
-function CanvasRailSeparator() {
-  return (
-    <div
-      className="my-1 h-px w-6 bg-zinc-200/70"
-      role="separator"
-      aria-hidden="true"
-      data-canvas-rail-separator=""
-    />
-  );
-}
-
 function CanvasPanelIconButton({
   active,
   pressed,
@@ -1410,6 +1350,249 @@ function CanvasPanelIconButton({
       data-context-indicator-panel={indicatorPanel}
       className={cn(
         "inline-flex h-11 w-11 min-w-11 items-center justify-center rounded-full outline-none transition-[background-color,color,transform] duration-[180ms] hover:scale-105 hover:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-zinc-400 active:scale-95 motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
+        getRailIconColorClassName({ icon, active }),
+      )}
+      onMouseEnter={onHover}
+      onMouseLeave={onHoverEnd}
+      onFocus={onHover}
+      onBlur={onHoverEnd}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+function CanvasContextualLayer({
+  visiblePanel,
+  pinnedPanel,
+  previewClosing,
+  showMemoryIndicator,
+  showConceptIndicator,
+  conceptCount,
+  displayedPanelSnapshot,
+  selectedContextIds,
+  selectedEmergingCandidateIds,
+  highlightedConceptKeys,
+  activePanelHasUpdates,
+  associationRetry,
+  onRefreshActivePanel,
+  onActivatePreviewPanel,
+  onLeavePreviewTrigger,
+  onEnterPreviewSurface,
+  onLeavePreviewSurface,
+  onOpenPanel,
+  onClosePanels,
+  onToggleExisting,
+  onToggleEmerging,
+  onExploreConcepts,
+  onOpenCapture,
+  onExploreMemory,
+}: {
+  visiblePanel: ActivePanel;
+  pinnedPanel: ActivePanel;
+  previewClosing: boolean;
+  showMemoryIndicator: boolean;
+  showConceptIndicator: boolean;
+  conceptCount: number;
+  displayedPanelSnapshot: PanelSnapshot | null;
+  selectedContextIds: string[];
+  selectedEmergingCandidateIds: string[];
+  highlightedConceptKeys: Set<string>;
+  activePanelHasUpdates: boolean;
+  associationRetry: () => void;
+  onRefreshActivePanel: () => void;
+  onActivatePreviewPanel: (panel: ToolPanel) => void;
+  onLeavePreviewTrigger: (panel: ToolPanel) => void;
+  onEnterPreviewSurface: (panel: ToolPanel) => void;
+  onLeavePreviewSurface: (panel: ToolPanel) => void;
+  onOpenPanel: (panel: ToolPanel) => void;
+  onClosePanels: () => void;
+  onToggleExisting: (contextId: string) => void;
+  onToggleEmerging: (candidateId: string) => void;
+  onExploreConcepts: (event: MouseEvent<HTMLElement>) => void;
+  onOpenCapture: () => Promise<void>;
+  onExploreMemory: (event: MouseEvent<HTMLElement>) => void;
+}) {
+  const contextPanelVisible = isContextualCanvasPanel(visiblePanel);
+  const hasContextButtons = showMemoryIndicator || showConceptIndicator;
+
+  if (!hasContextButtons && !contextPanelVisible) {
+    return null;
+  }
+
+  return (
+    <div
+      className="pointer-events-none absolute inset-x-[var(--vinema-canvas-padding-x)] top-[var(--vinema-canvas-padding-y)] z-20 flex min-w-0 flex-col items-center"
+      data-canvas-context-layer=""
+      onMouseEnter={() => {
+        if (contextPanelVisible) {
+          onEnterPreviewSurface(visiblePanel);
+        }
+      }}
+      onMouseLeave={() => {
+        if (contextPanelVisible) {
+          onLeavePreviewSurface(visiblePanel);
+        }
+      }}
+      onFocus={() => {
+        if (contextPanelVisible) {
+          onEnterPreviewSurface(visiblePanel);
+        }
+      }}
+      onBlur={(event) => {
+        if (
+          contextPanelVisible &&
+          !(event.relatedTarget instanceof Element &&
+            event.currentTarget.contains(event.relatedTarget))
+        ) {
+          onLeavePreviewSurface(visiblePanel);
+        }
+      }}
+    >
+      {hasContextButtons ? (
+        <div
+          className="pointer-events-auto flex max-w-full items-center justify-center gap-2"
+          data-canvas-context-bar=""
+        >
+          {showMemoryIndicator ? (
+            <CanvasContextualButton
+              active={visiblePanel === "memories"}
+              pressed={pinnedPanel === "memories"}
+              icon="memories"
+              panelId="canvas-tool-panel"
+              indicatorPanel="memories"
+              label="Memoria"
+              onHover={() => onActivatePreviewPanel("memories")}
+              onHoverEnd={() => onLeavePreviewTrigger("memories")}
+              onClick={() => onOpenPanel("memories")}
+            >
+              <Lightbulb
+                className="h-4 w-4"
+                aria-hidden="true"
+                data-canvas-rail-icon="lightbulb"
+              />
+              <span>Memoria</span>
+            </CanvasContextualButton>
+          ) : null}
+          {showConceptIndicator ? (
+            <CanvasContextualButton
+              active={visiblePanel === "concepts"}
+              pressed={pinnedPanel === "concepts"}
+              icon="concepts"
+              panelId="canvas-tool-panel"
+              indicatorPanel="concepts"
+              label={`${conceptCount} conceptos sugeridos`}
+              onHover={() => onActivatePreviewPanel("concepts")}
+              onHoverEnd={() => onLeavePreviewTrigger("concepts")}
+              onClick={() => onOpenPanel("concepts")}
+            >
+              <Brain
+                className="h-4 w-4"
+                aria-hidden="true"
+                data-canvas-rail-icon="concepts"
+              />
+              <span>Conceptos</span>
+            </CanvasContextualButton>
+          ) : null}
+        </div>
+      ) : null}
+      {contextPanelVisible ? (
+        <div
+          className="pointer-events-auto mt-2 flex max-w-full justify-center"
+          data-canvas-context-panel-anchor=""
+        >
+          <CanvasSidePanel
+            title={getActivePanelTitle(visiblePanel)}
+            panel={visiblePanel}
+            pinned={pinnedPanel === visiblePanel}
+            closing={previewClosing}
+            onClose={onClosePanels}
+          >
+            {activePanelHasUpdates ? (
+              <button
+                type="button"
+                className="mb-3 inline-flex min-h-8 items-center rounded-md px-1 text-xs font-medium text-zinc-500 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
+                onClick={onRefreshActivePanel}
+                data-canvas-panel-refresh=""
+              >
+                Actualizar sugerencias
+              </button>
+            ) : null}
+            {visiblePanel === "concepts" && displayedPanelSnapshot ? (
+              <>
+                <ConceptPanelContent
+                  suggestions={displayedPanelSnapshot.conceptSuggestions}
+                  selectedContextIds={selectedContextIds}
+                  selectedEmergingCandidateIds={selectedEmergingCandidateIds}
+                  highlightedConceptKeys={highlightedConceptKeys}
+                  onToggleExisting={onToggleExisting}
+                  onToggleEmerging={onToggleEmerging}
+                />
+                <button
+                  type="button"
+                  className="mt-3 inline-flex h-8 items-center rounded-md px-1 text-xs font-medium text-zinc-500 outline-none hover:text-zinc-950 focus-visible:ring-2 focus-visible:ring-zinc-400"
+                  aria-label="Explorar conceptos"
+                  onClick={onExploreConcepts}
+                >
+                  Explorar conceptos
+                </button>
+              </>
+            ) : null}
+            {visiblePanel === "memories" && displayedPanelSnapshot ? (
+              <MemoryPanelContent
+                suggestions={displayedPanelSnapshot.memorySuggestions}
+                identities={displayedPanelSnapshot.memoryIdentities}
+                loading={displayedPanelSnapshot.memoryLoading}
+                error={displayedPanelSnapshot.memoryError}
+                onRetry={associationRetry}
+                onOpenCapture={onOpenCapture}
+                onExploreMemory={onExploreMemory}
+              />
+            ) : null}
+          </CanvasSidePanel>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CanvasContextualButton({
+  active,
+  pressed,
+  icon,
+  panelId,
+  indicatorPanel,
+  label,
+  onHover,
+  onHoverEnd,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  pressed: boolean;
+  icon: "concepts" | "memories";
+  panelId: string;
+  indicatorPanel: "concepts" | "memories";
+  label: string;
+  onHover: () => void;
+  onHoverEnd: () => void;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={pressed}
+      aria-expanded={active}
+      aria-controls={panelId}
+      title={label}
+      data-canvas-panel-trigger=""
+      data-context-indicator=""
+      data-context-indicator-panel={indicatorPanel}
+      className={cn(
+        "inline-flex h-8 max-w-full items-center gap-1.5 rounded-full px-2.5 text-xs font-medium outline-none transition-[background-color,color,transform] duration-[160ms] hover:scale-[1.03] focus-visible:ring-2 focus-visible:ring-zinc-400 active:scale-95 motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
         getRailIconColorClassName({ icon, active }),
       )}
       onMouseEnter={onHover}
@@ -1543,6 +1726,10 @@ function isPanelAvailable({
   }
 
   return true;
+}
+
+function isContextualCanvasPanel(panel: ActivePanel): panel is "concepts" | "memories" {
+  return panel === "concepts" || panel === "memories";
 }
 
 function canUseDesktopPopover() {

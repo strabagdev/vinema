@@ -173,7 +173,13 @@ export const VinemaCanvasEditor = forwardRef<
 });
 VinemaCanvasEditor.displayName = "VinemaCanvasEditor";
 
-export function CanvasWritingSurface({ children }: { children: ReactNode }) {
+export function CanvasWritingSurface({
+  children,
+  contextLayer = null,
+}: {
+  children: ReactNode;
+  contextLayer?: ReactNode;
+}) {
   return (
     <div
       className="relative col-[2] row-[1] h-full min-h-0 w-full max-w-[var(--vinema-canvas-max-width)] px-[var(--vinema-canvas-padding-x)] py-[var(--vinema-canvas-padding-y)]"
@@ -183,6 +189,7 @@ export function CanvasWritingSurface({ children }: { children: ReactNode }) {
       data-mobile-capture-composer=""
       data-canvas-writing-surface=""
     >
+      {contextLayer}
       <div
         className="vinema-scrollbar h-full min-h-0 overflow-y-auto"
         data-canvas-scroll-viewport=""

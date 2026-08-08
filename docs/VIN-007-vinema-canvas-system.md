@@ -10,6 +10,26 @@ VIN-007 transforma la superficie principal de captura en un sistema de escritura
 - `VinemaCanvasEditor`: editor de texto con scroll interno, seleccion Vinema y caret propio.
 - `CanvasSubmitButton`: accion primaria visible solo con contenido valido, sin desmontarse.
 - `CanvasPreferencesPanel`: ajustes locales de tamano de texto y apariencia.
+- `CanvasWritingSurface`: region estable del canvas que contiene el editor, el viewport con scroll interno y una capa contextual no scrollable.
+- `CanvasSidePanel`: panel unico reutilizado por herramientas permanentes y resultados contextuales.
+
+## Navegacion De Superficie
+
+El rail izquierdo contiene solo herramientas permanentes:
+
+- Canvas;
+- Administrar;
+- Estado.
+
+Las sugerencias de Memoria y Conceptos no modifican el rail. Cuando existen resultados reales para la captura actual, aparecen en una barra contextual propia del canvas, sobre la superficie de escritura y fuera del area editable.
+
+La barra contextual:
+
+- no se renderiza cuando no hay resultados;
+- puede mostrar Memoria, Conceptos o ambas;
+- no vive dentro de `data-canvas-scroll-viewport`;
+- no cambia la posicion del editor, el punto inicial de escritura ni el seguimiento del caret;
+- reutiliza el mismo `CanvasSidePanel` y el mismo modelo de `pinnedPanel` / `previewPanel`.
 
 ## Preferencias
 

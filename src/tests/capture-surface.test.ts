@@ -862,12 +862,19 @@ describe("CaptureSurface", () => {
     expect(screen.container.textContent).not.toContain("Proveedor Mitcom");
   });
 
-  it("only shows contextual rail icons when real suggestions exist", async () => {
+  it("keeps the rail permanent and shows contextual canvas buttons only with results", async () => {
     const screen = await renderCaptureSurface();
     const emptyRail = screen.container.querySelector("[data-canvas-icon-rail]");
+    const writingSurface = screen.container.querySelector("[data-canvas-writing-surface]");
+    const scrollViewport = screen.container.querySelector("[data-canvas-scroll-viewport]");
+    const writingTrack = screen.container.querySelector("[data-canvas-writing-track]");
+    const initialWritingSurfaceClassName = writingSurface?.className;
+    const initialScrollViewportClassName = scrollViewport?.className;
+    const initialWritingTrackClassName = writingTrack?.className;
 
     expect(emptyRail?.querySelectorAll("[data-canvas-panel-trigger]")).toHaveLength(3);
     expect(emptyRail?.querySelectorAll("[data-context-indicator]")).toHaveLength(0);
+    expect(screen.container.querySelector("[data-canvas-context-bar]")).toBeNull();
     expect(getLinkByLabel(screen.container, "Memoria")).toBeUndefined();
     expect(screen.container.querySelector("[data-canvas-memory-nav]")).toBeNull();
     expect(getContextIndicator(screen.container, "Memoria")).toBeUndefined();
@@ -878,22 +885,31 @@ describe("CaptureSurface", () => {
       screen.container.querySelectorAll("[data-knowledge-management-trigger]"),
     ).toHaveLength(1);
     expect(getButtonByLabel(screen.container, "Estado")).toBeDefined();
-    expect(emptyRail?.querySelector("[data-canvas-rail-separator]")).toBeDefined();
 
     await changeTextarea(screen.container, "Revisar Railway");
     await advanceTime(500);
 
     const rail = screen.container.querySelector("[data-canvas-icon-rail]");
+    const contextBar = screen.container.querySelector("[data-canvas-context-bar]");
 
     expect(getContextIndicator(screen.container, "conceptos sugeridos")).toBeDefined();
     expect(getContextIndicator(screen.container, "Memoria")).toBeUndefined();
-    expect(rail?.querySelectorAll("[data-canvas-panel-trigger]")).toHaveLength(4);
-    expect(rail?.querySelectorAll("[data-context-indicator]")).toHaveLength(1);
+    expect(contextBar).toBeDefined();
+    expect(contextBar?.contains(getContextIndicator(screen.container, "conceptos sugeridos")!)).toBe(
+      true,
+    );
+    expect(writingSurface?.contains(contextBar)).toBe(true);
+    expect(scrollViewport?.contains(contextBar)).toBe(false);
+    expect(writingSurface?.className).toBe(initialWritingSurfaceClassName);
+    expect(scrollViewport?.className).toBe(initialScrollViewportClassName);
+    expect(writingTrack?.className).toBe(initialWritingTrackClassName);
+    expect(rail?.querySelectorAll("[data-canvas-panel-trigger]")).toHaveLength(3);
+    expect(rail?.querySelectorAll("[data-context-indicator]")).toHaveLength(0);
     expect(getContextIndicator(screen.container, "Memoria")).toBeUndefined();
     expect(getButtonByLabel(screen.container, "Canvas")).toBeDefined();
   });
 
-  it("shows cognitive indicators as rail icons without visible counters", async () => {
+  it("shows cognitive indicators in the canvas context bar without visible counters", async () => {
     const nodeRepository = new InMemoryNodeRepository([
       createStoredNode({
         id: "mitcom",
@@ -919,18 +935,22 @@ describe("CaptureSurface", () => {
       memoryIndicator?.querySelector("[data-canvas-rail-icon='lightbulb']"),
     ).toBeDefined();
     expect(screen.container.querySelector("[data-canvas-memory-nav]")).toBeNull();
-    expect(conceptIndicator?.className).toContain("h-11");
-    expect(conceptIndicator?.className).toContain("w-11");
-    expect(memoryIndicator?.className).toContain("h-11");
-    expect(memoryIndicator?.className).toContain("w-11");
+    expect(screen.container.querySelector("[data-canvas-context-bar]")?.contains(conceptIndicator!)).toBe(
+      true,
+    );
+    expect(screen.container.querySelector("[data-canvas-context-bar]")?.contains(memoryIndicator!)).toBe(
+      true,
+    );
+    expect(conceptIndicator?.className).toContain("h-8");
+    expect(memoryIndicator?.className).toContain("h-8");
     expect(conceptIndicator?.querySelector("svg")?.className.baseVal).toContain(
-      "h-5",
+      "h-4",
     );
     expect(conceptIndicator?.querySelector("svg")?.className.baseVal).toContain(
-      "w-5",
+      "w-4",
     );
-    expect(conceptIndicator?.textContent?.trim()).toBe("");
-    expect(memoryIndicator?.textContent?.trim()).toBe("");
+    expect(conceptIndicator?.textContent?.trim()).toBe("Conceptos");
+    expect(memoryIndicator?.textContent?.trim()).toBe("Memoria");
   });
 
   it("opens the memory status panel from the rail without duplicating the header trigger", async () => {
@@ -1260,7 +1280,7 @@ describe("CaptureSurface", () => {
     expect(trackingRow?.textContent).toContain("Patrón recurrente en tu memoria");
   });
 
-  it("marks the active rail icon while its panel is open and returns after close", async () => {
+  it("marks the active contextual action while its panel is open and returns after close", async () => {
     const screen = await renderCaptureSurface();
 
     await changeTextarea(screen.container, "Revisar Railway");
@@ -1278,7 +1298,7 @@ describe("CaptureSurface", () => {
     expect(indicator?.getAttribute("aria-pressed")).toBe("false");
   });
 
-  it("keeps contextual icons in the rail and capture action in the right dock", async () => {
+  it("keeps contextual actions above the canvas and capture action in the right dock", async () => {
     const nodeRepository = new InMemoryNodeRepository([
       createStoredNode({
         id: "mitcom",
@@ -1303,7 +1323,10 @@ describe("CaptureSurface", () => {
     expect(button?.className).toContain("rounded-full");
     expect(button?.querySelector("svg")).toBeDefined();
     expect(button?.querySelector(".sr-only")?.textContent).toBe("Capturar");
-    expect(rail?.querySelectorAll("[data-context-indicator]")).toHaveLength(2);
+    expect(rail?.querySelectorAll("[data-context-indicator]")).toHaveLength(0);
+    expect(screen.container.querySelector("[data-canvas-context-bar]")?.querySelectorAll(
+      "[data-context-indicator]",
+    )).toHaveLength(2);
     expect(dock?.contains(button)).toBe(true);
   });
 
@@ -1536,7 +1559,11 @@ describe("CaptureSurface", () => {
     expect(
       Array.from(
         screen.container.querySelectorAll("button[aria-pressed][type='button']"),
-      ).filter((button) => button.textContent?.trim()),
+      ).filter(
+        (button) =>
+          button.closest("[data-canvas-side-panel]") &&
+          button.textContent?.trim(),
+      ),
     )
       .toHaveLength(1);
 
@@ -1880,7 +1907,7 @@ describe("CaptureSurface", () => {
     expect(getDialog(screen.container, "Me recuerda a…")).toBeDefined();
   });
 
-  it("opens memory panels inside the permanent panel column without moving the canvas", async () => {
+  it("opens memory panels from the canvas context bar without moving the canvas", async () => {
     setViewportSize({ width: 1366, height: 768 });
     const nodeRepository = new InMemoryNodeRepository([
       createStoredNode({
@@ -1903,11 +1930,14 @@ describe("CaptureSurface", () => {
 
     const panel = getDialog(screen.container, "Me recuerda a…") as HTMLElement;
     const panelColumn = screen.container.querySelector("[data-canvas-panel-column]");
-
-    expect(panelColumn?.contains(panel)).toBe(true);
-    expect(panelColumn?.firstElementChild?.className).toContain(
-      "pl-[var(--vinema-canvas-panel-gutter)]",
+    const contextLayer = screen.container.querySelector("[data-canvas-context-layer]");
+    const contextPanelAnchor = screen.container.querySelector(
+      "[data-canvas-context-panel-anchor]",
     );
+
+    expect(panelColumn?.contains(panel)).toBe(false);
+    expect(contextLayer?.contains(panel)).toBe(true);
+    expect(contextPanelAnchor?.contains(panel)).toBe(true);
     expect(panel.className).toContain("min-w-[var(--vinema-canvas-panel-min-width)]");
     expect(panel.className).toContain("w-[var(--vinema-canvas-panel-preferred-width)]");
     expect(panel.className).toContain("max-h-[var(--vinema-canvas-panel-max-height)]");
@@ -1989,7 +2019,7 @@ describe("CaptureSurface", () => {
     );
   });
 
-  it("keeps the icon rail grouped and marks the active icon", async () => {
+  it("keeps the permanent rail grouped while contextual actions mark the active panel", async () => {
     setViewportSize({ width: 1366, height: 768 });
     const nodeRepository = new InMemoryNodeRepository([
       createStoredNode({
@@ -2021,9 +2051,13 @@ describe("CaptureSurface", () => {
     expect(screen.container.querySelector("[data-canvas-panel-column]")?.className).toContain(
       "z-30",
     );
+    const contextBar = screen.container.querySelector("[data-canvas-context-bar]");
+
     expect(getLinkByLabel(screen.container, "Memoria")).toBeUndefined();
     expect(getButtonByLabel(screen.container, "Administrar")).toBeDefined();
-    expect(rail?.querySelectorAll("[data-canvas-panel-trigger]")).toHaveLength(5);
+    expect(rail?.querySelectorAll("[data-canvas-panel-trigger]")).toHaveLength(3);
+    expect(rail?.querySelectorAll("[data-context-indicator]")).toHaveLength(0);
+    expect(contextBar?.querySelectorAll("[data-context-indicator]")).toHaveLength(2);
     expect(conceptPanel.className).toContain("w-[var(--vinema-canvas-panel-preferred-width)]");
     expect(conceptIndicator.getAttribute("aria-pressed")).toBe("true");
 
@@ -2039,7 +2073,7 @@ describe("CaptureSurface", () => {
     expect(screen.container.querySelectorAll("[data-canvas-side-panel]")).toHaveLength(1);
   });
 
-  it("previews rail panels on hover while click keeps a panel pinned", async () => {
+  it("previews contextual canvas panels on hover while click keeps a panel pinned", async () => {
     const consoleErrorSpy = vi
       .spyOn(console, "error")
       .mockImplementation(() => undefined);
@@ -2156,10 +2190,10 @@ describe("CaptureSurface", () => {
     expect(panel.className).toContain("pointer-events-auto");
 
     await unhoverElement(conceptIcon);
-    const corridor = screen.container.querySelector(
-      "[data-canvas-panel-hover-corridor]",
+    const contextLayer = screen.container.querySelector(
+      "[data-canvas-context-layer]",
     ) as HTMLElement;
-    await hoverElement(corridor);
+    await hoverElement(contextLayer);
     await advanceTime(100);
     expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
     await advanceTime(140);
@@ -2171,7 +2205,7 @@ describe("CaptureSurface", () => {
       "true",
     );
 
-    await unhoverElement(corridor);
+    await unhoverElement(contextLayer);
     await advanceTime(240);
     expect(screen.container.querySelector("[data-canvas-side-panel]")?.getAttribute(
       "data-panel-state",

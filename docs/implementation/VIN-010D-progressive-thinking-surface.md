@@ -26,7 +26,17 @@ El header se estructura en tres zonas conceptuales:
 
 La zona izquierda puede estar vacia. La existencia o ausencia de elementos en los extremos nunca modifica la posicion del wordmark.
 
-El canvas principal, el grupo de indicadores y los paneles contextuales se alinean respecto de este mismo eje central. Toda futura funcionalidad debe respetar ese eje visual: no se debe recentrar respecto del espacio disponible, sino respecto del viewport.
+El canvas principal conserva su eje de escritura y no cambia de posicion por la presencia de resultados contextuales. Toda futura funcionalidad debe respetar ese eje visual: las ayudas pueden aparecer alrededor del canvas, pero no deben recentrar ni desplazar la superficie de escritura.
+
+El rail izquierdo queda reservado para herramientas permanentes de la aplicacion. Las sugerencias contextuales no pertenecen al rail.
+
+Rail permanente:
+
+- Canvas;
+- Administrar;
+- Estado.
+
+Memoria y Conceptos viven en una barra contextual estructuralmente asociada al canvas. Esa barra aparece solo cuando existen resultados reales para la captura actual.
 
 ## Estados implementados
 
@@ -40,10 +50,10 @@ Muestra texto, cursor, estado de borrador y accion de captura si corresponde. No
 
 ### Escribiendo con resultados
 
-Muestra indicadores:
+Muestra una barra contextual sobre la superficie de escritura, fuera del area editable y fuera del viewport con scroll interno. La barra puede contener:
 
-- conceptos sugeridos;
-- ideas relacionadas.
+- Memoria, cuando hay recuerdos sugeridos reales;
+- Conceptos, cuando hay conceptos sugeridos reales.
 
 No muestra listas completas por defecto.
 
@@ -65,41 +75,43 @@ El editor se limpia, el foco vuelve al editor, desaparecen indicadores/paneles y
 
 El header muestra `Modo local` solo cuando `navigator.onLine` indica desconexion.
 
-## Indicadores
+## Barra Contextual Del Canvas
 
-Los indicadores son botones discretos con icono y cantidad:
+Las acciones contextuales son botones discretos con icono y nombre:
 
-- `Brain`: conceptos;
-- `Lightbulb`: ideas o recuerdos relacionados.
+- `Lightbulb`: Memoria;
+- `Brain`: Conceptos.
 
-Cada indicador incluye `aria-label` con el conteo:
+Cada accion conserva `aria-label` con el contexto o conteo cuando corresponde:
 
 - `N conceptos sugeridos`;
-- `N ideas relacionadas`.
+- `Memoria`.
 
 La interfaz no comunica la ausencia de una sugerencia. Solo aparece cuando existe algo util que mostrar.
 
 Por eso:
 
-- `Brain` solo existe cuando hay al menos un concepto;
-- `Lightbulb` solo existe cuando hay al menos una idea o recuerdo relacionado;
+- `Conceptos` solo existe cuando hay al menos un concepto sugerido;
+- `Memoria` solo existe cuando hay al menos una idea o recuerdo relacionado;
 - no se renderizan iconos inactivos, placeholders ni contadores en cero;
 - si no hay indicadores, no se reserva espacio visual;
 - si el indicador activo desaparece, el panel se cierra.
 
-Cuando el panel correspondiente esta abierto, el contador visual se oculta para reducir redundancia, pero la informacion accesible permanece.
+La barra contextual pertenece a `CanvasWritingSurface`, se ubica sobre el canvas y no esta dentro de `data-canvas-scroll-viewport`. Su aparicion no modifica la grilla del editor, el punto inicial de escritura, el seguimiento del caret ni el scroll interno del texto.
 
 ## Paneles contextuales
 
-Desde VIN-010D.2, los indicadores forman un unico grupo centrado. En escritorio y tablet con `(hover: hover) and (pointer: fine)`, el panel flota directamente arriba de ese grupo:
+Desde VIN-010D.3, Memoria y Conceptos comparten el mismo sistema de panel visible efectivo usado por el rail:
 
-- `bottom: calc(100% + 10px)`;
-- `left: 50%`;
-- `transform: translateX(-50%)`.
+- `pinnedPanel`;
+- `previewPanel`;
+- `visiblePanel = pinnedPanel ?? previewPanel`.
 
-El panel queda centrado respecto del grupo de indicadores, no respecto de un indicador individual ni de un borde lateral. No usa `getBoundingClientRect()` para el posicionamiento normal de escritorio, no persigue el cursor y no ejecuta fallbacks laterales.
+Solo existe una instancia visible de `CanvasSidePanel`. Si el panel visible es contextual, se renderiza desde la capa contextual del canvas; si es una herramienta permanente, se renderiza desde la columna reservada del rail.
 
-En dispositivos tactiles o bajo el breakpoint movil, conserva el comportamiento de bottom sheet parcial.
+El panel contextual aparece bajo su barra de acciones, dentro del viewport disponible y sin cubrir el texto activo innecesariamente. No usa `getBoundingClientRect()` para perseguir el cursor y no modifica la posicion del canvas.
+
+En dispositivos tactiles, tocar una accion contextual fija el panel. La composicion sigue siendo compacta y no introduce overlays completos salvo que el espacio disponible lo exija en una futura iteracion.
 
 ## Panel de conceptos
 
@@ -134,10 +146,11 @@ No se fabrica titulo ni se duplica la primera linea.
 Se adopto una politica basada en intencion:
 
 - no hay apertura automatica por pausa;
-- hover abre el panel en escritorio;
-- foco de teclado abre el panel;
-- click abre el panel sin fijarlo permanentemente en escritorio;
-- tap abre bottom sheet en superficies tactiles;
+- hover abre preview en escritorio;
+- foco de teclado abre preview;
+- click fija el panel;
+- segundo click, X o Escape cierran el panel fijado;
+- tap abre y fija el panel en superficies tactiles;
 - escribir cierra el panel;
 - abrir un panel cierra el otro.
 
@@ -153,7 +166,7 @@ Regla aplicada:
 
 > En Vinema los elementos no estan contenidos por cajas. Estan contenidos por espacio.
 
-En escritorio no se renderiza boton X ni se reserva espacio para el. En mobile se conserva el cierre iconografico porque el bottom sheet no tiene hover ni salida de cursor.
+En escritorio no se renderiza boton X ni se reserva espacio para el en previews efimeros. En superficies tactiles, el click/tap fija el panel y mantiene el cierre iconografico porque no hay salida por cursor.
 
 ## Header
 
@@ -174,13 +187,13 @@ Se mantiene:
 
 ## Responsive
 
-En escritorio con `(hover: hover) and (pointer: fine)`, el panel se ubica sobre el grupo centrado de indicadores sin mover el layout y se comporta como popover efimero.
+En escritorio con `(hover: hover) and (pointer: fine)`, el panel se ubica bajo la barra contextual del canvas sin mover el layout y se comporta como preview efimero mientras no este fijado.
 
-En tablet tactil y movil, el mismo panel usa posicion fija inferior, con altura maxima y scroll interno. Esto funciona como bottom sheet parcial sin introducir una nueva dependencia ni reusar el sheet global de navegacion.
+En tablet tactil y movil, la barra contextual se mantiene compacta sobre el canvas y el panel se fija por tap. No se usa overlay completo como comportamiento base.
 
 La decision no depende solo del ancho: una pantalla amplia sin puntero fino usa comportamiento tactil.
 
-La composicion normal evita scroll vertical inicial. Si el texto crece demasiado, el contenido puede desplazarse naturalmente.
+La composicion normal evita scroll vertical global. Si el texto crece demasiado, solo se desplaza el viewport interno del canvas.
 
 ## Accesibilidad
 
