@@ -191,10 +191,12 @@ renderiza un segundo `Volver` y no envuelve el contenido en una tarjeta exterior
 si el modal ya provee la superficie. Mantiene contenido, conceptos relacionados,
 metadatos utiles y acciones como `Editar` cuando corresponden.
 
-La superficie embedded de captura conserva una composicion compacta y estable
-dentro del modal. No fuerza una reticula lateral ni una ampliacion especial de
-ancho: mantiene lectura, acciones y conceptos en la misma columna de detalle,
-sin chrome duplicado ni tarjeta exterior.
+El detalle de Captura usa una composicion editorial centrada: titulo y metadata
+arriba, contenido como bloque principal y conceptos debajo. Lectura y edicion
+comparten la misma geometria. En modo embedded usa una superficie centrada de
+ancho editorial amplio, con limite aproximado de `60rem`; no fuerza una reticula
+lateral ni sidebar. Mantiene lectura, acciones y conceptos en la misma columna de
+detalle, sin chrome duplicado ni tarjeta exterior.
 
 La validacion existente impide consolidar una captura vacia. No se convierte una
 captura vacia en eliminacion.

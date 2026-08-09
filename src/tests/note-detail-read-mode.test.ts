@@ -118,8 +118,9 @@ describe("NoteDetailView read mode", () => {
     const actions = screen.querySelector("[data-note-detail-actions]");
 
     expect(surface).toBeTruthy();
-    expect(surface?.className).toContain("max-w-5xl");
+    expect(surface?.className).toContain("max-w-[60rem]");
     expect(surface?.className).not.toContain("max-w-3xl");
+    expect(surface?.className).not.toContain("max-w-5xl");
     expect(surface?.className).toContain("sm:px-6");
     expect(surface?.className).toContain("lg:px-8");
     expect(surface?.className).toContain("overflow-y-auto");
@@ -130,6 +131,7 @@ describe("NoteDetailView read mode", () => {
     expect(readingColumn?.className).not.toContain("max-w-[62rem]");
     expect(secondaryColumn).toBeNull();
     expect(actions?.className).not.toContain("absolute");
+    expect(actions?.className).not.toContain("w-full");
     expect(screen.textContent).toContain("Contenido guardado");
     expect(screen.textContent).toContain("Creada");
     expect(screen.textContent).not.toContain("Editar captura");
@@ -150,11 +152,21 @@ describe("NoteDetailView read mode", () => {
     const readLayout = screen.querySelector("[data-note-detail-embedded-layout]");
     const readActions = screen.querySelector("[data-note-detail-actions]");
     const readingColumn = screen.querySelector("[data-note-detail-reading-column]");
+    const title = screen.querySelector("[data-note-detail-embedded-title] p");
+    const meta = screen.querySelector("[data-note-detail-embedded-meta]");
+    const body = screen.querySelector("[data-note-detail-embedded-body]");
+    const concepts = screen.querySelector("[data-note-detail-embedded-concepts]");
+    const readSurfaceClass = screen.querySelector("[data-note-detail-embedded]")?.className;
 
     expect(readLayout?.className).toContain("flex flex-col gap-4");
     expect(readLayout?.className).toContain("sm:flex-row");
     expect(readLayout?.className).not.toContain("grid-cols");
     expect(readLayout?.className).not.toContain("absolute");
+    expect(meta?.className).toContain("flex-1");
+    expect(title?.className).toContain("text-xl");
+    expect(title?.className).toContain("sm:text-2xl");
+    expect(title?.className).toContain("font-semibold");
+    expect(title?.className).toContain("text-zinc-950");
     expect(readingColumn?.className).toContain("min-w-0");
     expect(readingColumn?.className).not.toContain("max-w-[62rem]");
     expect(readActions?.textContent).toContain("Editar");
@@ -162,21 +174,29 @@ describe("NoteDetailView read mode", () => {
     expect(readActions?.textContent).not.toContain("Restaurar");
     expect(screen.textContent).toContain("Conceptos");
     expect(screen.textContent).toContain("Trabajo");
+    expect(concepts?.className).toContain("flex flex-col");
+    expect(body).toBeTruthy();
+    expect(concepts).toBeTruthy();
+    expect(
+      body!.compareDocumentPosition(concepts!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
 
     await click(getButton(screen, "Editar"));
 
     const editLayout = screen.querySelector("[data-note-detail-embedded-layout]");
     const editActions = screen.querySelector("[data-note-detail-actions]");
     const editorColumn = screen.querySelector("[data-note-detail-editor-column]");
+    const editSurfaceClass = screen.querySelector("[data-note-detail-embedded]")?.className;
 
     expect(editLayout?.className).toBe(readLayout?.className);
+    expect(editSurfaceClass).toBe(readSurfaceClass);
     expect(editorColumn?.className).toContain("min-w-0");
     expect(editorColumn?.className).not.toContain("max-w-[62rem]");
     expect(editActions?.textContent).toContain("Cancelar");
     expect(editActions?.textContent).toContain("Listo");
     expect(screen.textContent).toContain("Conceptos");
     expect(screen.querySelector("[data-note-detail-embedded]")?.className).toContain(
-      "max-w-5xl",
+      "max-w-[60rem]",
     );
   });
 

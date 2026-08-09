@@ -48,6 +48,7 @@ import {
   storageAdapter,
 } from "@/infrastructure/repositories";
 import type { StorageAdapter } from "@/infrastructure/storage/storage-adapter";
+import { cn } from "@/lib/cn";
 import { formatShortDate } from "@/components/app-shell/note-list-item";
 
 const AUTOSAVE_DEBOUNCE_MS = 700;
@@ -853,7 +854,7 @@ export function NoteDetailView({
       ref={embedded ? embeddedScrollRef : undefined}
       className={
         embedded
-          ? "vinema-scrollbar mx-auto flex h-full min-h-0 w-full max-w-5xl flex-1 flex-col gap-5 overflow-y-auto px-4 py-4 sm:px-6 lg:px-8"
+          ? "vinema-scrollbar mx-auto flex h-full min-h-0 w-full max-w-[60rem] flex-1 flex-col gap-6 overflow-y-auto px-4 py-5 sm:px-6 sm:py-7 lg:px-8"
           : "mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8"
       }
       onKeyDown={handleKeyDown}
@@ -874,15 +875,23 @@ export function NoteDetailView({
             className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
             data-note-detail-embedded-layout=""
           >
-            <div className="space-y-2" data-note-detail-embedded-meta="">
-              {mode === "read" ? (
+            <div className="min-w-0 flex-1 space-y-1" data-note-detail-embedded-meta="">
+              <div data-note-detail-embedded-title="">
                 <CaptureEmergentIdentityLabel
                   identity={emergentIdentity}
-                  getConceptHref={onOpenConcept ? undefined : getConceptExplorationPath}
-                  onConceptClick={onOpenConcept}
+                  className="text-xl font-semibold leading-snug text-zinc-950 sm:text-2xl"
+                  getConceptHref={
+                    mode === "read" && !onOpenConcept
+                      ? getConceptExplorationPath
+                      : undefined
+                  }
+                  onConceptClick={mode === "read" ? onOpenConcept : undefined}
                 />
-              ) : null}
-              <CaptureDates node={persistedNode} />
+              </div>
+              <CaptureDates
+                node={persistedNode}
+                className="mt-1 text-sm leading-5 text-zinc-500"
+              />
             </div>
 
             {mode === "read" ? (
@@ -915,19 +924,23 @@ export function NoteDetailView({
             </p>
           ) : null}
           {mode === "read" ? (
-            <div className="space-y-4">
+            <div className="space-y-8">
               <article className="min-w-0" data-note-detail-reading-column="">
-                <div className="whitespace-pre-wrap text-base leading-8 text-zinc-800">
+                <div
+                  className="whitespace-pre-wrap text-base leading-8 text-zinc-800"
+                  data-note-detail-embedded-body=""
+                >
                   {persistedNode.content.trim() || "Sin contenido"}
                 </div>
               </article>
               <ReadConceptSection
                 contexts={relatedContexts}
                 onOpenConcept={onOpenConcept}
+                embedded={embedded}
               />
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-8">
               <div className="relative min-w-0" data-note-detail-editor-column="">
                 <Textarea
                   ref={textareaRef}
@@ -972,6 +985,7 @@ export function NoteDetailView({
                 contexts={relationOptions}
                 selectedContextIds={selectedContextIds}
                 onChange={setSelectedContexts}
+                embedded={embedded}
               />
               <p className="text-xs text-zinc-500">
                 Ctrl+S o Cmd+S guarda y mantiene la edicion abierta.
@@ -1107,9 +1121,11 @@ export function NoteDetailView({
 function ReadConceptSection({
   contexts,
   onOpenConcept,
+  embedded = false,
 }: {
   contexts: Context[];
   onOpenConcept?: (conceptId: string) => void;
+  embedded?: boolean;
 }) {
   const groupedContexts = groupContextsByType(contexts);
   const visibleTypes = getContextTypes().filter(
@@ -1120,31 +1136,45 @@ function ReadConceptSection({
     return null;
   }
 
+  const chips = visibleTypes.flatMap((type) =>
+    groupedContexts[type].map((context) =>
+      onOpenConcept ? (
+        <button
+          key={context.id}
+          type="button"
+          className="rounded-full border border-zinc-200 px-3 py-1 text-sm text-zinc-700 hover:border-zinc-400 hover:text-zinc-950"
+          onClick={() => onOpenConcept(context.id)}
+        >
+          {context.name}
+        </button>
+      ) : (
+        <Link
+          key={context.id}
+          href={getConceptExplorationPath(context.id)}
+          className="rounded-full border border-zinc-200 px-3 py-1 text-sm text-zinc-700 hover:border-zinc-400 hover:text-zinc-950"
+        >
+          {context.name}
+        </Link>
+      ),
+    ),
+  );
+
+  if (embedded) {
+    return (
+      <section
+        className="flex flex-col items-start gap-3"
+        data-note-detail-embedded-concepts=""
+      >
+        <h2 className="text-sm font-medium text-zinc-700">Conceptos</h2>
+        <div className="flex flex-wrap gap-2">{chips}</div>
+      </section>
+    );
+  }
+
   return (
     <section className="flex flex-wrap items-center gap-2">
       <h2 className="mr-1 text-sm font-medium text-zinc-700">Conceptos</h2>
-      {visibleTypes.map((type) =>
-        groupedContexts[type].map((context) =>
-          onOpenConcept ? (
-            <button
-              key={context.id}
-              type="button"
-              className="rounded-full border border-zinc-200 px-3 py-1 text-sm text-zinc-700 hover:border-zinc-400 hover:text-zinc-950"
-              onClick={() => onOpenConcept(context.id)}
-	            >
-	              {context.name}
-	            </button>
-          ) : (
-            <Link
-              key={context.id}
-              href={getConceptExplorationPath(context.id)}
-              className="rounded-full border border-zinc-200 px-3 py-1 text-sm text-zinc-700 hover:border-zinc-400 hover:text-zinc-950"
-	            >
-	              {context.name}
-	            </Link>
-          ),
-        ),
-      )}
+      {chips}
     </section>
   );
 }
@@ -1173,10 +1203,12 @@ function EditContextSection({
   contexts,
   selectedContextIds,
   onChange,
+  embedded = false,
 }: {
   contexts: Context[];
   selectedContextIds: string[];
   onChange: (selectedIds: string[]) => void;
+  embedded?: boolean;
 }) {
   const groupedContexts = groupContextsByType(contexts);
   const selectedSet = new Set(selectedContextIds);
@@ -1197,30 +1229,44 @@ function EditContextSection({
     return null;
   }
 
+  const chips = visibleTypes.flatMap((type) =>
+    groupedContexts[type].map((context) => {
+      const selected = selectedSet.has(context.id);
+
+      return (
+        <button
+          key={context.id}
+          type="button"
+          aria-pressed={selected}
+          className={
+            selected
+              ? "rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-sm text-white"
+              : "rounded-full border border-zinc-200 px-3 py-1 text-sm text-zinc-700 hover:border-zinc-400 disabled:text-zinc-400"
+          }
+          onClick={() => toggleContext(context.id)}
+        >
+          {context.name}
+        </button>
+      );
+    }),
+  );
+
+  if (embedded) {
+    return (
+      <section
+        className="flex flex-col items-start gap-3"
+        data-note-detail-embedded-concepts=""
+      >
+        <h2 className="text-sm font-medium text-zinc-700">Conceptos</h2>
+        <div className="flex flex-wrap gap-2">{chips}</div>
+      </section>
+    );
+  }
+
   return (
     <section className="flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-4">
       <h2 className="mr-1 text-sm font-medium text-zinc-700">Conceptos</h2>
-      {visibleTypes.map((type) =>
-	        groupedContexts[type].map((context) => {
-	          const selected = selectedSet.has(context.id);
-
-          return (
-            <button
-              key={context.id}
-	              type="button"
-	              aria-pressed={selected}
-	              className={
-                selected
-                  ? "rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-sm text-white"
-                  : "rounded-full border border-zinc-200 px-3 py-1 text-sm text-zinc-700 hover:border-zinc-400 disabled:text-zinc-400"
-              }
-              onClick={() => toggleContext(context.id)}
-	            >
-	              {context.name}
-	            </button>
-          );
-        }),
-      )}
+      {chips}
     </section>
   );
 }
@@ -1289,14 +1335,14 @@ export function NoteDetailMessage({
   );
 }
 
-function CaptureDates({ node }: { node: Node }) {
+function CaptureDates({ node, className }: { node: Node; className?: string }) {
   const timestamps = getCaptureTimestamps(node);
   const createdAt = formatShortDate(timestamps.createdAt);
   const contentUpdatedAt = formatShortDate(timestamps.contentUpdatedAt);
   const showContentUpdated = timestamps.contentUpdatedAt !== timestamps.createdAt;
 
   return (
-    <p className="mt-2 text-sm text-zinc-500">
+    <p className={cn("mt-2 text-sm text-zinc-500", className)}>
       Creada {createdAt}
       {showContentUpdated ? ` · Editada ${contentUpdatedAt}` : ""}
     </p>
