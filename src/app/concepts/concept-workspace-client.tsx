@@ -11,6 +11,7 @@ export function ConceptWorkspaceClient({
   initialConceptId = null,
   initialState,
   onOpenMemory,
+  onOpenMemoryIndex,
   onOpenConcept,
   onStateChange,
   onClose,
@@ -18,6 +19,7 @@ export function ConceptWorkspaceClient({
   initialConceptId?: string | null;
   initialState?: ConceptWorkspaceState;
   onOpenMemory?: (nodeId: string) => void;
+  onOpenMemoryIndex?: () => void;
   onOpenConcept?: (conceptId: string) => void;
   onStateChange?: (state: ConceptWorkspaceState) => void;
   onClose?: () => void;
@@ -164,6 +166,7 @@ export function ConceptWorkspaceClient({
               workspaceMode
               onOpenConcept={pushConcept}
               onOpenMemory={onOpenMemory}
+              onOpenMemoryIndex={onOpenMemoryIndex}
             />
           ) : (
             <div className="flex h-full min-h-0 items-center px-4 py-6 text-sm leading-6 text-zinc-500">

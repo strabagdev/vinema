@@ -75,12 +75,10 @@ La seleccion inicial es deterministica:
 4. recuerdos distribuidos temporalmente;
 5. deduplicacion simple por fragmento.
 
-El limite inicial es cinco recuerdos. No se fabrican titulos.
-
-La vista del perfil no muestra los cinco de entrada. Renderiza por defecto hasta
-dos recuerdos representativos y, si hay mas evidencia, ofrece `Ver los N
-recuerdos` para expandirlos dentro de la misma columna. La expansion no cambia
-la URL ni abre otro modal.
+El limite derivado inicial sigue siendo cinco recuerdos representativos para el
+modelo puro. La vista de detalle no usa esa seleccion como corte visual de la
+evidencia principal: la pestaña `Recuerdos` muestra todos los recuerdos asociados
+disponibles, ordenados por fecha descendente. No se fabrican titulos.
 
 ## Conexiones
 
@@ -120,6 +118,26 @@ basta con no mostrarla.
 conceptos relacionados abren su propio perfil y conservan la navegacion local
 entre conceptos.
 
+El detalle de Concepto se presenta como una ficha editorial de una sola columna.
+El encabezado permanece estable y muestra nombre, cantidad de recuerdos,
+cantidad de conexiones, descripcion cuando existe y aliases confirmados cuando
+aportan identidad. Debajo del encabezado, el contenido se organiza en pestañas
+accesibles sin crear rutas adicionales:
+
+- Recuerdos;
+- Relaciones;
+- Evolucion;
+- Patrones.
+
+`Recuerdos` es siempre la pestaña inicial al abrir un concepto. Muestra todos los
+recuerdos asociados ordenados por fecha descendente, con extracto, fecha discreta
+y acceso al detalle de captura. `Relaciones` muestra conceptos relacionados por
+evidencia compartida y permite abrir cada concepto relacionado. `Evolucion`
+muestra solo señales temporales existentes del motor derivado; si no hay
+informacion suficiente, presenta un estado vacio honesto. `Patrones` muestra
+observaciones del sistema respaldadas por evidencia cuando existen y usa el
+nombre visible `Patrones`.
+
 En el workspace modal de Conceptos, el perfil no se presenta como una tercera
 region horizontal ni compite con la busqueda. La navegacion de conceptos vive en
 una franja superior compacta que integra `Conceptos`, buscador, carrusel
@@ -135,10 +153,12 @@ distribucion aproximada 40/60. La lectura del perfil se vuelve mas selectiva:
 - no muestra `Archivado`: el archivado dejo de ser un estado visible de
   producto y los datos legacy se tratan como memoria disponible;
 - resume la evidencia como `N recuerdos · N conexiones`;
-- renderiza descripcion, aliases, relaciones y recuerdos solo cuando existen;
+- renderiza descripcion y aliases solo cuando existen;
+- distribuye recuerdos, relaciones, evolucion y patrones en pestañas debajo del
+  encabezado estable;
 - omite fechas derivadas si no aportan decision o navegacion inmediata;
-- muestra como maximo dos recuerdos representativos por defecto y permite
-  expandir el resto en la misma columna.
+- muestra estados vacios dentro de cada pestaña cuando los datos derivados no
+  respaldan contenido.
 
 ## Sync
 

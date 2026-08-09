@@ -1036,6 +1036,10 @@ export function CaptureSurface({
     pushWorkspaceView({ kind: "memory-detail", nodeId });
   }, []);
 
+  const openWorkspaceMemoryIndex = useCallback(() => {
+    pushWorkspaceView({ kind: "memory-index" });
+  }, []);
+
   async function openContextualMemoryCapture(nodeId: string) {
     await persistCurrentDraft();
     openWorkspaceMemoryDetail(nodeId);
@@ -1304,6 +1308,7 @@ export function CaptureSurface({
             }
             onOpenConcept={openWorkspaceConcept}
             onOpenMemory={openWorkspaceMemoryDetail}
+            onOpenMemoryIndex={openWorkspaceMemoryIndex}
           />
         ) : null}
       </ApplicationWorkspaceDialog>

@@ -110,7 +110,8 @@ Estado: En consolidación.
 - Edición, autosave, archivo y restauración de capturas.
 - Archivo de capturas en `/memory/archive`.
 - Índice de conceptos en `/concepts`.
-- Perfil vivo de concepto en `/concepts/detail`.
+- Perfil vivo de concepto en `/concepts/detail`, con ficha editorial y pestañas
+  de Recuerdos, Relaciones, Evolución y Patrones.
 - Explorador de conocimiento en `/concepts/explore`.
 - Relaciones derivadas entre conceptos por evidencia compartida.
 - Motor Cognitivo v1 con patrones conductuales, comprensión semántica,

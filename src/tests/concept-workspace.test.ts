@@ -224,18 +224,35 @@ describe("ConceptWorkspaceClient", () => {
     expect(mocks.push).not.toHaveBeenCalled();
   });
 
-  it("limits representative memories by default and expands them in place", async () => {
+  it("opens the memory index inside the workspace instead of linking to a route", async () => {
+    const openMemoryIndex = vi.fn();
+    const screen = await renderConceptWorkspace({
+      initialConceptId: "railway",
+      onOpenMemoryIndex: openMemoryIndex,
+    });
+
+    const profile = screen.querySelector("[data-concept-workspace-profile]") as HTMLElement;
+    const memoryAction = getButtonContaining(profile, "Memoria");
+    const memoryLinks = Array.from(profile.querySelectorAll("a")).filter(
+      (link) => link.textContent?.trim() === "Memoria",
+    );
+
+    expect(memoryLinks).toHaveLength(0);
+
+    await click(memoryAction);
+
+    expect(openMemoryIndex).toHaveBeenCalledTimes(1);
+    expect(mocks.push).not.toHaveBeenCalled();
+  });
+
+  it("shows all concept memories in the default tab", async () => {
     seedRepresentativeMemoryList();
     const screen = await renderConceptWorkspace({ initialConceptId: "railway" });
     const profile = screen.querySelector("[data-concept-workspace-profile]") as HTMLElement;
     const memories = profile.querySelector("section[aria-label='Recuerdos']") as HTMLElement;
 
-    expect(countInteractiveItemsContaining(memories, "Captura representativa")).toBe(2);
-    expect(memories.textContent).toContain("Ver los 4 recuerdos");
-
-    await click(getButtonContaining(memories, "Ver los 4 recuerdos"));
-
     expect(countInteractiveItemsContaining(memories, "Captura representativa")).toBe(4);
+    expect(memories.textContent).not.toContain("Ver los 4 recuerdos");
     expect(mocks.push).not.toHaveBeenCalled();
   });
 
@@ -356,10 +373,12 @@ describe("ConceptWorkspaceClient", () => {
 async function renderConceptWorkspace({
   initialConceptId,
   onOpenMemory,
+  onOpenMemoryIndex,
   onClose,
 }: {
   initialConceptId?: string | null;
   onOpenMemory?: (nodeId: string) => void;
+  onOpenMemoryIndex?: () => void;
   onClose?: () => void;
 } = {}) {
   const container = document.createElement("div");
@@ -367,7 +386,12 @@ async function renderConceptWorkspace({
 
   await act(async () => {
     createRoot(container).render(
-      createElement(ConceptWorkspaceClient, { initialConceptId, onOpenMemory, onClose }),
+      createElement(ConceptWorkspaceClient, {
+        initialConceptId,
+        onOpenMemory,
+        onOpenMemoryIndex,
+        onClose,
+      }),
     );
     await flushPromises();
   });

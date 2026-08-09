@@ -95,9 +95,11 @@ describe("ConceptExplorationClient", () => {
     expect(screen.textContent).toContain("2 recuerdos · 2 conexiones");
     expect(screen.textContent).not.toContain("Perfil vivo");
     expect(screen.textContent).toContain("2 recuerdos");
-    expect(screen.textContent).toContain("Recuerdos representativos");
-    expect(screen.textContent).toContain("Conexiones principales");
-    expect(screen.textContent).toContain("Actividad");
+    expect(getTab(screen, "Recuerdos").getAttribute("aria-selected")).toBe("true");
+    expect(getTab(screen, "Relaciones").getAttribute("aria-selected")).toBe("false");
+    expect(screen.querySelector("[role='tabpanel']")?.textContent).toContain(
+      "Evidencia concreta asociada",
+    );
     expect(screen.textContent).toContain("Sync");
     expect(screen.textContent).toContain("Workspace");
     expect(screen.textContent).toContain("Captura sobre Railway y Sync");
@@ -135,19 +137,32 @@ describe("ConceptExplorationClient", () => {
     );
   });
 
-  it("removes Recuerdos, Tiempo and Mapa modes from the living concept profile", async () => {
+  it("renders accessible tabs and moves between them with the keyboard", async () => {
     const screen = await renderConceptExploration();
+    const tablist = screen.querySelector("[role='tablist']") as HTMLElement;
 
-    expect(queryButtonByLabel(screen, "Recuerdos")).toBeNull();
+    expect(tablist).toBeTruthy();
+    expect(getTab(screen, "Recuerdos").getAttribute("aria-selected")).toBe("true");
+    expect(getTab(screen, "Relaciones").getAttribute("aria-controls")).toBe(
+      "concept-tabpanel-relations",
+    );
     expect(queryButtonByLabel(screen, "Tiempo")).toBeNull();
     expect(queryButtonByLabel(screen, "Mapa")).toBeNull();
-    expect(screen.textContent).toContain("Conexiones principales");
+    expect(screen.textContent).not.toContain("Conexiones principales");
     expect(screen.textContent).not.toContain("Explorar conexiones");
     expect(screen.textContent).not.toContain("Graphify");
+
+    await keyDown(tablist, "ArrowRight");
+
+    expect(getTab(screen, "Relaciones").getAttribute("aria-selected")).toBe("true");
+    expect(screen.querySelector("[role='tabpanel']")?.textContent).toContain(
+      "recuerdo compartido",
+    );
   });
 
   it("keeps relationship evidence collapsed until requested", async () => {
     const screen = await renderConceptExploration();
+    await click(getTab(screen, "Relaciones"));
     const relationships = screen.querySelector(
       "section[aria-label='Relaciones']",
     ) as HTMLElement;
@@ -237,13 +252,39 @@ describe("ConceptExplorationClient", () => {
     const screen = await renderConceptExploration();
 
     expect(screen.textContent).toContain("1 recuerdo");
-    expect(screen.textContent).toContain("Recuerdos representativos");
     expect(screen.textContent).toContain("Railway despliega Vinema API");
     expect(screen.textContent).not.toContain("Conectado con");
-    expect(screen.textContent).not.toContain("Conexiones principales");
-    expect(screen.textContent).not.toContain("Evolución");
+    expect(screen.querySelector("[role='tabpanel']")?.textContent).not.toContain(
+      "Evolución",
+    );
     expect(screen.textContent).not.toContain("últimos 7 días");
     expect(screen.textContent).not.toContain("Aún sin recuerdos");
+  });
+
+  it("shows empty states inside the tabbed concept detail", async () => {
+    mocks.nodes.clear();
+    mocks.relations.clear();
+
+    const screen = await renderConceptExploration();
+
+    expect(screen.querySelector("[role='tabpanel']")?.textContent).toContain(
+      "sus recuerdos viviran aqui",
+    );
+
+    await click(getTab(screen, "Relaciones"));
+    expect(screen.querySelector("[role='tabpanel']")?.textContent).toContain(
+      "Todavía no hay relaciones respaldadas por recuerdos compartidos.",
+    );
+
+    await click(getTab(screen, "Evolución"));
+    expect(screen.querySelector("[role='tabpanel']")?.textContent).toContain(
+      "Aún no hay suficiente información temporal",
+    );
+
+    await click(getTab(screen, "Patrones"));
+    expect(screen.querySelector("[role='tabpanel']")?.textContent).toContain(
+      "Todavía no hay patrones observados con evidencia suficiente.",
+    );
   });
 
   it("hides observed patterns when evidence is insufficient", async () => {
@@ -298,8 +339,16 @@ describe("ConceptExplorationClient", () => {
 
     const screen = await renderConceptExploration();
 
+    await click(getTab(screen, "Patrones"));
+
     expect(screen.textContent).not.toContain("Patrones observados");
-    expect(screen.textContent).toContain("Conexiones principales");
+    expect(screen.textContent).toContain(
+      "Todavía no hay patrones observados con evidencia suficiente.",
+    );
+
+    await click(getTab(screen, "Relaciones"));
+
+    expect(screen.textContent).toContain("Relaciones");
     expect(screen.textContent).toContain("Sync");
   });
 
@@ -328,7 +377,7 @@ describe("ConceptExplorationClient", () => {
     expect(screen.textContent).not.toContain("Significados observados");
   });
 
-  it("shows explicit semantic meanings with human labels and evidence links", async () => {
+  it("keeps semantic statements out of the tabbed detail and preserves memory links", async () => {
     mocks.nodes.clear();
     mocks.relations.clear();
     mocks.nodes.set(
@@ -346,16 +395,19 @@ describe("ConceptExplorationClient", () => {
 
     const screen = await renderConceptExploration();
 
-    expect(screen.textContent).toContain("Significados observados");
-    expect(screen.textContent).toContain("Railway");
-    expect(screen.textContent).toContain("usa");
-    expect(screen.textContent).toContain("Sync");
-    expect(screen.textContent).not.toContain("USES");
+    expect(screen.textContent).not.toContain("Significados observados");
+    expect(screen.textContent).toContain("Railway usa Sync.");
     expect(
       Array.from(screen.querySelectorAll("a")).some((link) =>
         link.getAttribute("href")?.startsWith("/memory/detail?nodeId=meaning"),
       ),
     ).toBeTruthy();
+
+    await click(getTab(screen, "Relaciones"));
+
+    expect(screen.textContent).toContain("Railway");
+    expect(screen.textContent).toContain("Sync");
+    expect(screen.textContent).not.toContain("USES");
 
     await click(getButton(screen, "Sync"));
 
@@ -418,6 +470,8 @@ describe("ConceptExplorationClient", () => {
     }
 
     const screen = await renderConceptExploration();
+
+    await click(getTab(screen, "Evolución"));
 
     expect(screen.textContent).toContain("Ha ganado actividad");
     expect(screen.textContent).toContain(
@@ -484,6 +538,7 @@ describe("ConceptExplorationClient", () => {
     await click(syncButton as HTMLButtonElement);
     expect(openConcept).toHaveBeenCalledWith("sync");
 
+    await click(getTab(screen, "Relaciones"));
     await click(getButton(screen, "Ver evidencia"));
 
     const memoryButton = Array.from(screen.querySelectorAll("button")).find(
@@ -726,9 +781,30 @@ function queryButtonByLabel(container: HTMLElement, label: string) {
   ) ?? null;
 }
 
+function getTab(container: HTMLElement, name: string) {
+  const tab = Array.from(container.querySelectorAll("[role='tab']")).find(
+    (item) => item.textContent === name,
+  );
+
+  if (!tab) {
+    throw new Error(`Tab not found: ${name}`);
+  }
+
+  return tab as HTMLButtonElement;
+}
+
 async function click(element: HTMLElement) {
   await act(async () => {
     element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await flushPromises();
+  });
+}
+
+async function keyDown(element: HTMLElement, key: string) {
+  await act(async () => {
+    element.dispatchEvent(
+      new KeyboardEvent("keydown", { bubbles: true, key }),
+    );
     await flushPromises();
   });
 }
