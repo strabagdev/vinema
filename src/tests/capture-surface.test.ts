@@ -599,8 +599,9 @@ describe("CaptureSurface", () => {
     expect(scrollViewport?.className).toContain("vinema-scrollbar");
     expect(writingTrack?.className).toContain("min-h-full");
     expect(writingTrack?.className).toContain(
-      "grid-rows-[minmax(0,var(--vinema-canvas-editor-start))_auto_minmax(var(--vinema-canvas-editor-end-space),1fr)]",
+      "grid-rows-[minmax(var(--vinema-canvas-context-reserve),calc(var(--vinema-canvas-editor-start)_+_var(--vinema-canvas-context-reserve)))_auto_minmax(var(--vinema-canvas-editor-end-space),1fr)]",
     );
+    expect(writingTrack?.getAttribute("data-canvas-context-reserve")).toBe("structural");
     expect(dock).toBeDefined();
     expect(dock?.className).toContain("col-[3]");
     expect(dock?.className).toContain(
@@ -663,8 +664,9 @@ describe("CaptureSurface", () => {
     expect(scrollViewport.className).toContain("h-full");
     expect(scrollViewport.className).toContain("overflow-y-auto");
     expect(writingTrack.className).toContain(
-      "grid-rows-[minmax(0,var(--vinema-canvas-editor-start))_auto_minmax(var(--vinema-canvas-editor-end-space),1fr)]",
+      "grid-rows-[minmax(var(--vinema-canvas-context-reserve),calc(var(--vinema-canvas-editor-start)_+_var(--vinema-canvas-context-reserve)))_auto_minmax(var(--vinema-canvas-editor-end-space),1fr)]",
     );
+    expect(writingTrack.getAttribute("data-canvas-context-reserve")).toBe("structural");
     expect(initialTextareaClassName).toContain("row-[2]");
     expect(initialTextareaClassName).toContain("overflow-hidden");
     expect(initialTextareaClassName).not.toContain("overflow-y-auto");
@@ -999,6 +1001,72 @@ describe("CaptureSurface", () => {
     expect(rail?.querySelectorAll("[data-context-indicator]")).toHaveLength(0);
     expect(getContextIndicator(screen.container, "Memoria")).toBeUndefined();
     expect(getButtonByLabel(screen.container, "Canvas")).toBeDefined();
+  });
+
+  it("reserves the canvas contextual stripe without moving indicators or narrowing the editor", async () => {
+    const nodeRepository = new InMemoryNodeRepository([
+      createStoredNode({
+        id: "railway-memory",
+        content: "Railway deploy pendiente para revisar",
+        updatedAt: "2026-01-05T00:00:00.000Z",
+      }),
+    ]);
+    const screen = await renderCaptureSurface({ nodeRepository });
+    const writingSurface = screen.container.querySelector("[data-canvas-writing-surface]");
+    const scrollViewport = screen.container.querySelector("[data-canvas-scroll-viewport]");
+    const writingTrack = screen.container.querySelector("[data-canvas-writing-track]");
+    const textarea = getTextarea(screen.container);
+
+    if (!writingSurface || !scrollViewport || !writingTrack || !textarea) {
+      throw new Error("Expected canvas writing geometry.");
+    }
+
+    const initialWritingSurfaceClassName = writingSurface.className;
+    const initialScrollViewportClassName = scrollViewport.className;
+    const initialWritingTrackClassName = writingTrack.className;
+    const initialTextareaClassName = textarea.className;
+
+    expect(screen.container.querySelector("[data-canvas-context-bar]")).toBeNull();
+    expect(writingTrack.getAttribute("data-canvas-context-reserve")).toBe("structural");
+    expect(writingTrack.className).toContain(
+      "minmax(var(--vinema-canvas-context-reserve),calc(var(--vinema-canvas-editor-start)_+_var(--vinema-canvas-context-reserve)))",
+    );
+    expect(writingSurface.className).toContain(
+      "max-w-[var(--vinema-canvas-max-width)]",
+    );
+    expect(textarea.className).toContain("row-[2]");
+    expect(textarea.className).toContain("w-full");
+    expect(writingSurface.className).not.toContain("border");
+    expect(scrollViewport.className).not.toContain("border");
+    expect(writingTrack.className).not.toContain("border");
+    expect(screen.container.querySelector("hr")).toBeNull();
+
+    await changeTextarea(
+      screen.container,
+      "Railway deploy pendiente con una primera linea muy larga que debe seguir usando el ancho completo del canvas una vez debajo de la barra contextual",
+    );
+    await advanceTime(500);
+
+    const contextLayer = screen.container.querySelector("[data-canvas-context-layer]");
+    const contextBar = screen.container.querySelector("[data-canvas-context-bar]");
+
+    expect(contextLayer?.className).toContain(
+      "top-[var(--vinema-canvas-padding-y)]",
+    );
+    expect(contextBar).toBeDefined();
+    expect(scrollViewport.contains(contextBar)).toBe(false);
+    expect(writingSurface.contains(contextBar)).toBe(true);
+    expect(screen.container.querySelector("[data-canvas-writing-track]")?.className).toBe(
+      initialWritingTrackClassName,
+    );
+    expect(screen.container.querySelector("[data-canvas-writing-surface]")?.className).toBe(
+      initialWritingSurfaceClassName,
+    );
+    expect(screen.container.querySelector("[data-canvas-scroll-viewport]")?.className).toBe(
+      initialScrollViewportClassName,
+    );
+    expect(getTextarea(screen.container)?.className).toBe(initialTextareaClassName);
+    expect(getTextarea(screen.container)?.className).toContain("w-full");
   });
 
   it("opens global knowledge and concepts workspaces from permanent rail actions", async () => {

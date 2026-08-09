@@ -195,7 +195,8 @@ export function CanvasWritingSurface({
         data-canvas-scroll-viewport=""
       >
         <div
-          className="relative grid min-h-full grid-rows-[minmax(0,var(--vinema-canvas-editor-start))_auto_minmax(var(--vinema-canvas-editor-end-space),1fr)]"
+          className="relative grid min-h-full grid-rows-[minmax(var(--vinema-canvas-context-reserve),calc(var(--vinema-canvas-editor-start)_+_var(--vinema-canvas-context-reserve)))_auto_minmax(var(--vinema-canvas-editor-end-space),1fr)]"
+          data-canvas-context-reserve="structural"
           data-canvas-writing-track=""
         >
           {children}

@@ -34,9 +34,13 @@ incluyen CTAs para abrir los workspaces completos.
 La barra contextual:
 
 - no se renderiza cuando no hay resultados;
+- ocupa una franja superior estructuralmente reservada del Canvas;
 - puede mostrar Memoria, Conceptos o ambas;
 - no vive dentro de `data-canvas-scroll-viewport`;
-- no cambia la posicion del editor, el punto inicial de escritura ni el seguimiento del caret;
+- no cambia la posicion visual de sus indicadores;
+- deja que el contenido editable comience debajo de esa franja, existan o no
+  sugerencias, para evitar interferencias y cambios de layout;
+- no cambia el ancho del editor, el seguimiento del caret ni el scroll interno;
 - reutiliza el mismo `CanvasSidePanel` y el mismo modelo de `pinnedPanel` / `previewPanel`;
 - estabiliza indicadores con resultados confirmados, sin parpadear por estados
   intermedios de evaluacion;

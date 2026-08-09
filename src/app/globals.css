@@ -60,6 +60,7 @@ body {
   );
   --vinema-canvas-padding-x: 1.25rem;
   --vinema-canvas-padding-y: 1rem;
+  --vinema-canvas-context-reserve: 3rem;
   --vinema-canvas-editor-start: 40%;
   --vinema-canvas-editor-end-space: 30%;
   --vinema-canvas-font-size: 1.25rem;
@@ -119,6 +120,7 @@ body {
     --vinema-canvas-edge-gutter: 0.75rem;
     --vinema-canvas-padding-x: 0;
     --vinema-canvas-padding-y: 0.75rem;
+    --vinema-canvas-context-reserve: 2.75rem;
   }
 
   .vinema-canvas-editor {

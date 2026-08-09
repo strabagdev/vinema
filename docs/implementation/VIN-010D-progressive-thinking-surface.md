@@ -39,6 +39,10 @@ Rail permanente:
 
 Memoria y Conceptos viven en una barra contextual estructuralmente asociada al canvas. Esa barra aparece solo cuando existen resultados reales para la captura actual.
 
+La barra contextual ocupa una franja superior estructuralmente reservada del
+Canvas. El contenido comienza debajo de ella, independientemente de que existan
+sugerencias, evitando interferencias y cambios de layout.
+
 El menu de tres puntos contiene `Conocimiento` como acceso administrativo:
 importar, exportar y vaciar. No abre exploracion global. La exploracion global
 pertenece al rail; las sugerencias derivadas del contenido actual pertenecen a
@@ -105,7 +109,8 @@ Por eso:
 - `Conceptos` solo existe cuando hay al menos un concepto sugerido;
 - `Memoria` solo existe cuando hay al menos una idea o recuerdo relacionado;
 - no se renderizan iconos inactivos, placeholders ni contadores en cero;
-- si no hay indicadores, no se reserva espacio visual;
+- si no hay indicadores, no se renderiza la barra visible, pero la franja
+  superior del canvas sigue reservada estructuralmente;
 - si el indicador activo desaparece, el panel se cierra.
 
 La visibilidad de estas señales se actualiza con resultados confirmados. Los
@@ -114,7 +119,12 @@ aparicion/desaparicion visual ni borrar una senal que acaba de tener resultados
 validos. Una evaluacion confirmada sin resultados si puede retirar la senal; el
 texto realmente vacio la retira de inmediato.
 
-La barra contextual pertenece a `CanvasWritingSurface`, se ubica sobre el canvas y no esta dentro de `data-canvas-scroll-viewport`. Su aparicion no modifica la grilla del editor, el punto inicial de escritura, el seguimiento del caret ni el scroll interno del texto.
+La barra contextual pertenece a `CanvasWritingSurface`, se ubica sobre el
+canvas y no esta dentro de `data-canvas-scroll-viewport`. Su aparicion no mueve
+los indicadores, no cambia el ancho del editor, no modifica el seguimiento del
+caret ni el scroll interno del texto; el track editable reserva siempre esa
+franja superior para que la primera linea no ocupe la region de
+Memoria/Conceptos.
 
 ## Paneles contextuales
 
