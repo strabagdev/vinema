@@ -23,6 +23,7 @@ import {
   getCanvasEditorStyle,
   getCanvasPreferenceAttributes,
   getCanvasPreferenceStyle,
+  useApplyCanvasAppearance,
 } from "@/features/canvas/canvas-preferences";
 import {
   CANVAS_CARET_VISUAL_FOLLOW_RATIO,
@@ -38,6 +39,8 @@ export function VinemaCanvas({
   preferences: CanvasPreferences;
   children: ReactNode;
 }) {
+  useApplyCanvasAppearance(preferences);
+
   return (
     <main
       className="vinema-canvas grid h-full min-h-0 w-full flex-1 grid-rows-[minmax(0,1fr)_auto] overflow-hidden pt-2"
@@ -370,7 +373,7 @@ export function CanvasPreferencesContent({
         <SegmentedOptions
           value={preferences.appearance}
           options={CANVAS_APPEARANCES}
-          labels={{ system: "Sistema", light: "Clara" }}
+          labels={{ light: "Claro", dark: "Oscuro", system: "Sistema" }}
           onChange={(appearance) => onChange({ appearance })}
         />
       </PreferenceGroup>

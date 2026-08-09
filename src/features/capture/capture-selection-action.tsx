@@ -1,12 +1,35 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
-import type {
-  CapturedTextSelection,
-  CaptureSelectionResolution,
+import {
+  readValidTextareaSelection,
+  type CapturedTextSelection,
+  type CaptureSelectionResolution,
 } from "@/features/capture/capture-selection";
 import { normalizeConceptDisplayLabel } from "@/features/concepts/concept-display-label";
 import { cn } from "@/lib/cn";
+
+type FloatingRect = {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+  width: number;
+  height: number;
+};
+
+type FloatingPosition = {
+  left: number;
+  top: number;
+  placement: "top" | "bottom";
+};
+
+const FLOATING_GAP = 8;
+const FLOATING_BOUNDARY_PADDING = 8;
+const FALLBACK_PANEL_SIZE = {
+  width: 320,
+  height: 120,
+};
 
 export function CaptureSelectionAction({
   selection,
@@ -36,7 +59,7 @@ export function CaptureSelectionAction({
 
     return element;
   }, []);
-  const [position, setPosition] = useState({ left: "50%", top: "4rem" });
+  const [position, setPosition] = useState<FloatingPosition | null>(null);
 
   useLayoutEffect(() => {
     document.body.appendChild(portalElement);
@@ -51,50 +74,73 @@ export function CaptureSelectionAction({
       return;
     }
 
-    const currentAnchor = anchorElement;
+    const currentAnchor = anchorElement as HTMLTextAreaElement;
+    const currentSelectionState = selection;
+    let animationFrame = 0;
+    let resizeObserver: ResizeObserver | null = null;
 
     function updatePosition() {
-      const anchorRect = currentAnchor.getBoundingClientRect();
-      const panelRect = panelRef.current?.getBoundingClientRect();
-      const panelHeight = panelRect?.height ?? 44;
-      const viewportPadding = 12;
-      const headerClearance = 64;
-      const preferredTop = anchorRect.top - panelHeight - 8;
-      const fallbackTop = anchorRect.top + 12;
-      const maxTop = Math.max(
-        headerClearance,
-        window.innerHeight - panelHeight - viewportPadding,
-      );
-      const nextTop =
-        preferredTop >= headerClearance
-          ? preferredTop
-          : Math.min(Math.max(fallbackTop, headerClearance), maxTop);
-      const nextLeft = Math.min(
-        Math.max(anchorRect.left + anchorRect.width / 2, viewportPadding),
-        window.innerWidth - viewportPadding,
-      );
+      const currentSelection = readValidTextareaSelection(currentAnchor);
+      const selectionRect =
+        currentSelection?.selectionRect ??
+        currentSelectionState.selectionRect ??
+        currentAnchor.getBoundingClientRect();
+      const panelRect = panelRef.current?.getBoundingClientRect() ?? null;
+      const panelSize = {
+        width: panelRect?.width || FALLBACK_PANEL_SIZE.width,
+        height: panelRect?.height || FALLBACK_PANEL_SIZE.height,
+      };
+      const boundaryRect = getVisibleBoundaryRect(currentAnchor);
+      const nextPosition = calculateSelectionPopoverPosition({
+        selectionRect,
+        panelSize,
+        boundaryRect,
+      });
 
       setPosition({
-        left: `${nextLeft}px`,
-        top: `${nextTop}px`,
+        left: nextPosition.left,
+        top: nextPosition.top,
+        placement: nextPosition.placement,
+      });
+    }
+
+    function scheduleUpdatePosition() {
+      if (animationFrame !== 0) {
+        window.cancelAnimationFrame(animationFrame);
+      }
+
+      animationFrame = window.requestAnimationFrame(() => {
+        animationFrame = 0;
+        updatePosition();
       });
     }
 
     updatePosition();
     window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
+    window.addEventListener("scroll", scheduleUpdatePosition, true);
+
+    if (typeof ResizeObserver !== "undefined" && panelRef.current) {
+      resizeObserver = new ResizeObserver(scheduleUpdatePosition);
+      resizeObserver.observe(panelRef.current);
+    }
 
     return () => {
+      if (animationFrame !== 0) {
+        window.cancelAnimationFrame(animationFrame);
+      }
+
+      resizeObserver?.disconnect();
       window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
+      window.removeEventListener("scroll", scheduleUpdatePosition, true);
     };
-  }, [anchorElement, selection, touch]);
+  }, [anchorElement, processing, resolution, selection, touch]);
 
   if (!selection) {
     return null;
   }
 
   const newConceptLabel = normalizeConceptDisplayLabel(selection.text);
+  const panelStyle = getPanelStyle({ position, touch });
 
   const panel = (
     <div
@@ -103,13 +149,18 @@ export function CaptureSelectionAction({
         "z-[60] rounded-xl border border-zinc-200 bg-white/95 p-2 text-sm shadow-lg backdrop-blur-sm",
         touch
           ? "fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))]"
-          : "fixed max-w-[calc(100vw-1.5rem)] -translate-x-1/2",
+          : "fixed max-w-[calc(100vw-1.5rem)]",
       )}
-      style={touch ? undefined : position}
+      style={panelStyle}
       role="group"
       aria-label={`Seleccion capturada: ${selection.text}`}
       data-capture-selection-action=""
       data-floating-layer="popover"
+      data-placement={touch ? "bottom" : (position?.placement ?? "top")}
+      onPointerDown={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
       onMouseDown={(event) => event.preventDefault()}
     >
       {!resolution ? (
@@ -171,4 +222,127 @@ export function CaptureSelectionAction({
   );
 
   return createPortal(panel, portalElement);
+}
+
+export function calculateSelectionPopoverPosition({
+  selectionRect,
+  panelSize,
+  boundaryRect,
+}: {
+  selectionRect: FloatingRect;
+  panelSize: { width: number; height: number };
+  boundaryRect: FloatingRect;
+}): FloatingPosition {
+  const minimumLeft = boundaryRect.left + FLOATING_BOUNDARY_PADDING;
+  const maximumLeft = boundaryRect.right - panelSize.width - FLOATING_BOUNDARY_PADDING;
+  const centeredLeft =
+    selectionRect.left + selectionRect.width / 2 - panelSize.width / 2;
+  const left = clamp(centeredLeft, minimumLeft, Math.max(minimumLeft, maximumLeft));
+  const topCandidate = selectionRect.top - panelSize.height - FLOATING_GAP;
+  const bottomCandidate = selectionRect.bottom + FLOATING_GAP;
+  const minimumTop = boundaryRect.top + FLOATING_BOUNDARY_PADDING;
+  const hasRoomAbove = topCandidate >= minimumTop;
+
+  if (hasRoomAbove) {
+    return {
+      left,
+      top: topCandidate,
+      placement: "top",
+    };
+  }
+
+  return {
+    left,
+    top: bottomCandidate,
+    placement: "bottom",
+  };
+}
+
+function getPanelStyle({
+  position,
+  touch,
+}: {
+  position: FloatingPosition | null;
+  touch: boolean;
+}): CSSProperties | undefined {
+  if (touch) {
+    return undefined;
+  }
+
+  if (!position) {
+    return {
+      left: 0,
+      top: 0,
+      visibility: "hidden",
+    };
+  }
+
+  return {
+    left: `${position.left}px`,
+    top: `${position.top}px`,
+  };
+}
+
+function getVisibleBoundaryRect(anchorElement: HTMLElement): FloatingRect {
+  const viewportRect = rectFromBounds({
+    top: 0,
+    right: window.innerWidth,
+    bottom: window.innerHeight,
+    left: 0,
+  });
+  const document = anchorElement.ownerDocument;
+  let boundary = viewportRect;
+  let element: HTMLElement | null = anchorElement;
+
+  while (element && element !== document.body && element !== document.documentElement) {
+    const style = window.getComputedStyle(element);
+
+    if (clipsOverflow(style)) {
+      boundary = intersectRects(boundary, element.getBoundingClientRect());
+    }
+
+    element = element.parentElement;
+  }
+
+  return boundary;
+}
+
+function clipsOverflow(style: CSSStyleDeclaration) {
+  return /(auto|scroll|hidden|clip)/.test(
+    `${style.overflow} ${style.overflowX} ${style.overflowY}`,
+  );
+}
+
+function intersectRects(first: FloatingRect, second: DOMRect | DOMRectReadOnly) {
+  return rectFromBounds({
+    top: Math.max(first.top, second.top),
+    right: Math.min(first.right, second.right),
+    bottom: Math.min(first.bottom, second.bottom),
+    left: Math.max(first.left, second.left),
+  });
+}
+
+function rectFromBounds({
+  top,
+  right,
+  bottom,
+  left,
+}: {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}): FloatingRect {
+  return {
+    top,
+    right,
+    bottom,
+    left,
+    width: Math.max(0, right - left),
+    height: Math.max(0, bottom - top),
+  };
+}
+
+function clamp(value: number, minimum: number, maximum: number) {
+  return Math.min(Math.max(value, minimum), maximum);
 }

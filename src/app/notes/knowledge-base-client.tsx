@@ -321,14 +321,16 @@ export function KnowledgeBaseClient({
           : undefined
       }
     >
-      <div className="space-y-2">
-        <h1 className="text-3xl font-semibold tracking-normal text-zinc-950">
-          Memoria
-        </h1>
-        <p className="max-w-2xl text-sm leading-6 text-zinc-600">
-          Tus capturas organizadas por contexto.
-        </p>
-      </div>
+      {embedded ? null : (
+        <div className="space-y-2">
+          <h1 className="text-3xl font-semibold tracking-normal text-zinc-950">
+            Memoria
+          </h1>
+          <p className="max-w-2xl text-sm leading-6 text-zinc-600">
+            Tus capturas organizadas por contexto.
+          </p>
+        </div>
+      )}
 
       <form
         onSubmit={handleSubmit}

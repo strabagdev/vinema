@@ -15,6 +15,7 @@ export type CapturedTextSelection = {
   normalizedText: string;
   start: number;
   end: number;
+  selectionRect?: DOMRectReadOnly;
 };
 
 export type CaptureSelectionResolution = ConceptResolutionResult;
@@ -33,11 +34,20 @@ export function readValidTextareaSelection(
     return null;
   }
 
-  return createValidCapturedSelection({
+  const selection = createValidCapturedSelection({
     text: textarea.value.slice(start, end),
     start,
     end,
   });
+
+  if (!selection) {
+    return null;
+  }
+
+  return {
+    ...selection,
+    selectionRect: getTextareaSelectionRect(textarea, start, end),
+  };
 }
 
 export function createValidCapturedSelection({
@@ -103,4 +113,83 @@ function isSingleStopword(value: string) {
 
 function hasExtensiveParagraphSelection(value: string) {
   return value.split(/\n{2,}/).length > 1 || value.split("\n").length > 3;
+}
+
+function getTextareaSelectionRect(
+  textarea: HTMLTextAreaElement,
+  start: number,
+  end: number,
+): DOMRectReadOnly {
+  const document = textarea.ownerDocument;
+  const window = document.defaultView;
+  const textareaRect = textarea.getBoundingClientRect();
+
+  if (!window || textareaRect.width === 0 || textareaRect.height === 0) {
+    return textareaRect;
+  }
+
+  const mirror = document.createElement("div");
+  const marker = document.createElement("span");
+  const style = window.getComputedStyle(textarea);
+
+  copyTextareaGeometryStyles(mirror, style);
+  mirror.style.position = "fixed";
+  mirror.style.left = `${textareaRect.left - textarea.scrollLeft}px`;
+  mirror.style.top = `${textareaRect.top - textarea.scrollTop}px`;
+  mirror.style.width = `${textareaRect.width}px`;
+  mirror.style.minHeight = `${textareaRect.height}px`;
+  mirror.style.height = "auto";
+  mirror.style.visibility = "hidden";
+  mirror.style.pointerEvents = "none";
+  mirror.style.zIndex = "-1";
+
+  marker.textContent = textarea.value.slice(start, end) || "\u200b";
+  mirror.append(
+    document.createTextNode(textarea.value.slice(0, start)),
+    marker,
+    document.createTextNode(textarea.value.slice(end) || "\u200b"),
+  );
+
+  document.body.appendChild(mirror);
+  const markerRect = marker.getBoundingClientRect();
+  mirror.remove();
+
+  if (markerRect.width === 0 && markerRect.height === 0) {
+    return textareaRect;
+  }
+
+  return markerRect;
+}
+
+function copyTextareaGeometryStyles(element: HTMLElement, style: CSSStyleDeclaration) {
+  const properties = [
+    "boxSizing",
+    "borderTopWidth",
+    "borderRightWidth",
+    "borderBottomWidth",
+    "borderLeftWidth",
+    "paddingTop",
+    "paddingRight",
+    "paddingBottom",
+    "paddingLeft",
+    "fontFamily",
+    "fontSize",
+    "fontStyle",
+    "fontVariant",
+    "fontWeight",
+    "letterSpacing",
+    "lineHeight",
+    "tabSize",
+    "textIndent",
+    "textTransform",
+    "textAlign",
+    "wordSpacing",
+  ] as const;
+
+  for (const property of properties) {
+    element.style[property] = style[property];
+  }
+
+  element.style.whiteSpace = "pre-wrap";
+  element.style.overflowWrap = "break-word";
 }

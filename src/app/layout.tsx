@@ -35,7 +35,18 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es" className={`${geistSans.variable} ${geistMono.variable}`}>
+    <html
+      lang="es"
+      className={`${geistSans.variable} ${geistMono.variable}`}
+      suppressHydrationWarning
+    >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(()=>{try{const a=localStorage.getItem("vinema:appearance");const p=a==="light"||a==="dark"||a==="system"?a:"system";const m=matchMedia("(prefers-color-scheme: dark)");const t=p==="dark"||p==="system"&&m.matches?"dark":"light";const e=document.documentElement;e.dataset.vinemaAppearance=p;e.dataset.vinemaTheme=t;e.style.colorScheme=t;}catch{}})();`,
+          }}
+        />
+      </head>
       <body>
         <AppShell>{children}</AppShell>
       </body>

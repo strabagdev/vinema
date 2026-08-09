@@ -3,9 +3,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { StorageAdapter } from "@/infrastructure/storage/storage-adapter";
 
 export const CANVAS_PREFERENCES_KEY = "vinema:canvas-preferences";
+export const CANVAS_APPEARANCE_MIRROR_KEY = "vinema:appearance";
 
 export const CANVAS_TEXT_SIZES = [14, 16, 18, 20] as const;
-export const CANVAS_APPEARANCES = ["system", "light"] as const;
+export const CANVAS_APPEARANCES = ["light", "dark", "system"] as const;
 export const CANVAS_MAX_WIDTH = "920px";
 export const CANVAS_FONT_FAMILY =
   "var(--font-geist-sans), Arial, Helvetica, sans-serif";
@@ -17,6 +18,7 @@ export type CanvasPreferences = {
   textSize: CanvasTextSize;
   appearance: CanvasAppearance;
 };
+export type ResolvedCanvasAppearance = "light" | "dark";
 
 export const DEFAULT_CANVAS_PREFERENCES: CanvasPreferences = {
   textSize: 16,
@@ -46,6 +48,7 @@ export function getCanvasPreferenceAttributes(preferences: CanvasPreferences) {
   return {
     "data-canvas-text-size": preferences.textSize,
     "data-canvas-appearance": preferences.appearance,
+    "data-canvas-theme": resolveCanvasAppearance(preferences.appearance),
   };
 }
 
@@ -80,7 +83,14 @@ export function useCanvasPreferences(storage: StorageAdapter) {
         const stored = await storage.get<unknown>(CANVAS_PREFERENCES_KEY);
 
         if (!cancelled) {
-          setPreferencesState(normalizeCanvasPreferences(stored));
+          const normalized = normalizeCanvasPreferences(stored);
+          setPreferencesState(normalized);
+          mirrorCanvasAppearance(normalized.appearance);
+        }
+      } catch {
+        if (!cancelled) {
+          setPreferencesState(DEFAULT_CANVAS_PREFERENCES);
+          mirrorCanvasAppearance(DEFAULT_CANVAS_PREFERENCES.appearance);
         }
       } finally {
         if (!cancelled) {
@@ -100,7 +110,8 @@ export function useCanvasPreferences(storage: StorageAdapter) {
     (next: CanvasPreferences) => {
       const normalized = normalizeCanvasPreferences(next);
       setPreferencesState(normalized);
-      void storage.set(CANVAS_PREFERENCES_KEY, normalized);
+      mirrorCanvasAppearance(normalized.appearance);
+      void persistCanvasPreferences(storage, normalized);
     },
     [storage],
   );
@@ -109,7 +120,8 @@ export function useCanvasPreferences(storage: StorageAdapter) {
     (patch: Partial<CanvasPreferences>) => {
       setPreferencesState((current) => {
         const normalized = normalizeCanvasPreferences({ ...current, ...patch });
-        void storage.set(CANVAS_PREFERENCES_KEY, normalized);
+        mirrorCanvasAppearance(normalized.appearance);
+        void persistCanvasPreferences(storage, normalized);
         return normalized;
       });
     },
@@ -118,7 +130,8 @@ export function useCanvasPreferences(storage: StorageAdapter) {
 
   const resetPreferences = useCallback(() => {
     setPreferencesState(DEFAULT_CANVAS_PREFERENCES);
-    void storage.remove(CANVAS_PREFERENCES_KEY);
+    mirrorCanvasAppearance(DEFAULT_CANVAS_PREFERENCES.appearance);
+    void removeCanvasPreferences(storage);
   }, [storage]);
 
   return useMemo(
@@ -131,6 +144,92 @@ export function useCanvasPreferences(storage: StorageAdapter) {
     }),
     [loaded, preferences, resetPreferences, setPreferences, updatePreferences],
   );
+}
+
+export function useApplyCanvasAppearance(preferences: CanvasPreferences) {
+  useEffect(() => {
+    return applyCanvasAppearance(preferences.appearance);
+  }, [preferences.appearance]);
+}
+
+export function applyCanvasAppearance(
+  appearance: CanvasAppearance,
+  {
+    target = getDefaultAppearanceTarget(),
+    media = getDefaultColorSchemeMedia(),
+  }: {
+    target?: HTMLElement | null;
+    media?: MediaQueryList | null;
+  } = {},
+) {
+  if (!target) {
+    return () => undefined;
+  }
+
+  function applyResolvedAppearance() {
+    const resolved = resolveCanvasAppearance(appearance, media);
+    target?.setAttribute("data-vinema-appearance", appearance);
+    target?.setAttribute("data-vinema-theme", resolved);
+    target?.style.setProperty("color-scheme", resolved);
+  }
+
+  applyResolvedAppearance();
+
+  if (appearance !== "system" || !media) {
+    return () => undefined;
+  }
+
+  media.addEventListener("change", applyResolvedAppearance);
+
+  return () => {
+    media.removeEventListener("change", applyResolvedAppearance);
+  };
+}
+
+export function resolveCanvasAppearance(
+  appearance: CanvasAppearance,
+  media = getDefaultColorSchemeMedia(),
+): ResolvedCanvasAppearance {
+  if (appearance === "dark") {
+    return "dark";
+  }
+
+  if (appearance === "light") {
+    return "light";
+  }
+
+  return media?.matches ? "dark" : "light";
+}
+
+function mirrorCanvasAppearance(appearance: CanvasAppearance) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(CANVAS_APPEARANCE_MIRROR_KEY, appearance);
+  } catch {
+    // localStorage is only a pre-hydration mirror; IndexedDB remains canonical.
+  }
+}
+
+async function persistCanvasPreferences(
+  storage: StorageAdapter,
+  preferences: CanvasPreferences,
+) {
+  try {
+    await storage.set(CANVAS_PREFERENCES_KEY, preferences);
+  } catch {
+    // Preferences are local convenience state; keep the in-memory update.
+  }
+}
+
+async function removeCanvasPreferences(storage: StorageAdapter) {
+  try {
+    await storage.remove(CANVAS_PREFERENCES_KEY);
+  } catch {
+    // Preferences reset should remain usable even when persistence is unavailable.
+  }
 }
 
 function isCanvasTextSize(value: unknown): value is CanvasTextSize {
@@ -170,6 +269,22 @@ function isCanvasAppearance(value: unknown): value is CanvasAppearance {
     typeof value === "string" &&
     CANVAS_APPEARANCES.includes(value as CanvasAppearance)
   );
+}
+
+function getDefaultAppearanceTarget() {
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return document.documentElement;
+}
+
+function getDefaultColorSchemeMedia() {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return null;
+  }
+
+  return window.matchMedia("(prefers-color-scheme: dark)");
 }
 
 function lineHeightToCssValue(textSize: CanvasTextSize) {

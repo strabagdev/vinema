@@ -533,8 +533,16 @@ describe("Knowledge Base", () => {
     const memoryButton = Array.from(screen.querySelectorAll("button")).find(
       (button) => button.getAttribute("aria-label")?.includes("Abrir captura"),
     );
+    const surface = screen.querySelector("section") as HTMLElement;
+    const firstContent = Array.from(surface.children).find(
+      (child) => !child.hasAttribute("aria-live"),
+    );
 
     expect(memoryButton).toBeTruthy();
+    expect(screen.querySelector("h1")).toBeNull();
+    expect(screen.textContent).not.toContain("Tus capturas organizadas por contexto.");
+    expect(firstContent?.tagName).toBe("FORM");
+    expect(firstContent?.textContent).toContain("Buscar");
     expect(screen.querySelector("a[href^='/memory/detail']")).toBeNull();
 
     await click(memoryButton as HTMLButtonElement);

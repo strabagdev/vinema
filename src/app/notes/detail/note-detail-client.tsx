@@ -502,6 +502,7 @@ export function NoteDetailView({
 
       event.preventDefault();
       clearCapturedSelection();
+      queueMicrotask(() => textareaRef.current?.focus());
     }
 
     window.addEventListener("keydown", handleEscape);

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyCanvasAppearance,
   CANVAS_FONT_FAMILY,
   CANVAS_MAX_WIDTH,
   DEFAULT_CANVAS_PREFERENCES,
@@ -7,6 +8,7 @@ import {
   getCanvasPreferenceAttributes,
   getCanvasPreferenceStyle,
   normalizeCanvasPreferences,
+  resolveCanvasAppearance,
 } from "@/features/canvas/canvas-preferences";
 import {
   getCanvasPrompts,
@@ -41,6 +43,18 @@ describe("canvas preferences", () => {
         fontFamily: "serif",
         appearance: "dark",
       }),
+    ).toEqual({
+      textSize: 16,
+      appearance: "dark",
+    });
+
+    expect(
+      normalizeCanvasPreferences({
+        width: "huge",
+        textSize: "massive",
+        fontFamily: "serif",
+        appearance: "nocturne",
+      }),
     ).toEqual(DEFAULT_CANVAS_PREFERENCES);
   });
 
@@ -61,6 +75,8 @@ describe("canvas preferences", () => {
 
     expect(getCanvasPreferenceAttributes(preferences)).toMatchObject({
       "data-canvas-text-size": 14,
+      "data-canvas-appearance": "system",
+      "data-canvas-theme": "light",
     });
     expect(getCanvasPreferenceAttributes(preferences)).not.toHaveProperty(
       "data-canvas-width",
@@ -77,6 +93,40 @@ describe("canvas preferences", () => {
       lineHeight: "1.6",
       fontFamily: CANVAS_FONT_FAMILY,
     });
+  });
+
+  it("resolves light, dark and system appearances", () => {
+    expect(resolveCanvasAppearance("light", createMedia(false))).toBe("light");
+    expect(resolveCanvasAppearance("dark", createMedia(false))).toBe("dark");
+    expect(resolveCanvasAppearance("system", createMedia(false))).toBe("light");
+    expect(resolveCanvasAppearance("system", createMedia(true))).toBe("dark");
+  });
+
+  it("applies system appearance updates only while system is active", () => {
+    const target = document.createElement("html");
+    const systemMedia = createMedia(false);
+    const cleanup = applyCanvasAppearance("system", {
+      target,
+      media: systemMedia,
+    });
+
+    expect(target.getAttribute("data-vinema-appearance")).toBe("system");
+    expect(target.getAttribute("data-vinema-theme")).toBe("light");
+
+    systemMedia.setMatches(true);
+    expect(target.getAttribute("data-vinema-theme")).toBe("dark");
+
+    cleanup();
+    systemMedia.setMatches(false);
+    expect(target.getAttribute("data-vinema-theme")).toBe("dark");
+
+    const fixedTarget = document.createElement("html");
+    const fixedMedia = createMedia(false);
+    applyCanvasAppearance("dark", { target: fixedTarget, media: fixedMedia });
+    fixedMedia.setMatches(false);
+
+    expect(fixedTarget.getAttribute("data-vinema-appearance")).toBe("dark");
+    expect(fixedTarget.getAttribute("data-vinema-theme")).toBe("dark");
   });
 });
 
@@ -99,3 +149,37 @@ describe("canvas prompts", () => {
     );
   });
 });
+
+function createMedia(initialMatches: boolean): MediaQueryList & {
+  setMatches: (matches: boolean) => void;
+} {
+  let matches = initialMatches;
+  const listeners = new Set<(event: MediaQueryListEvent) => void>();
+  const media = {
+    get matches() {
+      return matches;
+    },
+    media: "(prefers-color-scheme: dark)",
+    onchange: null,
+    addEventListener: (_type: "change", listener: (event: MediaQueryListEvent) => void) => {
+      listeners.add(listener);
+    },
+    removeEventListener: (_type: "change", listener: (event: MediaQueryListEvent) => void) => {
+      listeners.delete(listener);
+    },
+    addListener: (listener: (event: MediaQueryListEvent) => void) => {
+      listeners.add(listener);
+    },
+    removeListener: (listener: (event: MediaQueryListEvent) => void) => {
+      listeners.delete(listener);
+    },
+    dispatchEvent: () => true,
+    setMatches: (nextMatches: boolean) => {
+      matches = nextMatches;
+      const event = { matches, media: "(prefers-color-scheme: dark)" } as MediaQueryListEvent;
+      listeners.forEach((listener) => listener(event));
+    },
+  };
+
+  return media as MediaQueryList & { setMatches: (matches: boolean) => void };
+}

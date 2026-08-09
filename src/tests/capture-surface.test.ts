@@ -522,6 +522,9 @@ describe("CaptureSurface", () => {
     vi.clearAllTimers();
     vi.useRealTimers();
     document.body.replaceChildren();
+    document.documentElement.removeAttribute("data-vinema-appearance");
+    document.documentElement.removeAttribute("data-vinema-theme");
+    document.documentElement.style.removeProperty("color-scheme");
   });
 
   it("autosaves a draft, restores it after remount and does not create a capture", async () => {
@@ -793,6 +796,40 @@ describe("CaptureSurface", () => {
     expect(canvas?.hasAttribute("data-canvas-width")).toBe(false);
   });
 
+  it("applies and persists light, dark and system appearance from settings", async () => {
+    const storage = new MemoryStorageAdapter();
+    const screen = await renderCaptureSurface({ storage });
+    const canvas = screen.container.querySelector("[data-capture-canvas]");
+    const preferencesButton = getButtonByLabel(screen.container, "Canvas");
+
+    if (!preferencesButton) {
+      throw new Error("Canvas preferences trigger not found");
+    }
+
+    await click(preferencesButton);
+
+    expect(getButton(document.body, "Claro")).toBeDefined();
+    expect(getButton(document.body, "Oscuro")).toBeDefined();
+    expect(getButton(document.body, "Sistema")).toBeDefined();
+
+    await click(getButton(document.body, "Oscuro")!);
+
+    expect(canvas?.getAttribute("data-canvas-appearance")).toBe("dark");
+    expect(document.documentElement.getAttribute("data-vinema-appearance")).toBe("dark");
+    expect(document.documentElement.getAttribute("data-vinema-theme")).toBe("dark");
+    await expect(storage.get(CANVAS_PREFERENCES_KEY)).resolves.toMatchObject({
+      appearance: "dark",
+    });
+
+    await click(getButton(document.body, "Claro")!);
+    expect(canvas?.getAttribute("data-canvas-appearance")).toBe("light");
+    expect(document.documentElement.getAttribute("data-vinema-theme")).toBe("light");
+
+    await click(getButton(document.body, "Sistema")!);
+    expect(canvas?.getAttribute("data-canvas-appearance")).toBe("system");
+    expect(document.documentElement.getAttribute("data-vinema-appearance")).toBe("system");
+  });
+
   it("updates the real capture editor text size with compact controls and persists it", async () => {
     const storage = new MemoryStorageAdapter();
     await storage.set(CANVAS_PREFERENCES_KEY, {
@@ -867,6 +904,9 @@ describe("CaptureSurface", () => {
 
     expect(document.body.textContent).toContain("Texto");
     expect(document.body.textContent).toContain("Apariencia");
+    expect(document.body.textContent).toContain("Claro");
+    expect(document.body.textContent).toContain("Oscuro");
+    expect(document.body.textContent).toContain("Sistema");
     expect(getButtonByLabel(document.body, "Reducir tamaño del texto")).toBeDefined();
     expect(getButtonByLabel(document.body, "Aumentar tamaño del texto")).toBeDefined();
     expect(document.body.textContent).not.toContain("Ancho");
@@ -1971,6 +2011,7 @@ describe("CaptureSurface", () => {
     await keydownWindow({ key: "Escape" });
 
     expect(queryButton(screen.container, "Capturar seleccion")).toBeUndefined();
+    expect(document.activeElement).toBe(getTextarea(screen.container));
   });
 
   it("keeps Enter available for multiline writing", async () => {

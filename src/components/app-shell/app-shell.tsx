@@ -7,12 +7,17 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppHeader } from "@/components/app-shell/app-header";
 import { AuthGuard, isPublicAuthRoute } from "@/features/auth/auth-guard";
 import { AuthProvider } from "@/features/auth/auth-provider";
+import {
+  useApplyCanvasAppearance,
+  useCanvasPreferences,
+} from "@/features/canvas/canvas-preferences";
 import { requestFullCaptureFocus } from "@/features/capture/capture-events";
 import {
   VisualFeedbackProvider,
   VisualFeedbackPulse,
   VisualFeedbackViewport,
 } from "@/features/feedback/visual-feedback-provider";
+import { storageAdapter } from "@/infrastructure/repositories";
 import { cn } from "@/lib/cn";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -28,8 +33,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 function AppShellContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const canvasPreferences = useCanvasPreferences(storageAdapter);
   const publicAuthRoute = isPublicAuthRoute(pathname);
   const canvasRoute = pathname === "/" || pathname === "/concepts/explore";
+
+  useApplyCanvasAppearance(canvasPreferences.preferences);
 
   useEffect(() => {
     if ("serviceWorker" in navigator) {

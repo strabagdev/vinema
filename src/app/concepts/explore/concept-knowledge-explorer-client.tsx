@@ -1243,10 +1243,10 @@ function searchConcepts({
 
 function getGraphStroke(strength: RelationshipStrength) {
   return strength === "STRONG"
-    ? "#52525b"
+    ? "var(--vinema-text-muted)"
     : strength === "MEDIUM"
-      ? "#a1a1aa"
-      : "#d4d4d8";
+      ? "var(--vinema-text-faint)"
+      : "var(--vinema-border)";
 }
 
 function getGraphStrokeWidth(edge: PositionedGraphEdge) {
@@ -1274,14 +1274,16 @@ function getGraphNodeRadius(
 
 function getGraphNodeFill(node: PositionedGraphNode, active = false) {
   if (node.selected) {
-    return "#18181b";
+    return "var(--vinema-text-primary)";
   }
 
   if (active) {
-    return node.level === 1 ? "#e4e4e7" : "#f4f4f5";
+    return node.level === 1 ? "var(--vinema-hover)" : "var(--vinema-surface)";
   }
 
-  return node.level === 1 ? "#f4f4f5" : "#fafafa";
+  return node.level === 1
+    ? "var(--vinema-surface)"
+    : "var(--vinema-canvas-surface)";
 }
 
 function getGraphNodeStroke(
@@ -1289,10 +1291,10 @@ function getGraphNodeStroke(
   selectedConceptId: string | null,
 ) {
   if (node.conceptId === selectedConceptId) {
-    return "#18181b";
+    return "var(--vinema-text-primary)";
   }
 
-  return node.level === 1 ? "#d4d4d8" : "#e4e4e7";
+  return node.level === 1 ? "var(--vinema-border)" : "var(--vinema-border-subtle)";
 }
 
 function getGraphLabelOffset(node: PositionedGraphNode) {

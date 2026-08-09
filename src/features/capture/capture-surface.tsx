@@ -424,6 +424,7 @@ export function CaptureSurface({
       if (capturedSelection) {
         event.preventDefault();
         clearCapturedSelection();
+        queueMicrotask(() => textareaRef.current?.focus());
         return;
       }
 

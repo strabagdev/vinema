@@ -72,6 +72,10 @@ Branding
 
 Estado: Integrado.
 
+Apariencia
+
+Estado: Operativa.
+
 Login
 
 Estado: Operativo.
@@ -129,6 +133,8 @@ Estado: En consolidación.
 - Ledger local de acknowledgements de sincronización.
 - Ciclo de vida de conflictos por entidad lógica.
 - Resolución inicial de conflictos de captura.
+- Apariencia Claro/Oscuro/Sistema persistida localmente y aplicada en canvas,
+  paneles, modales y vistas principales.
 - Feedback visual central para captura, sincronización, offline y errores.
 - Branding oficial mediante monograma y wordmark.
 - Experiencia móvil con composer inferior persistente.
