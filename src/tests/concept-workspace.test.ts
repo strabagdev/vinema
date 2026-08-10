@@ -101,15 +101,41 @@ describe("ConceptWorkspaceClient", () => {
     expect(screen.querySelector("[data-concept-workspace-map]")).toBeTruthy();
     expect(screen.querySelector("[data-concept-workspace-profile]")).toBeTruthy();
     expect(screen.querySelector("[data-knowledge-explorer-canvas]")).toBeTruthy();
-    expect(screen.querySelector("[data-concept-workspace]")?.className).toContain(
-      "grid-rows-[auto_auto_minmax(0,1fr)]",
+    const workspace = screen.querySelector("[data-concept-workspace]") as HTMLElement;
+    const workspaceMain = screen.querySelector("[data-concept-workspace-main]") as HTMLElement;
+    const profileColumn = screen.querySelector(
+      "[data-concept-workspace-profile]",
+    ) as HTMLElement;
+    const mapColumn = screen.querySelector("[data-concept-workspace-map]") as HTMLElement;
+    const initialMainClass = workspaceMain.className;
+    const initialProfileClass = profileColumn.className;
+    const initialMapClass = mapColumn.className;
+
+    expect(workspace.className).toContain(
+      "flex h-full min-h-0 flex-1 flex-col overflow-hidden",
     );
-    expect(screen.querySelector("[data-concept-workspace-main]")?.className).toContain(
+    expect(topbar?.className).toContain("shrink-0");
+    expect(workspaceMain.className).toContain("grid min-h-0 flex-1 overflow-hidden");
+    expect(workspaceMain.className).toContain(
+      "md:grid-cols-[minmax(16rem,44%)_minmax(0,56%)]",
+    );
+    expect(workspaceMain.className).toContain(
       "xl:grid-cols-[minmax(20rem,40%)_minmax(0,60%)]",
     );
-    expect(screen.querySelector("[data-concept-workspace]")?.className).toContain(
-      "overflow-hidden",
+    expect(workspaceMain.className).not.toContain("grid-cols-5");
+    expect(profileColumn.className).toContain("h-full min-h-0 overflow-hidden");
+    expect(profileColumn.className).toContain("md:mr-3 md:block");
+    expect(profileColumn.textContent).toContain(
+      "Selecciona un concepto para ver su detalle",
     );
+    expect(mapColumn.className).toContain("h-full min-h-0 overflow-hidden");
+    expect(mapColumn.className).toContain("md:block");
+    expect(
+      screen.querySelectorAll("[data-concept-graph-node-level]").length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.querySelector("svg[aria-label='Mapa de conceptos conectados']"),
+    ).toBeTruthy();
     expect(screen.textContent).not.toContain("Abrir mapa de conceptos");
     expect(screen.textContent).not.toContain("Explorar conocimiento");
     expect(screen.querySelector("[data-concept-carousel]")?.textContent).toBe(
@@ -121,7 +147,15 @@ describe("ConceptWorkspaceClient", () => {
     await click(getButtonContaining(screen, "Railway"));
 
     const profile = screen.querySelector("[data-concept-workspace-profile]");
+    const selectedGraphNodes = screen.querySelectorAll("[data-concept-graph-node-level]");
 
+    expect(screen.querySelector("[data-concept-workspace-main]")).toBe(workspaceMain);
+    expect(screen.querySelector("[data-concept-workspace-profile]")).toBe(profileColumn);
+    expect(screen.querySelector("[data-concept-workspace-map]")).toBe(mapColumn);
+    expect(workspaceMain.className).toBe(initialMainClass);
+    expect(profileColumn.className).toBe(initialProfileClass);
+    expect(mapColumn.className).toBe(initialMapClass);
+    expect(selectedGraphNodes.length).toBeGreaterThan(0);
     expect(profile).toBeTruthy();
     expect(getButtonContaining(screen, "Railway").getAttribute("aria-pressed")).toBe(
       "true",
@@ -270,10 +304,49 @@ describe("ConceptWorkspaceClient", () => {
     expect(screen.querySelectorAll("[data-concept-graph-node-level='3']")).toHaveLength(0);
     expect(screen.querySelectorAll("[aria-label='Enfocar Seguridad']")).toHaveLength(1);
     expect(
+      screen.querySelector("[data-concept-graph-node-level='0'] circle")?.getAttribute("fill"),
+    ).toBe(
+      "color-mix(in srgb, var(--vinema-accent-indigo) 24%, var(--vinema-surface-elevated))",
+    );
+    expect(
+      screen.querySelector("[data-concept-graph-node-level='0'] circle")?.getAttribute("stroke"),
+    ).toBe("var(--vinema-accent-indigo)");
+    expect(
+      screen.querySelector("[data-concept-graph-node-level='1'] circle")?.getAttribute("fill"),
+    ).toBe("var(--vinema-surface-elevated)");
+    expect(
+      screen.querySelector("[data-concept-graph-node-level='1'] circle")?.getAttribute("stroke"),
+    ).toBe("var(--vinema-border-strong)");
+    expect(
+      screen.querySelector("[data-concept-graph-node-level='2'] circle")?.getAttribute("fill"),
+    ).toBe("var(--vinema-surface)");
+    expect(
+      screen.querySelector("[data-concept-graph-node-level='2'] circle")?.getAttribute("stroke"),
+    ).toBe("var(--vinema-border)");
+    expect(
+      screen.querySelector("[data-concept-graph-node-level='1'] text")?.getAttribute("class"),
+    ).toContain("fill-[var(--vinema-text-secondary)]");
+    expect(
+      screen.querySelector("[data-concept-graph-node-level='2'] text")?.getAttribute("class"),
+    ).toContain("fill-[var(--vinema-text-muted)]");
+    expect(
+      screen.querySelector("[data-concept-graph-hidden-count]")?.getAttribute("class"),
+    ).toContain("fill-[var(--vinema-text-faint)]");
+    expect(screen.querySelector("[data-concept-map-pane]")?.className)
+      .toContain("relative min-h-0 flex-1 overflow-hidden");
+    const graphSvg = screen.querySelector("svg[aria-label='Mapa de conceptos conectados']");
+    expect(graphSvg?.getAttribute("class")).toContain("h-full min-h-[22rem] w-full");
+    expect(graphSvg?.getAttribute("class")).not.toContain("absolute inset-0");
+    expect(
       screen.querySelectorAll(
         "[data-concept-graph-edge-level='2'][data-concept-graph-edge-source='sync']",
       ).length,
     ).toBeLessThanOrEqual(4);
+    expect(
+      screen
+        .querySelector("[data-concept-graph-edge-level='2']")
+        ?.getAttribute("opacity"),
+    ).toBe("0.62");
     expect(screen.querySelector("[data-concept-graph-hidden-count]")?.textContent)
       .toContain("+");
 
@@ -297,12 +370,24 @@ describe("ConceptWorkspaceClient", () => {
     const svg = screen.querySelector(
       "svg[aria-label='Mapa de conceptos conectados']",
     ) as SVGSVGElement;
+    const zoomOutButton = screen.querySelector(
+      "button[aria-label='Alejar mapa']",
+    ) as HTMLButtonElement;
+    const zoomControls = zoomOutButton.parentElement as HTMLElement;
     const syncNode = screen.querySelector("[aria-label='Enfocar Sync']") as SVGGElement;
     const syncCircle = syncNode.querySelector("circle") as SVGCircleElement;
     const initialTransform = svg.getAttribute("data-concept-graph-transform");
     const initialX = syncCircle.getAttribute("cx");
 
-    mockSvgRect(svg);
+    expect(zoomControls.className).toContain("bg-[var(--vinema-surface-panel)]");
+    expect(zoomControls.className).toContain("border-[var(--vinema-border)]");
+    expect(zoomControls.className).not.toContain("bg-white/90");
+    expect(zoomOutButton.className).toContain(
+      "text-[color:var(--vinema-text-secondary)]",
+    );
+    expect(zoomOutButton.className).toContain("hover:bg-[var(--vinema-hover)]");
+
+    mockSvgRect(svg, { left: 16, top: 44, width: 720, height: 300 });
 
     await wheel(svg, -120, { clientX: 520, clientY: 220 });
     expect(svg.getAttribute("data-concept-graph-transform")).not.toBe(initialTransform);
@@ -347,6 +432,16 @@ describe("ConceptWorkspaceClient", () => {
     expect(screen.querySelectorAll("[data-concept-graph-node-level='1']")).toHaveLength(1);
     expect(screen.querySelectorAll("[data-concept-graph-node-level='2']")).toHaveLength(0);
     expect(screen.querySelector("[data-concept-graph-hidden-count]")).toBeNull();
+  });
+
+  it("keeps the empty graph state inside the full-height map panel", async () => {
+    mocks.relations.clear();
+    const screen = await renderConceptWorkspace();
+    const mapColumn = screen.querySelector("[data-concept-workspace-map]") as HTMLElement;
+
+    expect(mapColumn.className).toContain("h-full min-h-0 overflow-hidden");
+    expect(mapColumn.textContent).toContain("No hay suficientes conexiones todavía");
+    expect(screen.querySelector("svg[aria-label='Mapa de conceptos conectados']")).toBeNull();
   });
 
   it("shows exceptional concept status but keeps normal status implicit", async () => {
@@ -617,18 +712,33 @@ async function drag(
   });
 }
 
-function mockSvgRect(svg: SVGSVGElement) {
-  Object.defineProperty(svg, "getBoundingClientRect", {
+function mockSvgRect(
+  svg: SVGSVGElement,
+  rect: Partial<{ left: number; top: number; width: number; height: number }> = {},
+) {
+  mockElementRect(svg, rect);
+}
+
+function mockElementRect(
+  element: Element,
+  rect: Partial<{ left: number; top: number; width: number; height: number }> = {},
+) {
+  const left = rect.left ?? 0;
+  const top = rect.top ?? 0;
+  const width = rect.width ?? 760;
+  const height = rect.height ?? 440;
+
+  Object.defineProperty(element, "getBoundingClientRect", {
     configurable: true,
     value: () => ({
-      x: 0,
-      y: 0,
-      left: 0,
-      top: 0,
-      width: 760,
-      height: 440,
-      right: 760,
-      bottom: 440,
+      x: left,
+      y: top,
+      left,
+      top,
+      width,
+      height,
+      right: left + width,
+      bottom: top + height,
       toJSON: () => ({}),
     }),
   });

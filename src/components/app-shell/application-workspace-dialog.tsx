@@ -37,8 +37,8 @@ export function ApplicationWorkspaceDialog({
           aria-describedby={descriptionId}
           data-application-workspace-dialog=""
           className={cn(
-            "fixed left-1/2 top-1/2 z-[71] flex h-[min(90dvh,calc(100dvh-48px))] w-[min(96vw,calc(100vw-24px))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl bg-white shadow-2xl outline-none",
-            "sm:w-[min(1400px,calc(100vw-64px))] sm:rounded-2xl",
+            "fixed left-1/2 top-1/2 z-[71] flex h-[calc(100dvh_-_20px_-_max(20px,env(safe-area-inset-bottom)))] w-[calc(100vw_-_40px)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl bg-white shadow-2xl outline-none",
+            "sm:h-[calc(100dvh_-_24px_-_max(24px,env(safe-area-inset-bottom)))] sm:w-[min(1400px,calc(100vw_-_48px))] sm:rounded-2xl",
           )}
           onCloseAutoFocus={(event) => {
             const returnFocusTarget = returnFocusRef?.current;
@@ -96,7 +96,7 @@ export function ApplicationWorkspaceDialog({
             </header>
           )}
 
-          <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

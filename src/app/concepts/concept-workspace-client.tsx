@@ -87,11 +87,11 @@ export function ConceptWorkspaceClient({
 
   return (
     <section
-      className="grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] overflow-hidden px-3 py-3 sm:px-4"
+      className="flex h-full min-h-0 flex-1 flex-col overflow-hidden px-3 py-3 sm:px-4"
       data-concept-workspace=""
     >
       <div
-        className="flex min-h-0 items-center gap-3 overflow-hidden"
+        className="flex min-h-0 shrink-0 items-center gap-3 overflow-hidden"
         data-concept-workspace-topbar=""
       >
         <h2 className="shrink-0 text-lg font-semibold text-zinc-950">Conceptos</h2>
@@ -146,15 +146,15 @@ export function ConceptWorkspaceClient({
 
       <div
         className={
-          "grid min-h-0 overflow-hidden md:grid-cols-[minmax(16rem,44%)_minmax(0,56%)] xl:grid-cols-[minmax(20rem,40%)_minmax(0,60%)]"
+          "grid min-h-0 flex-1 overflow-hidden md:grid-cols-[minmax(16rem,44%)_minmax(0,56%)] xl:grid-cols-[minmax(20rem,40%)_minmax(0,60%)]"
         }
         data-concept-workspace-main=""
       >
         <div
           className={
             mobileView === "profile"
-              ? "min-h-0 overflow-hidden rounded-lg border border-zinc-100 bg-white md:mr-3 md:block"
-              : "hidden min-h-0 overflow-hidden rounded-lg border border-zinc-100 bg-white md:mr-3 md:block"
+              ? "h-full min-h-0 overflow-hidden rounded-lg border border-zinc-100 bg-white md:mr-3 md:block"
+              : "hidden h-full min-h-0 overflow-hidden rounded-lg border border-zinc-100 bg-white md:mr-3 md:block"
           }
           data-concept-workspace-profile=""
           ref={profileRef}
@@ -178,8 +178,8 @@ export function ConceptWorkspaceClient({
         <div
           className={
             mobileView === "map"
-              ? "min-h-0 overflow-hidden rounded-lg border border-zinc-100 bg-white md:block"
-              : "hidden min-h-0 overflow-hidden rounded-lg border border-zinc-100 bg-white md:block"
+              ? "h-full min-h-0 overflow-hidden rounded-lg border border-zinc-100 bg-white md:block"
+              : "hidden h-full min-h-0 overflow-hidden rounded-lg border border-zinc-100 bg-white md:block"
           }
           data-concept-workspace-map=""
         >

@@ -294,10 +294,10 @@ export function ConceptKnowledgeExplorerClient({
           {hasEnoughConnections ? (
             <div className="relative min-h-0 flex-1 overflow-hidden" data-concept-map-pane="">
               {workspaceMode ? (
-                <div className="absolute right-3 top-3 z-10 flex rounded-md border border-zinc-200 bg-white/90">
+                <div className="absolute right-3 top-3 z-10 flex rounded-md border border-[var(--vinema-border)] bg-[var(--vinema-surface-panel)]">
                   <button
                     type="button"
-                    className="h-8 w-8 text-sm text-zinc-600 hover:text-zinc-950"
+                    className="h-8 w-8 text-sm text-[color:var(--vinema-text-secondary)] hover:bg-[var(--vinema-hover)] hover:text-[color:var(--vinema-text-primary)]"
                     aria-label="Alejar mapa"
                     onClick={() =>
                       setViewTransform((current) => ({
@@ -310,7 +310,7 @@ export function ConceptKnowledgeExplorerClient({
                   </button>
                   <button
                     type="button"
-                    className="h-8 w-8 text-sm text-zinc-600 hover:text-zinc-950"
+                    className="h-8 w-8 text-sm text-[color:var(--vinema-text-secondary)] hover:bg-[var(--vinema-hover)] hover:text-[color:var(--vinema-text-primary)]"
                     aria-label="Acercar mapa"
                     onClick={() =>
                       setViewTransform((current) => ({
@@ -323,7 +323,7 @@ export function ConceptKnowledgeExplorerClient({
                   </button>
                   <button
                     type="button"
-                    className="h-8 px-2 text-xs font-medium text-zinc-600 hover:text-zinc-950"
+                    className="h-8 px-2 text-xs font-medium text-[color:var(--vinema-text-secondary)] hover:bg-[var(--vinema-hover)] hover:text-[color:var(--vinema-text-primary)]"
                     aria-label="Centrar mapa"
                     onClick={() => setViewTransform({ scale: 1, x: 0, y: 0 })}
                   >
@@ -619,7 +619,7 @@ function ConceptGraph({
               y2={target.y}
               stroke={getGraphStroke(edge.strength)}
               strokeWidth={getGraphStrokeWidth(edge)}
-              opacity={highlighted ? (edge.level === 2 ? 0.45 : 1) : 0.16}
+              opacity={highlighted ? (edge.level === 2 ? 0.62 : 1) : 0.16}
               strokeLinecap="round"
               data-concept-graph-edge-level={edge.level}
               data-concept-graph-edge-source={edge.sourceId}
@@ -677,8 +677,8 @@ function ConceptGraph({
               textAnchor="middle"
               className={
                 node.level === 2
-                  ? "fill-zinc-500 text-[11px]"
-                  : "fill-zinc-700 text-[13px]"
+                  ? "fill-[var(--vinema-text-muted)] text-[11px]"
+                  : "fill-[var(--vinema-text-secondary)] text-[13px]"
               }
               opacity={muted ? 0.45 : 1}
             >
@@ -689,7 +689,7 @@ function ConceptGraph({
                 x={node.x + getGraphNodeRadius(node, selectedConceptId) + 12}
                 y={node.y - getGraphNodeRadius(node, selectedConceptId) + 4}
                 textAnchor="middle"
-                className="fill-zinc-400 text-[11px]"
+                className="fill-[var(--vinema-text-faint)] text-[11px]"
                 data-concept-graph-hidden-count=""
               >
                 +{node.hiddenRelatedCount}
@@ -1243,10 +1243,10 @@ function searchConcepts({
 
 function getGraphStroke(strength: RelationshipStrength) {
   return strength === "STRONG"
-    ? "var(--vinema-text-muted)"
+    ? "color-mix(in srgb, var(--vinema-accent-indigo) 65%, var(--vinema-text-muted))"
     : strength === "MEDIUM"
-      ? "var(--vinema-text-faint)"
-      : "var(--vinema-border)";
+      ? "var(--vinema-text-muted)"
+      : "var(--vinema-border-strong)";
 }
 
 function getGraphStrokeWidth(edge: PositionedGraphEdge) {
@@ -1274,27 +1274,25 @@ function getGraphNodeRadius(
 
 function getGraphNodeFill(node: PositionedGraphNode, active = false) {
   if (node.selected) {
-    return "var(--vinema-text-primary)";
+    return "color-mix(in srgb, var(--vinema-accent-indigo) 24%, var(--vinema-surface-elevated))";
   }
 
   if (active) {
-    return node.level === 1 ? "var(--vinema-hover)" : "var(--vinema-surface)";
+    return node.level === 1 ? "var(--vinema-surface-elevated)" : "var(--vinema-surface)";
   }
 
-  return node.level === 1
-    ? "var(--vinema-surface)"
-    : "var(--vinema-canvas-surface)";
+  return node.level === 1 ? "var(--vinema-surface-elevated)" : "var(--vinema-surface)";
 }
 
 function getGraphNodeStroke(
   node: PositionedGraphNode,
   selectedConceptId: string | null,
 ) {
-  if (node.conceptId === selectedConceptId) {
-    return "var(--vinema-text-primary)";
+  if (node.selected || node.conceptId === selectedConceptId) {
+    return "var(--vinema-accent-indigo)";
   }
 
-  return node.level === 1 ? "var(--vinema-border)" : "var(--vinema-border-subtle)";
+  return node.level === 1 ? "var(--vinema-border-strong)" : "var(--vinema-border)";
 }
 
 function getGraphLabelOffset(node: PositionedGraphNode) {

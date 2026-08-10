@@ -33,8 +33,20 @@ describe("ApplicationWorkspaceDialog", () => {
 
     const dialog = document.body.querySelector("[data-application-workspace-dialog]");
     const header = document.body.querySelector("header");
+    const contentSlot = dialog?.lastElementChild as HTMLElement | null;
 
     expect(dialog).toBeTruthy();
+    expect(dialog?.className).toContain(
+      "h-[calc(100dvh_-_20px_-_max(20px,env(safe-area-inset-bottom)))]",
+    );
+    expect(dialog?.className).toContain("w-[calc(100vw_-_40px)]");
+    expect(dialog?.className).toContain(
+      "sm:h-[calc(100dvh_-_24px_-_max(24px,env(safe-area-inset-bottom)))]",
+    );
+    expect(dialog?.className).toContain("sm:w-[min(1400px,calc(100vw_-_48px))]");
+    expect(contentSlot?.className).toContain(
+      "flex min-h-0 flex-1 flex-col overflow-hidden",
+    );
     expect(header?.className).toContain("min-h-[56px]");
     expect(header?.className).not.toContain("border-b");
     expect(document.body.textContent).toContain("Conceptos");
