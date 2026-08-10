@@ -4,7 +4,14 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Search } from "lucide-react";
 import type React from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { Context } from "@/domain/context/context";
 import type { NodeContextRelation } from "@/domain/context/node-context-relation";
 import type { Node } from "@/domain/node/node";
@@ -72,6 +79,9 @@ const GRAPH_WIDTH = 760;
 const GRAPH_HEIGHT = 440;
 const CENTER_X = GRAPH_WIDTH / 2;
 const CENTER_Y = GRAPH_HEIGHT / 2;
+const GRAPH_FIT_PADDING = 28;
+const GRAPH_FIT_MIN_SCALE = 0.65;
+const GRAPH_FIT_MAX_SCALE = 1;
 
 export function ConceptKnowledgeExplorerClient({
   embedded = false,
@@ -113,6 +123,12 @@ export function ConceptKnowledgeExplorerClient({
   const [manualNodePositions, setManualNodePositions] = useState<
     Map<string, GraphPoint>
   >(new Map());
+  const centerGraphRef = useRef<() => void>(() => {
+    setViewTransform({ scale: 1, x: 0, y: 0 });
+  });
+  const registerCenterGraph = useCallback((centerGraph: () => void) => {
+    centerGraphRef.current = centerGraph;
+  }, []);
 
   const loadExplorer = useCallback(async () => {
     if (vinemaContext.status !== "ready") {
@@ -164,12 +180,14 @@ export function ConceptKnowledgeExplorerClient({
 
   const graph = useMemo(
     () =>
-      deriveExplorerGraph({
-        focusId: activeFocusId,
-        contexts,
-        relations,
-        nodes,
-      }),
+      activeFocusId
+        ? deriveExplorerGraph({
+            focusId: activeFocusId,
+            contexts,
+            relations,
+            nodes,
+          })
+        : { center: null, nodes: [], edges: [] },
     [activeFocusId, contexts, nodes, relations],
   );
   const selectedNode =
@@ -325,7 +343,7 @@ export function ConceptKnowledgeExplorerClient({
                     type="button"
                     className="h-8 px-2 text-xs font-medium text-[color:var(--vinema-text-secondary)] hover:bg-[var(--vinema-hover)] hover:text-[color:var(--vinema-text-primary)]"
                     aria-label="Centrar mapa"
-                    onClick={() => setViewTransform({ scale: 1, x: 0, y: 0 })}
+                    onClick={() => centerGraphRef.current()}
                   >
                     centrar
                   </button>
@@ -341,6 +359,7 @@ export function ConceptKnowledgeExplorerClient({
                 onViewTransformChange={setViewTransform}
                 manualNodePositions={manualNodePositions}
                 onManualNodePositionsChange={setManualNodePositions}
+                onCenterGraphReady={registerCenterGraph}
               />
             </div>
           ) : (
@@ -465,6 +484,7 @@ function ConceptGraph({
   onViewTransformChange,
   manualNodePositions,
   onManualNodePositionsChange,
+  onCenterGraphReady,
 }: {
   graph: ExplorerGraph;
   selectedConceptId: string | null;
@@ -475,7 +495,9 @@ function ConceptGraph({
   onManualNodePositionsChange: (
     value: Map<string, GraphPoint> | ((current: Map<string, GraphPoint>) => Map<string, GraphPoint>),
   ) => void;
+  onCenterGraphReady: (centerGraph: () => void) => void;
 }) {
+  const viewportRef = useRef<HTMLDivElement | null>(null);
   const [hoveredConceptId, setHoveredConceptId] = useState<string | null>(null);
   const [dragState, setDragState] = useState<
     | { kind: "pan"; startX: number; startY: number; origin: GraphViewTransform }
@@ -509,6 +531,59 @@ function ConceptGraph({
 
     return connected;
   }, [graph.edges, hoveredConceptId]);
+  const graphLayoutKey = useMemo(
+    () =>
+      graph.nodes
+        .map((node) => `${node.conceptId}:${node.x}:${node.y}:${node.level}`)
+        .join("|"),
+    [graph.nodes],
+  );
+  const applyGraphFit = useCallback((nodesToFit: PositionedGraphNode[]) => {
+    window.requestAnimationFrame(() => {
+      const viewport = viewportRef.current;
+      const viewportRect = viewport?.getBoundingClientRect();
+
+      if (!viewportRect || viewportRect.width <= 0 || viewportRect.height <= 0) {
+        return;
+      }
+
+      onViewTransformChange(
+        getGraphFitTransform({
+          nodes: nodesToFit,
+          selectedConceptId,
+        }),
+      );
+    });
+  }, [onViewTransformChange, selectedConceptId]);
+  const centerGraph = useCallback(() => {
+    applyGraphFit(displayNodes);
+  }, [applyGraphFit, displayNodes]);
+
+  useEffect(() => {
+    onCenterGraphReady(centerGraph);
+  }, [centerGraph, onCenterGraphReady]);
+
+  useLayoutEffect(() => {
+    applyGraphFit(graph.nodes);
+  }, [applyGraphFit, graph.nodes, graphLayoutKey]);
+
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+
+    if (!viewport || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      centerGraph();
+    });
+
+    resizeObserver.observe(viewport);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [centerGraph]);
 
   function getGraphPoint(event: React.MouseEvent<SVGSVGElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -544,6 +619,7 @@ function ConceptGraph({
 
   return (
     <div
+      ref={viewportRef}
       className="h-full min-h-0 flex-1 overflow-hidden overscroll-contain"
       aria-label="Mapa de conexiones"
     >
@@ -1254,6 +1330,95 @@ function getGraphStrokeWidth(edge: PositionedGraphEdge) {
     edge.strength === "STRONG" ? 4 : edge.strength === "MEDIUM" ? 2.5 : 1.5;
 
   return edge.level === 2 ? Math.max(1, base * 0.55) : base;
+}
+
+function getGraphFitTransform({
+  nodes,
+  selectedConceptId,
+}: {
+  nodes: PositionedGraphNode[];
+  selectedConceptId: string | null;
+}): GraphViewTransform {
+  const bounds = getGraphNodeBounds({ nodes, selectedConceptId });
+
+  if (!bounds) {
+    return { scale: 1, x: 0, y: 0 };
+  }
+
+  const paddedBounds = {
+    left: bounds.left - GRAPH_FIT_PADDING,
+    top: bounds.top - GRAPH_FIT_PADDING,
+    right: bounds.right + GRAPH_FIT_PADDING,
+    bottom: bounds.bottom + GRAPH_FIT_PADDING,
+  };
+  const boundsWidth = Math.max(1, paddedBounds.right - paddedBounds.left);
+  const boundsHeight = Math.max(1, paddedBounds.bottom - paddedBounds.top);
+  const scale = clampGraphScale(
+    Math.min(
+      GRAPH_FIT_MAX_SCALE,
+      GRAPH_WIDTH / boundsWidth,
+      GRAPH_HEIGHT / boundsHeight,
+    ),
+  );
+  const boundsCenterX = paddedBounds.left + boundsWidth / 2;
+  const boundsCenterY = paddedBounds.top + boundsHeight / 2;
+
+  return {
+    scale,
+    x: CENTER_X - boundsCenterX * scale,
+    y: CENTER_Y - boundsCenterY * scale,
+  };
+}
+
+function getGraphNodeBounds({
+  nodes,
+  selectedConceptId,
+}: {
+  nodes: PositionedGraphNode[];
+  selectedConceptId: string | null;
+}) {
+  if (nodes.length === 0) {
+    return null;
+  }
+
+  return nodes.reduce(
+    (bounds, node) => {
+      const radius = getGraphNodeRadius(
+        node,
+        selectedConceptId,
+        node.selected || node.conceptId === selectedConceptId,
+      );
+      const labelWidth = Math.min(
+        148,
+        Math.max(44, truncateGraphLabel(node.label).length * 7),
+      );
+      const labelY = node.y + getGraphLabelOffset(node);
+      const hiddenCountRight =
+        node.hiddenRelatedCount > 0 ? node.x + radius + 30 : node.x + radius;
+
+      return {
+        left: Math.min(bounds.left, node.x - radius, node.x - labelWidth / 2),
+        top: Math.min(bounds.top, node.y - radius, labelY - 14),
+        right: Math.max(
+          bounds.right,
+          node.x + radius,
+          node.x + labelWidth / 2,
+          hiddenCountRight,
+        ),
+        bottom: Math.max(bounds.bottom, node.y + radius, labelY + 8),
+      };
+    },
+    {
+      left: Number.POSITIVE_INFINITY,
+      top: Number.POSITIVE_INFINITY,
+      right: Number.NEGATIVE_INFINITY,
+      bottom: Number.NEGATIVE_INFINITY,
+    },
+  );
+}
+
+function clampGraphScale(value: number) {
+  return Math.min(GRAPH_FIT_MAX_SCALE, Math.max(GRAPH_FIT_MIN_SCALE, value));
 }
 
 function getGraphNodeRadius(

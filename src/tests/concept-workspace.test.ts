@@ -68,6 +68,8 @@ vi.mock("@/infrastructure/repositories", () => ({
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
   .IS_REACT_ACT_ENVIRONMENT = true;
 
+let animationFrameCallbacks: FrameRequestCallback[] = [];
+
 describe("ConceptWorkspaceClient", () => {
   beforeEach(() => {
     mocks.contexts.clear();
@@ -76,10 +78,17 @@ describe("ConceptWorkspaceClient", () => {
     mocks.push.mockReset();
     mocks.replace.mockReset();
     mocks.searchParams = new URLSearchParams();
+    animationFrameCallbacks = [];
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      animationFrameCallbacks.push(callback);
+      return animationFrameCallbacks.length;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => undefined);
     seedWorkspace();
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     document.body.replaceChildren();
   });
 
@@ -130,12 +139,11 @@ describe("ConceptWorkspaceClient", () => {
     );
     expect(mapColumn.className).toContain("h-full min-h-0 overflow-hidden");
     expect(mapColumn.className).toContain("md:block");
-    expect(
-      screen.querySelectorAll("[data-concept-graph-node-level]").length,
-    ).toBeGreaterThan(0);
+    expect(mapColumn.textContent).toContain("No hay suficientes conexiones todavía");
+    expect(screen.querySelectorAll("[data-concept-graph-node-level]")).toHaveLength(0);
     expect(
       screen.querySelector("svg[aria-label='Mapa de conceptos conectados']"),
-    ).toBeTruthy();
+    ).toBeNull();
     expect(screen.textContent).not.toContain("Abrir mapa de conceptos");
     expect(screen.textContent).not.toContain("Explorar conocimiento");
     expect(screen.querySelector("[data-concept-carousel]")?.textContent).toBe(
@@ -370,13 +378,15 @@ describe("ConceptWorkspaceClient", () => {
     const svg = screen.querySelector(
       "svg[aria-label='Mapa de conceptos conectados']",
     ) as SVGSVGElement;
+    const graphContainer = screen.querySelector(
+      "[aria-label='Mapa de conexiones']",
+    ) as HTMLElement;
     const zoomOutButton = screen.querySelector(
       "button[aria-label='Alejar mapa']",
     ) as HTMLButtonElement;
     const zoomControls = zoomOutButton.parentElement as HTMLElement;
     const syncNode = screen.querySelector("[aria-label='Enfocar Sync']") as SVGGElement;
     const syncCircle = syncNode.querySelector("circle") as SVGCircleElement;
-    const initialTransform = svg.getAttribute("data-concept-graph-transform");
     const initialX = syncCircle.getAttribute("cx");
 
     expect(zoomControls.className).toContain("bg-[var(--vinema-surface-panel)]");
@@ -387,7 +397,17 @@ describe("ConceptWorkspaceClient", () => {
     );
     expect(zoomOutButton.className).toContain("hover:bg-[var(--vinema-hover)]");
 
+    mockElementRect(graphContainer, { left: 16, top: 44, width: 720, height: 300 });
     mockSvgRect(svg, { left: 16, top: 44, width: 720, height: 300 });
+    await flushAnimationFrames();
+
+    const centeredRailwayTransform = getExpectedGraphFitTransform(screen);
+    expect(svg.getAttribute("data-concept-graph-transform")).toBe(
+      centeredRailwayTransform,
+    );
+    expect(centeredRailwayTransform).not.toBe("1.00,0,0");
+
+    const initialTransform = svg.getAttribute("data-concept-graph-transform");
 
     await wheel(svg, -120, { clientX: 520, clientY: 220 });
     expect(svg.getAttribute("data-concept-graph-transform")).not.toBe(initialTransform);
@@ -415,13 +435,26 @@ describe("ConceptWorkspaceClient", () => {
     ).not.toBe("24");
 
     await doubleClick(screen.querySelector("[aria-label='Enfocar Deploy']") as HTMLElement);
+    await flushAnimationFrames();
     expect(getButtonContaining(screen, "Deploy").getAttribute("aria-pressed")).toBe(
       "true",
     );
     expect(mocks.push).not.toHaveBeenCalled();
+    const centeredDeployTransform = getExpectedGraphFitTransform(screen);
+    expect(svg.getAttribute("data-concept-graph-transform")).toBe(
+      centeredDeployTransform,
+    );
+    expect(centeredDeployTransform).not.toBe(centeredRailwayTransform);
 
+    await wheel(svg, -120, { clientX: 520, clientY: 220 });
+    expect(svg.getAttribute("data-concept-graph-transform")).not.toBe(
+      centeredDeployTransform,
+    );
     await click(getButtonContaining(screen, "centrar"));
-    expect(svg.getAttribute("data-concept-graph-transform")).toBe("1.00,0,0");
+    await flushAnimationFrames();
+    expect(svg.getAttribute("data-concept-graph-transform")).toBe(
+      centeredDeployTransform,
+    );
   });
 
   it("does not fabricate second-level nodes when the selected concept has few links", async () => {
@@ -719,6 +752,60 @@ function mockSvgRect(
   mockElementRect(svg, rect);
 }
 
+function getExpectedGraphFitTransform(container: HTMLElement) {
+  const nodeGroups = Array.from(
+    container.querySelectorAll("[data-concept-graph-node-level]"),
+  );
+  const bounds = nodeGroups.reduce(
+    (current, group) => {
+      const circle = group.querySelector("circle") as SVGCircleElement;
+      const label = group.querySelector("text:not([data-concept-graph-hidden-count])");
+      const hiddenCount = group.querySelector("[data-concept-graph-hidden-count]");
+      const x = Number(circle.getAttribute("cx"));
+      const y = Number(circle.getAttribute("cy"));
+      const radius = Number(circle.getAttribute("r"));
+      const labelX = Number(label?.getAttribute("x") ?? x);
+      const labelY = Number(label?.getAttribute("y") ?? y);
+      const labelWidth = Math.min(
+        148,
+        Math.max(44, (label?.textContent?.trim().length ?? 0) * 7),
+      );
+      const hiddenCountRight = hiddenCount
+        ? x + radius + 30
+        : x + radius;
+
+      return {
+        left: Math.min(current.left, x - radius, labelX - labelWidth / 2),
+        top: Math.min(current.top, y - radius, labelY - 14),
+        right: Math.max(current.right, x + radius, labelX + labelWidth / 2, hiddenCountRight),
+        bottom: Math.max(current.bottom, y + radius, labelY + 8),
+      };
+    },
+    {
+      left: Number.POSITIVE_INFINITY,
+      top: Number.POSITIVE_INFINITY,
+      right: Number.NEGATIVE_INFINITY,
+      bottom: Number.NEGATIVE_INFINITY,
+    },
+  );
+  const paddedBounds = {
+    left: bounds.left - 28,
+    top: bounds.top - 28,
+    right: bounds.right + 28,
+    bottom: bounds.bottom + 28,
+  };
+  const boundsWidth = Math.max(1, paddedBounds.right - paddedBounds.left);
+  const boundsHeight = Math.max(1, paddedBounds.bottom - paddedBounds.top);
+  const scale = Math.min(
+    1,
+    Math.max(0.65, Math.min(760 / boundsWidth, 440 / boundsHeight)),
+  );
+  const boundsCenterX = paddedBounds.left + boundsWidth / 2;
+  const boundsCenterY = paddedBounds.top + boundsHeight / 2;
+
+  return `${scale.toFixed(2)},${Math.round(380 - boundsCenterX * scale)},${Math.round(220 - boundsCenterY * scale)}`;
+}
+
 function mockElementRect(
   element: Element,
   rect: Partial<{ left: number; top: number; width: number; height: number }> = {},
@@ -747,4 +834,13 @@ function mockElementRect(
 async function flushPromises() {
   await Promise.resolve();
   await Promise.resolve();
+}
+
+async function flushAnimationFrames() {
+  await act(async () => {
+    const callbacks = animationFrameCallbacks;
+    animationFrameCallbacks = [];
+    callbacks.forEach((callback) => callback(0));
+    await flushPromises();
+  });
 }
