@@ -60,14 +60,14 @@
   --vinema-surface-elevated: hsl(240 6% 13% / 0.96);
   --vinema-surface-panel: hsl(240 6% 12% / 0.96);
   --vinema-surface-modal: hsl(240 6% 12%);
-  --vinema-text-primary: hsl(240 12% 92%);
-  --vinema-text-secondary: hsl(240 7% 77%);
-  --vinema-text-muted: hsl(240 5% 62%);
-  --vinema-text-faint: hsl(240 5% 47%);
-  --vinema-border: hsl(240 5% 24%);
-  --vinema-border-subtle: hsl(240 5% 18%);
-  --vinema-border-strong: hsl(240 5% 32%);
-  --vinema-hover: hsl(240 5% 17%);
+  --vinema-text-primary: hsl(240 11% 94%);
+  --vinema-text-secondary: hsl(240 8% 82%);
+  --vinema-text-muted: hsl(240 6% 68%);
+  --vinema-text-faint: hsl(240 6% 56%);
+  --vinema-border: hsl(240 5% 29%);
+  --vinema-border-subtle: hsl(240 5% 22%);
+  --vinema-border-strong: hsl(240 5% 38%);
+  --vinema-hover: hsl(240 5% 20%);
   --vinema-selection: rgb(52 211 153 / 0.2);
   --vinema-input: hsl(240 6% 10%);
   --vinema-input-border: hsl(240 5% 26%);
@@ -92,7 +92,7 @@
   --secondary: 240 5% 17%;
   --secondary-foreground: 240 12% 92%;
   --muted: 240 5% 17%;
-  --muted-foreground: 240 5% 62%;
+  --muted-foreground: 240 6% 68%;
   --accent: 240 5% 17%;
   --accent-foreground: 240 12% 92%;
   --border: 240 5% 24%;
@@ -131,8 +131,8 @@ body {
   --vinema-canvas-panel-gutter: 0.5rem;
   --vinema-canvas-panel-max-height: calc(100dvh - 8rem);
   --vinema-canvas-dock-width: 6rem;
-  --vinema-canvas-submit-gap: 1.25rem;
-  --vinema-canvas-max-width: 920px;
+  --vinema-canvas-submit-gap: 0.25rem;
+  --vinema-canvas-max-width: 60rem;
   --vinema-canvas-edge-gutter: 1.25rem;
   --vinema-canvas-center-width: min(
     var(--vinema-canvas-max-width),
@@ -141,7 +141,7 @@ body {
   --vinema-canvas-padding-x: 1.25rem;
   --vinema-canvas-padding-y: 1rem;
   --vinema-canvas-context-reserve: 3rem;
-  --vinema-canvas-editor-start: 40%;
+  --vinema-canvas-editor-start: 42%;
   --vinema-canvas-editor-end-space: 30%;
   --vinema-canvas-font-size: 1.25rem;
   --vinema-canvas-line-height: 1.7;

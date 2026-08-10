@@ -1,7 +1,7 @@
 "use client";
 
-export const CANVAS_EDITOR_INITIAL_ANCHOR = "40%";
-export const CANVAS_EDITOR_INITIAL_ANCHOR_RATIO = 0.4;
+export const CANVAS_EDITOR_INITIAL_ANCHOR = "42%";
+export const CANVAS_EDITOR_INITIAL_ANCHOR_RATIO = 0.42;
 export const CANVAS_CARET_VISUAL_FOLLOW_RATIO = 0.7;
 
 export type CaretOffsetMeasure = (textarea: HTMLTextAreaElement) => number;

@@ -1742,9 +1742,12 @@ function CanvasPanelIconButton({
       data-memory-sync-trigger={memoryStatusTrigger ? "" : undefined}
       data-context-indicator={indicatorPanel ? "" : undefined}
       data-context-indicator-panel={indicatorPanel}
+      data-canvas-panel-active={active ? "" : undefined}
+      data-canvas-panel-pinned={pressed ? "" : undefined}
       className={cn(
-        "inline-flex h-11 w-11 min-w-11 items-center justify-center rounded-full outline-none transition-[background-color,color,transform] duration-[180ms] hover:scale-105 hover:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-zinc-400 active:scale-95 motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
-        getRailIconColorClassName({ icon, active }),
+        "relative inline-flex h-10 w-10 min-w-10 items-center justify-center rounded-full outline-none transition-[background-color,color,box-shadow,transform] duration-[180ms] hover:scale-[1.04] hover:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-zinc-400 active:scale-95 motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
+        pressed || active ? "shadow-[inset_0_0_0_1px_currentColor]" : "",
+        getRailIconColorClassName({ icon, active, surface: "rail" }),
       )}
       onMouseEnter={onHover}
       onMouseLeave={onHoverEnd}
@@ -1776,11 +1779,12 @@ function CanvasRailWorkspaceButton({
       title={label}
       data-canvas-panel-trigger=""
       data-canvas-workspace-trigger=""
+      data-canvas-workspace-active={active ? "" : undefined}
       className={cn(
-        "inline-flex h-11 w-11 min-w-11 items-center justify-center rounded-full outline-none transition-[background-color,color,transform] duration-[180ms] hover:scale-105 hover:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-zinc-400 active:scale-95 motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
+        "relative inline-flex h-10 w-10 min-w-10 items-center justify-center rounded-full outline-none transition-[background-color,color,box-shadow,transform] duration-[180ms] hover:scale-[1.04] hover:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-zinc-400 active:scale-95 motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
         active
-          ? "bg-zinc-100 text-zinc-950 hover:text-zinc-950"
-          : "text-zinc-400 hover:text-zinc-700",
+          ? "bg-zinc-100 text-zinc-950 shadow-[inset_0_0_0_1px_currentColor] hover:text-zinc-950"
+          : "text-[color:var(--vinema-text-muted)] hover:text-[color:var(--vinema-text-secondary)]",
       )}
       onClick={onClick}
     >
@@ -1842,7 +1846,7 @@ function CanvasContextualLayer({
   return (
     <div
       className={cn(
-        "absolute inset-x-[var(--vinema-canvas-padding-x)] top-[var(--vinema-canvas-padding-y)] z-20 flex min-w-0 flex-col items-center",
+        "absolute inset-x-[var(--vinema-canvas-padding-x)] top-[calc(var(--vinema-canvas-padding-y)+1rem)] z-20 flex min-w-0 flex-col items-center",
         contextPanelVisible ? "pointer-events-auto gap-2" : "pointer-events-none",
       )}
       data-canvas-context-layer=""
@@ -1874,7 +1878,7 @@ function CanvasContextualLayer({
     >
       {hasContextButtons ? (
         <div
-          className="pointer-events-auto flex max-w-full items-center justify-center gap-2"
+          className="pointer-events-auto flex max-w-full items-center justify-center gap-1.5"
           data-canvas-context-bar=""
         >
           {showMemoryIndicator ? (
@@ -1995,9 +1999,11 @@ function CanvasContextualButton({
       data-canvas-panel-trigger=""
       data-context-indicator=""
       data-context-indicator-panel={indicatorPanel}
+      data-canvas-panel-active={active ? "" : undefined}
+      data-canvas-panel-pinned={pressed ? "" : undefined}
       className={cn(
-        "inline-flex h-8 max-w-full items-center gap-1.5 rounded-full px-2.5 text-xs font-medium outline-none transition-[background-color,color,transform] duration-[160ms] hover:scale-[1.03] focus-visible:ring-2 focus-visible:ring-zinc-400 active:scale-95 motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
-        getRailIconColorClassName({ icon, active }),
+        "inline-flex h-8 max-w-full items-center gap-1.5 rounded-full px-2.5 text-xs font-medium outline-none transition-[background-color,color,opacity,transform] duration-[160ms] hover:scale-[1.03] hover:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-zinc-400 active:scale-95 motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
+        getRailIconColorClassName({ icon, active, surface: "contextual" }),
       )}
       onPointerEnter={onHover}
       onPointerLeave={onHoverEnd}
@@ -2013,23 +2019,38 @@ function CanvasContextualButton({
 function getRailIconColorClassName({
   icon,
   active,
+  surface = "rail",
 }: {
   icon: "concepts" | "memories" | "preferences" | "memoryStatus";
   active: boolean;
+  surface?: "rail" | "contextual";
 }) {
+  const inactiveOpacity = surface === "contextual" ? "opacity-90 hover:opacity-100" : "";
+  const inactiveZinc =
+    "text-[color:var(--vinema-text-muted)] hover:text-[color:var(--vinema-text-secondary)]";
   const colorByIcon = {
     concepts: active
       ? "bg-indigo-50 text-indigo-600 hover:text-indigo-600"
-      : "text-indigo-300 hover:text-indigo-500",
+      : cn(
+          surface === "contextual"
+            ? "text-[color:color-mix(in_srgb,var(--vinema-accent-indigo)_88%,var(--vinema-text-muted))] hover:text-[color:var(--vinema-accent-indigo)]"
+            : "text-[color:color-mix(in_srgb,var(--vinema-accent-indigo)_78%,var(--vinema-text-muted))] hover:text-[color:var(--vinema-accent-indigo)]",
+          inactiveOpacity,
+        ),
     memories: active
       ? "bg-amber-50 text-amber-600 hover:text-amber-600"
-      : "text-amber-300 hover:text-amber-500",
+      : cn(
+          surface === "contextual"
+            ? "text-[color:color-mix(in_srgb,var(--vinema-accent-amber)_82%,var(--vinema-text-muted))] hover:text-[color:var(--vinema-accent-amber)]"
+            : "text-[color:color-mix(in_srgb,var(--vinema-accent-amber)_78%,var(--vinema-text-muted))] hover:text-[color:var(--vinema-accent-amber)]",
+          inactiveOpacity,
+        ),
     preferences: active
       ? "bg-zinc-100 text-zinc-950 hover:text-zinc-950"
-      : "text-zinc-400 hover:text-zinc-700",
+      : cn(inactiveZinc, inactiveOpacity),
     memoryStatus: active
       ? "bg-zinc-100 text-zinc-950 hover:text-zinc-950"
-      : "text-zinc-400 hover:text-zinc-700",
+      : cn(inactiveZinc, inactiveOpacity),
   } satisfies Record<typeof icon, string>;
 
   return colorByIcon[icon];

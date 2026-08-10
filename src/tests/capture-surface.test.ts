@@ -610,13 +610,19 @@ describe("CaptureSurface", () => {
     expect(dock?.className).toContain(
       "grid-cols-[var(--vinema-canvas-submit-gap)_var(--vinema-canvas-dock-width)_minmax(0,1fr)]",
     );
-    expect(dock?.className).toContain("items-center");
+    expect(dock?.className).toContain(
+      "grid-rows-[minmax(var(--vinema-canvas-context-reserve),calc(var(--vinema-canvas-editor-start)_+_var(--vinema-canvas-context-reserve)))_auto_minmax(var(--vinema-canvas-editor-end-space),1fr)]",
+    );
+    expect(dock?.firstElementChild?.className).toContain("row-[2]");
+    expect(dock?.firstElementChild?.className).toContain("items-start");
+    expect(dock?.className).toContain("max-sm:fixed");
+    expect(dock?.className).toContain("max-sm:bottom-[max(4rem,calc(3.25rem+env(safe-area-inset-bottom)))]");
     expect(getCanvasPrompts("mixed")).toContain(textarea?.getAttribute("placeholder"));
     expect(
       (composer as HTMLElement | null)?.style.getPropertyValue(
         "--vinema-canvas-editor-start",
       ),
-    ).toBe("40%");
+    ).toBe("42%");
     expect(textarea?.className).toContain("row-[2]");
     expect(textarea?.className).not.toContain("pt-[calc(50%-0.85em)]");
     expect(textarea?.className).toContain("overflow-hidden");
@@ -1014,6 +1020,11 @@ describe("CaptureSurface", () => {
     expect(getButtonByLabel(screen.container, "Explorar conocimiento")).toBeDefined();
     expect(getButtonByLabel(screen.container, "Explorar conceptos")).toBeDefined();
     expect(getButtonByLabel(screen.container, "Canvas")).toBeDefined();
+    expect(getButtonByLabel(screen.container, "Canvas")?.className).toContain("h-10");
+    expect(getButtonByLabel(screen.container, "Canvas")?.className).toContain("w-10");
+    expect(getButtonByLabel(screen.container, "Canvas")?.className).toContain(
+      "hover:bg-zinc-100",
+    );
     expect(getButtonByLabel(screen.container, "Administrar")).toBeUndefined();
     expect(
       screen.container.querySelectorAll("[data-knowledge-management-trigger]"),
@@ -1091,7 +1102,7 @@ describe("CaptureSurface", () => {
     const contextBar = screen.container.querySelector("[data-canvas-context-bar]");
 
     expect(contextLayer?.className).toContain(
-      "top-[var(--vinema-canvas-padding-y)]",
+      "top-[calc(var(--vinema-canvas-padding-y)+1rem)]",
     );
     expect(contextBar).toBeDefined();
     expect(scrollViewport.contains(contextBar)).toBe(false);
@@ -2411,6 +2422,9 @@ describe("CaptureSurface", () => {
     const conceptIndicator = screen.container.querySelector(
       '[data-context-indicator-panel="concepts"]',
     ) as HTMLElement;
+    const inactiveMemoryIndicator = screen.container.querySelector(
+      '[data-context-indicator-panel="memories"]',
+    ) as HTMLElement;
     const rail = screen.container.querySelector("[data-canvas-icon-rail]");
 
     expect(rail?.className).toContain("items-center");
@@ -2432,6 +2446,10 @@ describe("CaptureSurface", () => {
     expect(contextBar?.querySelectorAll("[data-context-indicator]")).toHaveLength(2);
     expect(conceptPanel.className).toContain("w-[var(--vinema-canvas-panel-preferred-width)]");
     expect(conceptIndicator.getAttribute("aria-pressed")).toBe("true");
+    expect(conceptIndicator.getAttribute("data-canvas-panel-active")).toBe("");
+    expect(conceptIndicator.className).toContain("hover:bg-zinc-100");
+    expect(inactiveMemoryIndicator.className).toContain("opacity-90");
+    expect(inactiveMemoryIndicator.className).toContain("hover:opacity-100");
 
     await openMemoryPanel(screen.container);
     const memoryPanel = getDialog(screen.container, "Me recuerda a…") as HTMLElement;

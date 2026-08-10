@@ -251,10 +251,10 @@ export function CanvasPanelColumn({
 export function CanvasCaptureDock({ children }: { children: ReactNode }) {
   return (
     <div
-      className="col-[3] row-[1] grid h-full min-h-0 grid-cols-[var(--vinema-canvas-submit-gap)_var(--vinema-canvas-dock-width)_minmax(0,1fr)] items-center overflow-hidden"
+      className="col-[3] row-[1] grid h-full min-h-0 grid-cols-[var(--vinema-canvas-submit-gap)_var(--vinema-canvas-dock-width)_minmax(0,1fr)] grid-rows-[minmax(var(--vinema-canvas-context-reserve),calc(var(--vinema-canvas-editor-start)_+_var(--vinema-canvas-context-reserve)))_auto_minmax(var(--vinema-canvas-editor-end-space),1fr)] overflow-hidden py-[var(--vinema-canvas-padding-y)] max-sm:pointer-events-none max-sm:fixed max-sm:bottom-[max(4rem,calc(3.25rem+env(safe-area-inset-bottom)))] max-sm:right-4 max-sm:z-30 max-sm:block max-sm:h-auto max-sm:w-auto max-sm:p-0"
       data-canvas-capture-dock=""
     >
-      <div className="col-[2] flex min-h-0 items-center justify-start">
+      <div className="col-[2] row-[2] flex min-h-0 items-start justify-start max-sm:pointer-events-auto">
         {children}
       </div>
     </div>

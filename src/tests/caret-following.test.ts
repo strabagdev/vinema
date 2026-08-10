@@ -8,8 +8,8 @@ import {
 } from "@/features/canvas/caret-following";
 
 describe("canvas caret following", () => {
-  it("keeps the initial editor anchor at forty percent", () => {
-    expect(CANVAS_EDITOR_INITIAL_ANCHOR).toBe("40%");
+  it("keeps the initial editor anchor slightly below the old center point", () => {
+    expect(CANVAS_EDITOR_INITIAL_ANCHOR).toBe("42%");
   });
 
   it("lets the caret move naturally between the initial anchor and the threshold", () => {
