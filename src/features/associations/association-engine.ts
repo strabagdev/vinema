@@ -36,6 +36,15 @@ export type SuggestAssociationsInput = {
   currentNodeId?: string;
   selectedCaptureIds?: string[];
   limit?: number;
+  diagnostics?: AssociationScoringDiagnostics;
+};
+
+export type AssociationScoringDiagnostics = {
+  queryIndexMs: number;
+  scoringMs: number;
+  rankingMs: number;
+  resultBuildMs: number;
+  scoredCaptureCount: number;
 };
 
 export type AssociationIndex = {
@@ -85,15 +94,22 @@ export function suggestAssociations(
     return [];
   }
 
+  const queryIndexStartedAt = performance.now();
   const query = indexText(input.text);
+  const queryIndexMs = Math.round(performance.now() - queryIndexStartedAt);
   const selectedCaptureIds = input.selectedCaptureIds ?? [];
+  const scoringStartedAt = performance.now();
   const scoredSuggestions = index.captures
     .filter((capture) => capture.node.id !== input.currentNodeId)
     .map((capture) =>
       scoreCapture(index, query, capture, selectedCaptureIds),
     )
-    .filter((suggestion): suggestion is AssociationSuggestion => suggestion !== null)
-    .sort(bySuggestionPriority);
+    .filter((suggestion): suggestion is AssociationSuggestion => suggestion !== null);
+  const scoringMs = Math.round(performance.now() - scoringStartedAt);
+  const rankingStartedAt = performance.now();
+  scoredSuggestions.sort(bySuggestionPriority);
+  const rankingMs = Math.round(performance.now() - rankingStartedAt);
+  const resultBuildStartedAt = performance.now();
   const selectedSuggestions = scoredSuggestions.filter((suggestion) =>
     selectedCaptureIds.includes(suggestion.node.id),
   );
@@ -101,11 +117,22 @@ export function suggestAssociations(
     (suggestion) => suggestion.score >= MIN_SUGGESTION_SCORE,
   );
   const visibleSuggestions = mergeSuggestions(selectedSuggestions, suggestions);
-
-  return visibleSuggestions.slice(
+  const result = visibleSuggestions.slice(
     0,
     Math.max(input.limit ?? MAX_SUGGESTIONS, selectedSuggestions.length),
   );
+
+  if (input.diagnostics) {
+    input.diagnostics.queryIndexMs = queryIndexMs;
+    input.diagnostics.scoringMs = scoringMs;
+    input.diagnostics.rankingMs = rankingMs;
+    input.diagnostics.resultBuildMs = Math.round(
+      performance.now() - resultBuildStartedAt,
+    );
+    input.diagnostics.scoredCaptureCount = scoredSuggestions.length;
+  }
+
+  return result;
 }
 
 export function indexCapture(node: Node): AssociationIndexedCapture {

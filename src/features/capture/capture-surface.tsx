@@ -528,9 +528,9 @@ export function CaptureSurface({
     if (!content.trim()) {
       saveTimerRef.current = setTimeout(() => {
         const savePromise = saveCaptureDraft(storage, content)
-        .then(() => {
-          setDraftStatus("idle");
-          setDraftError(null);
+          .then(() => {
+            setDraftStatus("idle");
+            setDraftError(null);
           })
           .catch(() => {
             setDraftStatus("error");

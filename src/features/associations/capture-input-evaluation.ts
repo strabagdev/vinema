@@ -7,8 +7,8 @@ import {
   type AssociationIndex,
 } from "@/features/associations/association-engine";
 import {
-  diagnoseConceptSuggestions,
-  suggestConcepts,
+  buildConceptSuggestionsFromTraces,
+  diagnoseConceptSuggestionDetails,
 } from "@/features/associations/concept-suggestions";
 import { deriveKnowledgeSuggestions } from "@/features/cognition/knowledge-suggestions";
 import { normalizeAssociationText } from "@/features/associations/normalize-text";
@@ -123,27 +123,34 @@ export function evaluateCaptureInput({
   const index = buildAssociationIndex({ nodes, relations });
   const indexPreparationMs = Math.round(performance.now() - indexStartedAt);
   const recoveryStartedAt = performance.now();
+  const recoveryDiagnostics = {
+    queryIndexMs: 0,
+    scoringMs: 0,
+    rankingMs: 0,
+    resultBuildMs: 0,
+    scoredCaptureCount: 0,
+  };
   const recoveryMatches = suggestAssociations(index, {
     text,
     currentNodeId,
     selectedCaptureIds,
     limit: EMERGING_EVIDENCE_LIMIT,
+    diagnostics: recoveryDiagnostics,
   });
   const recoveryMs = Math.round(performance.now() - recoveryStartedAt);
   const conceptsStartedAt = performance.now();
-  const conceptTraces = diagnoseConceptSuggestions({
+  const conceptDiagnosis = diagnoseConceptSuggestionDetails({
     text,
     contexts,
     nodes,
     relations,
     selectedContextIds,
   });
-  const existingConcepts = suggestConcepts({
-    text,
+  const conceptTraces = conceptDiagnosis.traces;
+  const existingConcepts = buildConceptSuggestionsFromTraces({
     contexts,
-    nodes,
-    relations,
     selectedContextIds,
+    traces: conceptTraces,
   });
   const knowledgeSuggestions = deriveKnowledgeSuggestions({
     inputConceptIds: getPresentConceptIds({
@@ -242,6 +249,18 @@ export function evaluateCaptureInput({
       clusterDetectionMs,
       labelExtractionMs: 0,
       deduplicationMs,
+      conceptDiagnosticRunCount: conceptDiagnosis.metrics.diagnosticRunCount,
+      identityCandidateInitialCount:
+        conceptDiagnosis.metrics.identityCandidateInitialCount,
+      identityCandidateDeduplicatedCount:
+        conceptDiagnosis.metrics.identityCandidateDeduplicatedCount,
+      identityContextTraversalCount:
+        conceptDiagnosis.metrics.identityContextTraversalCount,
+      recoveryQueryIndexMs: recoveryDiagnostics.queryIndexMs,
+      recoveryScoringMs: recoveryDiagnostics.scoringMs,
+      recoveryRankingMs: recoveryDiagnostics.rankingMs,
+      recoveryResultBuildMs: recoveryDiagnostics.resultBuildMs,
+      recoveryScoredCaptureCount: recoveryDiagnostics.scoredCaptureCount,
     },
   };
 }

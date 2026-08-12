@@ -13,6 +13,8 @@ import { normalizeAssociationText } from "@/features/associations/normalize-text
 import { createWordNgrams } from "@/features/associations/ngrams";
 import { attachCaptureAssociations } from "@/features/associations/node-associations";
 import {
+  buildConceptSuggestionsFromTraces,
+  diagnoseConceptSuggestionDetails,
   diagnoseConceptSuggestions,
   MIN_CONCEPT_SCORE,
   suggestConcepts,
@@ -522,6 +524,66 @@ describe("concept suggestions", () => {
     });
   });
 
+  it("builds suggestions from a single reusable concept diagnosis", () => {
+    const contexts = [
+      context({ id: "postgresql", name: "PostgreSQL", aliases: ["Postgres", "PG"] }),
+      context({ id: "railway", name: "Railway" }),
+    ];
+    const nodes = [node({ id: "db-1", content: "Postgres y Railway en despliegue" })];
+    const relations = [contextRelation("db-1", "postgresql")];
+    const diagnosis = diagnoseConceptSuggestionDetails({
+      text: "Postgres requiere revisar Railway",
+      contexts,
+      nodes,
+      relations,
+    });
+    const fromReusableTraces = buildConceptSuggestionsFromTraces({
+      contexts,
+      traces: diagnosis.traces,
+    });
+    const directSuggestions = suggestConcepts({
+      text: "Postgres requiere revisar Railway",
+      contexts,
+      nodes,
+      relations,
+    });
+
+    expect(fromReusableTraces).toEqual(directSuggestions);
+    expect(diagnosis.metrics.diagnosticRunCount).toBe(1);
+    expect(diagnosis.metrics.identityContextTraversalCount).toBe(contexts.length);
+    expect(diagnosis.metrics.identityCandidateInitialCount).toBeGreaterThan(
+      diagnosis.metrics.identityCandidateDeduplicatedCount,
+    );
+  });
+
+  it("reports one diagnosis and one deduplicated identity extraction per evaluation", () => {
+    const evaluation = evaluateCaptureInput({
+      text: "Postgres Postgres PG requiere respaldo",
+      nodes: [],
+      contexts: [
+        context({
+          id: "postgresql",
+          name: "PostgreSQL",
+          aliases: ["Postgres", "PG"],
+        }),
+      ],
+      relations: [],
+    });
+
+    expect(evaluation.diagnostics.conceptDiagnosticRunCount).toBe(1);
+    expect(evaluation.diagnostics.identityContextTraversalCount).toBe(1);
+    expect(evaluation.diagnostics.identityCandidateInitialCount).toBeGreaterThan(
+      evaluation.diagnostics.identityCandidateDeduplicatedCount ?? 0,
+    );
+    expect(evaluation.conceptSuggestions).toContainEqual(
+      expect.objectContaining({
+        kind: "existing",
+        conceptId: "postgresql",
+        matchedAlias: "Postgres",
+      }),
+    );
+  });
+
   it("suggests existing concepts from names and related captures without low-confidence noise", () => {
     const contexts = [
       context({ id: "perfumes", name: "Perfumes" }),
@@ -662,6 +724,34 @@ describe("concept suggestions", () => {
       },
     ]);
     expect(ambiguous).toEqual([]);
+  });
+
+  it("preserves ambiguous alias behavior through the identity index", () => {
+    const suggestions = suggestConcepts({
+      text: "OPS necesita revision operativa",
+      contexts: [
+        context({ id: "operations", name: "Operations", aliases: ["OPS"] }),
+        context({ id: "open-platform", name: "Open Platform", aliases: ["OPS"] }),
+      ],
+      nodes: [],
+      relations: [],
+    });
+
+    expect(suggestions).toHaveLength(2);
+    expect(suggestions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "existing",
+          conceptId: "operations",
+          matchedAlias: undefined,
+        }),
+        expect.objectContaining({
+          kind: "existing",
+          conceptId: "open-platform",
+          matchedAlias: undefined,
+        }),
+      ]),
+    );
   });
 
   it("does not suggest a new emerging concept when an alias resolves to an existing identity", () => {

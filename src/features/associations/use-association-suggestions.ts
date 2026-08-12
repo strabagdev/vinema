@@ -198,6 +198,10 @@ export function useAssociationSuggestions({
             });
           }
 
+          if (cancelled || requestId !== latestRequestId.current) {
+            return;
+          }
+
           const evaluation = evaluateCaptureInput({
             text,
             nodes,
@@ -228,7 +232,6 @@ export function useAssociationSuggestions({
               contextCount,
               relationCount,
             };
-            reportSuggestionDiagnostics(diagnostics);
 
             setState({
               status: "ready",
@@ -316,16 +319,4 @@ export function useAssociationSuggestions({
   ]);
 
   return state;
-}
-
-function reportSuggestionDiagnostics(diagnostics: SuggestionDiagnostics) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  if (window.sessionStorage.getItem("vinema:association-diagnostics") !== "1") {
-    return;
-  }
-
-  console.debug("[Vinema] association diagnostics", diagnostics);
 }

@@ -61,7 +61,7 @@ export async function resolveAuthenticatedVinemaContext({
         ...localDevice,
         id: deviceId,
       };
-      const diagnostics = await normalizePersistedConceptLabels({
+      await normalizePersistedConceptLabels({
         workspaceId: workspace.id,
         contextRepository,
         relationRepository: nodeContextRelationRepository,
@@ -69,7 +69,6 @@ export async function resolveAuthenticatedVinemaContext({
         storage: storageAdapter,
       });
 
-      reportConceptLabelNormalizationDiagnostics(diagnostics);
       cachedVinemaContext = { device, workspace };
       cachedVinemaContextKey = key;
       return cachedVinemaContext;
@@ -80,17 +79,6 @@ export async function resolveAuthenticatedVinemaContext({
     });
 
   return pendingVinemaContext;
-}
-
-function reportConceptLabelNormalizationDiagnostics(diagnostics: unknown) {
-  if (
-    typeof window === "undefined" ||
-    window.sessionStorage.getItem("vinema:association-diagnostics") !== "1"
-  ) {
-    return;
-  }
-
-  console.info("[vinema] concept label normalization", diagnostics);
 }
 
 export function useVinemaContext(): VinemaContextState {

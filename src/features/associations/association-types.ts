@@ -92,6 +92,15 @@ export type SuggestionDiagnostics = {
   clusterDetectionMs: number;
   labelExtractionMs: number;
   deduplicationMs: number;
+  conceptDiagnosticRunCount?: number;
+  identityCandidateInitialCount?: number;
+  identityCandidateDeduplicatedCount?: number;
+  identityContextTraversalCount?: number;
+  recoveryQueryIndexMs?: number;
+  recoveryScoringMs?: number;
+  recoveryRankingMs?: number;
+  recoveryResultBuildMs?: number;
+  recoveryScoredCaptureCount?: number;
 };
 
 export type AssociationIndexedCapture = {
