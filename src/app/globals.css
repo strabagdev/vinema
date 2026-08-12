@@ -132,6 +132,8 @@ body {
   --vinema-canvas-panel-max-height: calc(100dvh - 8rem);
   --vinema-canvas-dock-width: 6rem;
   --vinema-canvas-submit-gap: 0.25rem;
+  --vinema-canvas-context-panel-min-width: 18.75rem;
+  --vinema-canvas-context-panel-width: 20rem;
   --vinema-canvas-max-width: 60rem;
   --vinema-canvas-edge-gutter: 1.25rem;
   --vinema-canvas-center-width: min(
@@ -170,6 +172,53 @@ body {
     minmax(0, 1fr);
 }
 
+.vinema-canvas-contextual-panel {
+  width: var(--vinema-canvas-context-panel-width);
+  min-width: min(var(--vinema-canvas-context-panel-min-width), calc(100vw - 1.5rem));
+  max-width: min(22.5rem, calc(100vw - var(--vinema-canvas-icon-width) - 1rem));
+}
+
+.vinema-canvas-rail-dock {
+  position: fixed;
+  top: 50%;
+  left: 0.875rem;
+  display: flex;
+  width: 3.5rem;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  overflow: visible;
+  padding: 0.375rem;
+  transform: translateY(-50%);
+  border: 1px solid var(--vinema-border);
+  border-radius: 1rem;
+  background: var(--vinema-surface-elevated);
+  box-shadow: 0 8px 22px rgb(24 24 27 / 0.06);
+  box-sizing: border-box;
+}
+
+.vinema-canvas-rail-zone {
+  display: flex;
+  flex-shrink: 0;
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.vinema-canvas-rail-zone + .vinema-canvas-rail-zone {
+  padding-top: 0.375rem;
+}
+
+.vinema-canvas-rail-zone + .vinema-canvas-rail-zone::before {
+  content: "";
+  display: block;
+  width: 1.5rem;
+  height: 1px;
+  margin-inline: auto;
+  background: var(--vinema-border-subtle);
+}
+
 .vinema-canvas-editor {
   caret-color: var(--vinema-canvas-caret);
   font-family: var(--vinema-canvas-font-family);
@@ -202,6 +251,7 @@ body {
     --vinema-canvas-panel-max-height: calc(100dvh - 7rem);
     --vinema-canvas-dock-width: 3.25rem;
     --vinema-canvas-submit-gap: 0.5rem;
+    --vinema-canvas-context-panel-width: min(22.5rem, calc(100vw - 1.5rem));
     --vinema-canvas-edge-gutter: 0.75rem;
     --vinema-canvas-padding-x: 0;
     --vinema-canvas-padding-y: 0.75rem;
@@ -211,6 +261,53 @@ body {
   .vinema-canvas-editor {
     font-size: 1.08rem;
     line-height: 1.62;
+  }
+}
+
+@media (max-width: 640px) {
+  [data-canvas-side-panel] {
+    top: auto !important;
+    left: 0.75rem !important;
+  }
+
+  .vinema-canvas-rail-dock {
+    top: auto;
+    bottom: max(0.75rem, env(safe-area-inset-bottom));
+    left: 50%;
+    width: auto;
+    max-width: none;
+    flex-direction: row;
+    overflow: visible;
+    transform: translateX(-50%);
+  }
+
+  .vinema-canvas-rail-zone {
+    width: auto;
+    flex-direction: row;
+  }
+
+  .vinema-canvas-rail-zone + .vinema-canvas-rail-zone {
+    padding-top: 0;
+    padding-left: 0.375rem;
+  }
+
+  .vinema-canvas-rail-zone + .vinema-canvas-rail-zone::before {
+    width: 1px;
+    height: 1.5rem;
+    margin-block: auto;
+    margin-inline: 0;
+  }
+
+  .vinema-canvas-contextual-panel {
+    position: fixed;
+    bottom: calc(max(1rem, env(safe-area-inset-bottom)) + 3.75rem);
+    left: 0.75rem;
+    right: 0.75rem;
+    width: var(--vinema-canvas-context-panel-width);
+    min-width: min(var(--vinema-canvas-context-panel-min-width), calc(100vw - 1.5rem));
+    max-width: calc(100vw - 1.5rem);
+    max-height: min(24rem, calc(100dvh - 7rem));
+    transform-origin: bottom left;
   }
 }
 

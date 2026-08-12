@@ -178,10 +178,8 @@ VinemaCanvasEditor.displayName = "VinemaCanvasEditor";
 
 export function CanvasWritingSurface({
   children,
-  contextLayer = null,
 }: {
   children: ReactNode;
-  contextLayer?: ReactNode;
 }) {
   return (
     <div
@@ -192,7 +190,6 @@ export function CanvasWritingSurface({
       data-mobile-capture-composer=""
       data-canvas-writing-surface=""
     >
-      {contextLayer}
       <div
         className="vinema-scrollbar h-full min-h-0 overflow-y-auto"
         data-canvas-scroll-viewport=""
@@ -209,15 +206,46 @@ export function CanvasWritingSurface({
   );
 }
 
-export function CanvasIconRail({ children }: { children: ReactNode }) {
+export function CanvasIconRail({
+  contextual,
+  exploration,
+  system,
+}: {
+  contextual: ReactNode;
+  exploration: ReactNode;
+  system: ReactNode;
+}) {
   return (
     <nav
-      className="relative z-20 col-[1] row-[1] grid h-full min-h-0 grid-cols-[var(--vinema-canvas-icon-width)_minmax(0,var(--vinema-canvas-panel-width))_minmax(0,1fr)] items-center overflow-hidden"
+      className="pointer-events-none relative z-20 col-[1] row-[1] grid h-full min-h-0 grid-cols-[var(--vinema-canvas-icon-width)_minmax(0,var(--vinema-canvas-panel-width))_minmax(0,1fr)] items-center overflow-visible"
       aria-label="Herramientas del canvas"
       data-canvas-icon-rail=""
     >
-      <div className="col-[1] flex flex-col items-center justify-center gap-4">
-        {children}
+      <div
+        className="vinema-canvas-rail-dock pointer-events-auto"
+        data-canvas-rail-layout=""
+      >
+        <div
+          className="vinema-canvas-rail-zone"
+          aria-label="Sugerencias contextuales"
+          data-canvas-rail-zone="contextual"
+        >
+          {contextual}
+        </div>
+        <div
+          className="vinema-canvas-rail-zone"
+          aria-label="Exploracion"
+          data-canvas-rail-zone="exploration"
+        >
+          {exploration}
+        </div>
+        <div
+          className="vinema-canvas-rail-zone"
+          aria-label="Sistema"
+          data-canvas-rail-zone="system"
+        >
+          {system}
+        </div>
       </div>
     </nav>
   );
@@ -240,6 +268,7 @@ export function CanvasPanelColumn({
       <div
         className="pointer-events-auto col-[2] min-h-0 overflow-visible pl-[var(--vinema-canvas-panel-gutter)]"
         data-canvas-panel-hover-corridor=""
+        data-canvas-panel-interaction-region=""
         {...hoverCorridorProps}
       >
         {children}

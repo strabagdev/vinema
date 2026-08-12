@@ -6,6 +6,7 @@ import {
   areWorkspaceStatesEquivalent,
   CaptureSurface,
   ConceptPanelContent,
+  MemoryPanelContent,
   mergeWorkspaceState,
   replaceWorkspaceHistoryState,
 } from "@/features/capture/capture-surface";
@@ -583,9 +584,35 @@ describe("CaptureSurface", () => {
     expect(iconRail).toBeDefined();
     expect(iconRail?.className).toContain("col-[1]");
     expect(iconRail?.className).toContain("z-20");
+    expect(iconRail?.className).toContain("pointer-events-none");
+    expect(iconRail?.className).toContain("overflow-visible");
     expect(iconRail?.className).toContain(
       "grid-cols-[var(--vinema-canvas-icon-width)_minmax(0,var(--vinema-canvas-panel-width))_minmax(0,1fr)]",
     );
+    expect(screen.container.querySelector("[data-canvas-rail-layout]")).toBeDefined();
+    expect(screen.container.querySelector("[data-canvas-rail-layout]")?.className).toContain(
+      "vinema-canvas-rail-dock",
+    );
+    expect(screen.container.querySelector("[data-canvas-rail-layout]")?.className).toContain(
+      "pointer-events-auto",
+    );
+    expect(screen.container.querySelector("[data-canvas-rail-layout]")?.className).not.toContain(
+      "vinema-scrollbar",
+    );
+    expect(screen.container.querySelector("[data-canvas-rail-scroll]")).toBeNull();
+    expect(screen.container.querySelector("[data-canvas-rail-zone='contextual']")).toBeDefined();
+    expect(screen.container.querySelector("[data-canvas-rail-zone='contextual']")?.className).toContain(
+      "vinema-canvas-rail-zone",
+    );
+    expect(screen.container.querySelector("[data-canvas-rail-zone='exploration']")).toBeDefined();
+    expect(screen.container.querySelector("[data-canvas-rail-zone='exploration']")?.className).toContain(
+      "vinema-canvas-rail-zone",
+    );
+    expect(screen.container.querySelector("[data-canvas-rail-zone='system']")).toBeDefined();
+    expect(screen.container.querySelector("[data-canvas-rail-zone='system']")?.className).toContain(
+      "vinema-canvas-rail-zone",
+    );
+    expect(screen.container.querySelector("[data-canvas-contextual-rail]")).toBeNull();
     expect(panelColumn).toBeDefined();
     expect(panelColumn?.className).toContain("col-[1]");
     expect(panelColumn?.className).toContain("pointer-events-none");
@@ -616,7 +643,6 @@ describe("CaptureSurface", () => {
     expect(dock?.firstElementChild?.className).toContain("row-[2]");
     expect(dock?.firstElementChild?.className).toContain("items-start");
     expect(dock?.className).toContain("max-sm:fixed");
-    expect(dock?.className).toContain("max-sm:bottom-[max(4rem,calc(3.25rem+env(safe-area-inset-bottom)))]");
     expect(getCanvasPrompts("mixed")).toContain(textarea?.getAttribute("placeholder"));
     expect(
       (composer as HTMLElement | null)?.style.getPropertyValue(
@@ -638,8 +664,9 @@ describe("CaptureSurface", () => {
     expect(screen.container.querySelector("[data-canvas-footer]")).toBeNull();
     expect(screen.container.querySelector("[data-canvas-pulse]")).toBeNull();
     expect(dock?.contains(button)).toBe(true);
-    expect(getContextIndicator(screen.container, "conceptos sugeridos")).toBeUndefined();
-    expect(getContextIndicator(screen.container, "Memoria")).toBeUndefined();
+    expect(getContextIndicator(screen.container, "Conceptos detectados")).toBeDefined();
+    expect(getContextIndicator(screen.container, "Memorias sugeridas")).toBeDefined();
+    expect(screen.container.querySelectorAll("[data-canvas-rail-badge]")).toHaveLength(0);
 
     await changeTextarea(screen.container, "ok");
     await advanceTime(500);
@@ -993,14 +1020,14 @@ describe("CaptureSurface", () => {
     await changeTextarea(screen.container, "Revisar Mitcom");
     await advanceTime(500);
 
-    expect(getContextIndicator(screen.container, "conceptos sugeridos")).toBeDefined();
-    expect(getContextIndicator(screen.container, "Memoria")).toBeDefined();
+    expect(getContextIndicator(screen.container, "Conceptos detectados")).toBeDefined();
+    expect(getContextIndicator(screen.container, "Memorias sugeridas")).toBeDefined();
     expect(screen.container.textContent).not.toContain("Conceptos detectados");
     expect(screen.container.textContent).not.toContain("Me recuerda a…");
     expect(screen.container.textContent).not.toContain("Proveedor Mitcom");
   });
 
-  it("keeps the rail permanent and shows contextual canvas buttons only with results", async () => {
+  it("keeps contextual controls fixed in the permanent rail", async () => {
     const screen = await renderCaptureSurface();
     const emptyRail = screen.container.querySelector("[data-canvas-icon-rail]");
     const writingSurface = screen.container.querySelector("[data-canvas-writing-surface]");
@@ -1010,18 +1037,43 @@ describe("CaptureSurface", () => {
     const initialScrollViewportClassName = scrollViewport?.className;
     const initialWritingTrackClassName = writingTrack?.className;
 
-    expect(emptyRail?.querySelectorAll("[data-canvas-panel-trigger]")).toHaveLength(4);
-    expect(emptyRail?.querySelectorAll("[data-context-indicator]")).toHaveLength(0);
+    expect(emptyRail?.querySelectorAll("[data-canvas-panel-trigger]")).toHaveLength(6);
+    expect(emptyRail?.querySelectorAll("[data-context-indicator]")).toHaveLength(2);
     expect(screen.container.querySelector("[data-canvas-context-bar]")).toBeNull();
     expect(getLinkByLabel(screen.container, "Memoria")).toBeUndefined();
     expect(screen.container.querySelector("[data-canvas-memory-nav]")).toBeNull();
-    expect(getContextIndicator(screen.container, "Memoria")).toBeUndefined();
+    expect(getContextIndicator(screen.container, "Memorias sugeridas")).toBeDefined();
+    expect(getContextIndicator(screen.container, "Conceptos detectados")).toBeDefined();
+    expect(screen.container.querySelector("[data-canvas-context-separator]")).toBeNull();
+    expect(
+      screen.container.querySelector("[data-canvas-rail-zone='contextual']")?.querySelectorAll(
+        "[data-context-indicator]",
+      ),
+    ).toHaveLength(2);
+    expect(
+      screen.container.querySelector("[data-canvas-rail-zone='exploration']")?.querySelectorAll(
+        "[data-canvas-workspace-trigger]",
+      ),
+    ).toHaveLength(2);
+    expect(
+      screen.container.querySelector("[data-canvas-rail-zone='system']")?.querySelectorAll(
+        "[data-canvas-panel-trigger]",
+      ),
+    ).toHaveLength(2);
+    expect(screen.container.querySelectorAll("[data-canvas-rail-badge]")).toHaveLength(0);
     expect(getButtonByLabel(screen.container, "Conceptos")).toBeUndefined();
     expect(getButtonByLabel(screen.container, "Explorar conocimiento")).toBeDefined();
     expect(getButtonByLabel(screen.container, "Explorar conceptos")).toBeDefined();
     expect(getButtonByLabel(screen.container, "Canvas")).toBeDefined();
     expect(getButtonByLabel(screen.container, "Canvas")?.className).toContain("h-10");
     expect(getButtonByLabel(screen.container, "Canvas")?.className).toContain("w-10");
+    expect(getButtonByLabel(screen.container, "Canvas")?.className).toContain("grid");
+    expect(getButtonByLabel(screen.container, "Canvas")?.className).toContain(
+      "place-items-center",
+    );
+    expect(getButtonByLabel(screen.container, "Canvas")?.className).not.toContain("w-full");
+    expect(getButtonByLabel(screen.container, "Canvas")?.className).not.toContain("max-w-10");
+    expect(getButtonByLabel(screen.container, "Canvas")?.className).not.toContain("min-w-10");
     expect(getButtonByLabel(screen.container, "Canvas")?.className).toContain(
       "hover:bg-zinc-100",
     );
@@ -1035,26 +1087,28 @@ describe("CaptureSurface", () => {
     await advanceTime(500);
 
     const rail = screen.container.querySelector("[data-canvas-icon-rail]");
-    const contextBar = screen.container.querySelector("[data-canvas-context-bar]");
 
-    expect(getContextIndicator(screen.container, "conceptos sugeridos")).toBeDefined();
-    expect(getContextIndicator(screen.container, "Memoria")).toBeUndefined();
-    expect(contextBar).toBeDefined();
-    expect(contextBar?.contains(getContextIndicator(screen.container, "conceptos sugeridos")!)).toBe(
+    expect(getContextIndicator(screen.container, "Conceptos detectados")).toBeDefined();
+    expect(getContextIndicator(screen.container, "Memorias sugeridas")).toBeDefined();
+    expect(rail?.contains(getContextIndicator(screen.container, "Conceptos detectados")!)).toBe(
       true,
     );
-    expect(writingSurface?.contains(contextBar)).toBe(true);
-    expect(scrollViewport?.contains(contextBar)).toBe(false);
+    expect(rail?.contains(getContextIndicator(screen.container, "Memorias sugeridas")!)).toBe(
+      true,
+    );
+    expect(screen.container.querySelector("[data-canvas-context-bar]")).toBeNull();
+    expect(screen.container.querySelector("[data-canvas-contextual-rail]")).toBeNull();
+    expect(writingSurface?.contains(getContextIndicator(screen.container, "Conceptos detectados")!)).toBe(false);
+    expect(scrollViewport?.contains(getContextIndicator(screen.container, "Conceptos detectados")!)).toBe(false);
     expect(writingSurface?.className).toBe(initialWritingSurfaceClassName);
     expect(scrollViewport?.className).toBe(initialScrollViewportClassName);
     expect(writingTrack?.className).toBe(initialWritingTrackClassName);
-    expect(rail?.querySelectorAll("[data-canvas-panel-trigger]")).toHaveLength(4);
-    expect(rail?.querySelectorAll("[data-context-indicator]")).toHaveLength(0);
-    expect(getContextIndicator(screen.container, "Memoria")).toBeUndefined();
+    expect(rail?.querySelectorAll("[data-canvas-panel-trigger]")).toHaveLength(6);
+    expect(rail?.querySelectorAll("[data-context-indicator]")).toHaveLength(2);
     expect(getButtonByLabel(screen.container, "Canvas")).toBeDefined();
   });
 
-  it("reserves the canvas contextual stripe without moving indicators or narrowing the editor", async () => {
+  it("keeps rail contextual controls from narrowing the editor", async () => {
     const nodeRepository = new InMemoryNodeRepository([
       createStoredNode({
         id: "railway-memory",
@@ -1078,6 +1132,7 @@ describe("CaptureSurface", () => {
     const initialTextareaClassName = textarea.className;
 
     expect(screen.container.querySelector("[data-canvas-context-bar]")).toBeNull();
+    expect(screen.container.querySelector("[data-canvas-contextual-rail]")).toBeNull();
     expect(writingTrack.getAttribute("data-canvas-context-reserve")).toBe("structural");
     expect(writingTrack.className).toContain(
       "minmax(var(--vinema-canvas-context-reserve),calc(var(--vinema-canvas-editor-start)_+_var(--vinema-canvas-context-reserve)))",
@@ -1098,15 +1153,14 @@ describe("CaptureSurface", () => {
     );
     await advanceTime(500);
 
-    const contextLayer = screen.container.querySelector("[data-canvas-context-layer]");
-    const contextBar = screen.container.querySelector("[data-canvas-context-bar]");
+    const conceptIndicator = getContextIndicator(screen.container, "Conceptos detectados");
 
-    expect(contextLayer?.className).toContain(
-      "top-[calc(var(--vinema-canvas-padding-y)+1rem)]",
+    expect(conceptIndicator).toBeDefined();
+    expect(screen.container.querySelector("[data-canvas-icon-rail]")?.contains(conceptIndicator!)).toBe(
+      true,
     );
-    expect(contextBar).toBeDefined();
-    expect(scrollViewport.contains(contextBar)).toBe(false);
-    expect(writingSurface.contains(contextBar)).toBe(true);
+    expect(scrollViewport.contains(conceptIndicator!)).toBe(false);
+    expect(writingSurface.contains(conceptIndicator!)).toBe(false);
     expect(screen.container.querySelector("[data-canvas-writing-track]")?.className).toBe(
       initialWritingTrackClassName,
     );
@@ -1166,7 +1220,7 @@ describe("CaptureSurface", () => {
     expect(screen.container.contains(canvas)).toBe(true);
   });
 
-  it("shows cognitive indicators in the canvas context bar without visible counters", async () => {
+  it("shows compact cognitive indicators in the rail", async () => {
     const nodeRepository = new InMemoryNodeRepository([
       createStoredNode({
         id: "mitcom",
@@ -1179,35 +1233,39 @@ describe("CaptureSurface", () => {
     await changeTextarea(screen.container, "Revisar Mitcom");
     await advanceTime(500);
 
-    const conceptIndicator = getContextIndicator(screen.container, "conceptos sugeridos");
-    const memoryIndicator = getContextIndicator(screen.container, "Memoria");
+    const conceptIndicator = getContextIndicator(screen.container, "Conceptos detectados");
+    const memoryIndicator = getContextIndicator(screen.container, "Memorias sugeridas");
+    const rail = screen.container.querySelector("[data-canvas-icon-rail]");
 
     expect(conceptIndicator?.getAttribute("aria-label")).toBe(
-      "1 conceptos sugeridos",
+      "Conceptos detectados",
     );
     expect(memoryIndicator?.getAttribute("aria-label")).toBe(
-      "Memoria",
+      "Memorias sugeridas",
     );
     expect(
       memoryIndicator?.querySelector("[data-canvas-rail-icon='lightbulb']"),
     ).toBeDefined();
     expect(screen.container.querySelector("[data-canvas-memory-nav]")).toBeNull();
-    expect(screen.container.querySelector("[data-canvas-context-bar]")?.contains(conceptIndicator!)).toBe(
+    expect(screen.container.querySelector("[data-canvas-context-bar]")).toBeNull();
+    expect(rail?.contains(conceptIndicator!)).toBe(
       true,
     );
-    expect(screen.container.querySelector("[data-canvas-context-bar]")?.contains(memoryIndicator!)).toBe(
+    expect(rail?.contains(memoryIndicator!)).toBe(
       true,
     );
-    expect(conceptIndicator?.className).toContain("h-8");
-    expect(memoryIndicator?.className).toContain("h-8");
+    expect(conceptIndicator?.className).toContain("h-10");
+    expect(memoryIndicator?.className).toContain("h-10");
     expect(conceptIndicator?.querySelector("svg")?.className.baseVal).toContain(
-      "h-4",
+      "h-5",
     );
     expect(conceptIndicator?.querySelector("svg")?.className.baseVal).toContain(
-      "w-4",
+      "w-5",
     );
-    expect(conceptIndicator?.textContent?.trim()).toBe("Conceptos");
-    expect(memoryIndicator?.textContent?.trim()).toBe("Memoria");
+    expect(conceptIndicator?.textContent?.trim()).toBe("1");
+    expect(memoryIndicator?.textContent?.trim()).toBe("1");
+    expect(conceptIndicator?.querySelector("[data-canvas-rail-badge]")).toBeDefined();
+    expect(memoryIndicator?.querySelector("[data-canvas-rail-badge]")).toBeDefined();
   });
 
   it("opens the memory status panel from the rail without duplicating the header trigger", async () => {
@@ -1284,12 +1342,12 @@ describe("CaptureSurface", () => {
 
     await changeTextarea(screen.container, "Revisar DET");
     await advanceTime(500);
-    await hoverElement(getContextIndicator(screen.container, "conceptos sugeridos"));
+    await hoverElement(getContextIndicator(screen.container, "Conceptos detectados"));
 
     expect(screen.container.textContent).toContain("División El Teniente");
     expect(screen.container.textContent).toContain("Detectado como DET");
 
-    await click(getContextIndicator(screen.container, "conceptos sugeridos")!);
+    await click(getContextIndicator(screen.container, "Conceptos detectados")!);
 
     expect(screen.container.textContent).toContain("División El Teniente");
     expect(screen.container.textContent).toContain("Detectado como DET");
@@ -1405,6 +1463,74 @@ describe("CaptureSurface", () => {
     );
   });
 
+  it("keeps concept suggestions compact at five and expands to the full ordered list", async () => {
+    const container = await renderConceptPanelContent({
+      suggestions: createConceptSuggestions(14),
+    });
+
+    expect(getConceptSuggestionRow(container, "concept-1")).toBeDefined();
+    expect(getConceptSuggestionRow(container, "concept-5")).toBeDefined();
+    expect(getConceptSuggestionRow(container, "concept-6")).toBeNull();
+    expect(getConceptSuggestionRow(container, "concept-14")).toBeNull();
+
+    const expandButton = getButton(container, "Ver 9 más");
+    expect(expandButton.getAttribute("aria-expanded")).toBe("false");
+    expect(expandButton.className).toContain("focus-visible:ring-2");
+    expandButton.focus();
+    expect(document.activeElement).toBe(expandButton);
+
+    await click(expandButton);
+
+    const expandedRows = Array.from(
+      container.querySelectorAll("[data-concept-suggestion-row]"),
+    );
+    expect(expandedRows).toHaveLength(14);
+    expect(expandedRows.map((row) => row.getAttribute("data-concept-suggestion-id"))).toEqual(
+      Array.from({ length: 14 }, (_, index) => `concept-${index + 1}`),
+    );
+    expect(getButton(container, "Mostrar menos").getAttribute("aria-expanded")).toBe(
+      "true",
+    );
+
+    await click(getButton(container, "Mostrar menos"));
+
+    expect(container.querySelectorAll("[data-concept-suggestion-row]")).toHaveLength(5);
+    expect(getButton(container, "Ver 9 más").getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+  });
+
+  it("does not show concept expansion controls for zero, one or five suggestions", async () => {
+    const emptyContainer = await renderConceptPanelContent({ suggestions: [] });
+    expect(emptyContainer.textContent).toContain("No hay conceptos detectados.");
+    expect(emptyContainer.querySelector("[data-contextual-suggestion-expand]")).toBeNull();
+
+    const oneContainer = await renderConceptPanelContent({
+      suggestions: createConceptSuggestions(1),
+    });
+    expect(oneContainer.querySelectorAll("[data-concept-suggestion-row]")).toHaveLength(1);
+    expect(oneContainer.querySelector("[data-contextual-suggestion-expand]")).toBeNull();
+
+    const fiveContainer = await renderConceptPanelContent({
+      suggestions: createConceptSuggestions(5),
+    });
+    expect(fiveContainer.querySelectorAll("[data-concept-suggestion-row]")).toHaveLength(
+      5,
+    );
+    expect(fiveContainer.querySelector("[data-contextual-suggestion-expand]")).toBeNull();
+  });
+
+  it("uses singular concept expansion text for six suggestions", async () => {
+    const container = await renderConceptPanelContent({
+      suggestions: createConceptSuggestions(6),
+    });
+
+    expect(container.querySelectorAll("[data-concept-suggestion-row]")).toHaveLength(5);
+    expect(getButton(container, "Ver 1 más").getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+  });
+
   it("renders non-literal concept origins inside the visible suggestion row", async () => {
     const nodeRepository = new InMemoryNodeRepository([
       createStoredNode({
@@ -1456,7 +1582,7 @@ describe("CaptureSurface", () => {
 
     await changeTextarea(screen.container, "Mitcom y Servidor revisan pendientes");
     await advanceTime(500);
-    await hoverElement(getContextIndicator(screen.container, "conceptos sugeridos"));
+    await hoverElement(getContextIndicator(screen.container, "Conceptos detectados"));
 
     const previewRow = getConceptSuggestionRow(
       screen.container,
@@ -1470,7 +1596,7 @@ describe("CaptureSurface", () => {
       previewRow?.querySelector("[data-concept-suggestion-explanation]"),
     ).toBeTruthy();
 
-    await click(getContextIndicator(screen.container, "conceptos sugeridos")!);
+    await click(getContextIndicator(screen.container, "Conceptos detectados")!);
 
     const pinnedRow = getConceptSuggestionRow(
       screen.container,
@@ -1543,7 +1669,7 @@ describe("CaptureSurface", () => {
     await changeTextarea(screen.container, "Revisar Railway");
     await advanceTime(500);
 
-    const indicator = getContextIndicator(screen.container, "conceptos sugeridos");
+    const indicator = getContextIndicator(screen.container, "Conceptos detectados");
     expect(indicator?.getAttribute("aria-pressed")).toBe("false");
 
     await openConceptPanel(screen.container);
@@ -1580,14 +1706,12 @@ describe("CaptureSurface", () => {
     expect(button?.className).toContain("rounded-full");
     expect(button?.querySelector("svg")).toBeDefined();
     expect(button?.querySelector(".sr-only")?.textContent).toBe("Capturar");
-    expect(rail?.querySelectorAll("[data-context-indicator]")).toHaveLength(0);
-    expect(screen.container.querySelector("[data-canvas-context-bar]")?.querySelectorAll(
-      "[data-context-indicator]",
-    )).toHaveLength(2);
+    expect(rail?.querySelectorAll("[data-context-indicator]")).toHaveLength(2);
+    expect(screen.container.querySelector("[data-canvas-context-bar]")).toBeNull();
     expect(dock?.contains(button)).toBe(true);
   });
 
-  it("keeps the capture action in the right dock when there are no contextual indicators", async () => {
+  it("keeps the capture action in the right dock when contextual indicators are inactive", async () => {
     const screen = await renderCaptureSurface();
 
     await changeTextarea(screen.container, "ok");
@@ -1597,7 +1721,8 @@ describe("CaptureSurface", () => {
     const dock = screen.container.querySelector("[data-canvas-capture-dock]");
     const button = screen.container.querySelector("[data-capture-submit]");
 
-    expect(rail?.querySelectorAll("[data-context-indicator]")).toHaveLength(0);
+    expect(rail?.querySelectorAll("[data-context-indicator]")).toHaveLength(2);
+    expect(rail?.querySelectorAll("[data-canvas-rail-badge]")).toHaveLength(0);
     expect(dock).toBeDefined();
     expect(button).toBeDefined();
     expect(button?.className).toContain("w-11");
@@ -1637,7 +1762,7 @@ describe("CaptureSurface", () => {
     await changeTextarea(screen.container, "mitcom");
     await advanceTime(500);
 
-    expect(getContextIndicator(screen.container, "Memoria")).toBeDefined();
+    expect(getContextIndicator(screen.container, "Memorias sugeridas")).toBeDefined();
     await openMemoryPanel(screen.container);
     expect(getDialog(screen.container, "Me recuerda a…")).toBeDefined();
     expect(screen.container.textContent).toContain("Proveedor Mitcom");
@@ -1661,7 +1786,7 @@ describe("CaptureSurface", () => {
 
     await changeTextarea(screen.container, "mitcom");
     await advanceTime(500);
-    expect(getContextIndicator(screen.container, "Memoria")).toBeDefined();
+    expect(getContextIndicator(screen.container, "Memorias sugeridas")).toBeDefined();
 
     await changeTextarea(screen.container, "railway");
     await advanceTime(100);
@@ -1689,7 +1814,7 @@ describe("CaptureSurface", () => {
 
     await changeTextarea(screen.container, "mitcom");
     await advanceTime(500);
-    expect(getContextIndicator(screen.container, "Memoria")).toBeDefined();
+    expect(getContextIndicator(screen.container, "Memorias sugeridas")).toBeDefined();
 
     nodeRepository.listByWorkspace = async () =>
       new Promise<Node[]>(() => {
@@ -1799,7 +1924,7 @@ describe("CaptureSurface", () => {
     expect(onCaptureCommitted).toHaveBeenCalledTimes(1);
   });
 
-  it("captures from an open panel and clears panels and indicators", async () => {
+  it("captures from an open panel and clears panels while dimming indicators", async () => {
     const nodeRepository = new InMemoryNodeRepository();
     const screen = await renderCaptureSurface({ nodeRepository });
 
@@ -1812,7 +1937,12 @@ describe("CaptureSurface", () => {
     await waitFor(() => getTextarea(screen.container)?.value === "");
 
     expect(getDialog(screen.container, "Conceptos detectados")).toBeUndefined();
-    expect(getContextIndicator(screen.container, "conceptos sugeridos")).toBeUndefined();
+    expect(getContextIndicator(screen.container, "Conceptos detectados")).toBeDefined();
+    expect(
+      getContextIndicator(screen.container, "Conceptos detectados")?.querySelector(
+        "[data-canvas-rail-badge]",
+      ),
+    ).toBeNull();
     expect(document.activeElement).toBe(getTextarea(screen.container));
   });
 
@@ -2197,17 +2327,225 @@ describe("CaptureSurface", () => {
     await openMemoryPanel(screen.container);
 
     const panel = getDialog(screen.container, "Me recuerda a…") as HTMLElement;
+    const content = panel.querySelector("[data-canvas-side-panel-content]");
+    const list = panel.querySelector("[data-contextual-suggestion-list='memories']");
     const rows = Array.from(panel.querySelectorAll("article"));
 
     expect(rows).toHaveLength(5);
     expect(panel.textContent).toContain("Proyecto Delta seguimiento 6");
     expect(panel.textContent).toContain("Proyecto Delta seguimiento 5");
     expect(panel.textContent).not.toContain("Proyecto Delta seguimiento 1");
+    expect(getButton(panel, "Ver 1 más").getAttribute("aria-expanded")).toBe("false");
+    expect(content?.className).toContain("overflow-hidden");
+    expect(content?.className).not.toContain("overflow-y-auto");
+    expect(list?.className).toContain("overflow-visible");
+    expect(list?.className).not.toContain("overflow-y-auto");
+    expect(list?.className).not.toContain("vinema-scrollbar");
     expect(panel.textContent).not.toContain("Explorar memoria");
     expect(rows[0]?.querySelector("a")?.getAttribute("href")).toContain(
       "nodeId=delta-6",
     );
     expect(rows[0]?.querySelector("a")?.className).toContain("py-1.5");
+
+    await click(getButton(panel, "Ver 1 más"));
+
+    const expandedRows = Array.from(panel.querySelectorAll("article"));
+    expect(expandedRows).toHaveLength(6);
+    expect(panel.textContent).toContain("Proyecto Delta seguimiento 1");
+    expect(
+      panel.querySelector("[data-contextual-suggestion-list='memories']")?.className,
+    ).toContain("overflow-y-auto");
+    expect(
+      panel.querySelector("[data-contextual-suggestion-list='memories']")?.className,
+    ).toContain("vinema-scrollbar");
+    expect(getButton(panel, "Mostrar menos").getAttribute("aria-expanded")).toBe(
+      "true",
+    );
+
+    await click(getButton(panel, "Mostrar menos"));
+
+    expect(panel.querySelectorAll("article")).toHaveLength(5);
+  });
+
+  it("keeps memory suggestions compact at five and expands to the full ordered list", async () => {
+    const emptyContainer = await renderMemoryPanelContent({
+      suggestions: createMemorySuggestions(0),
+    });
+    expect(emptyContainer.textContent).toContain("No hay recuerdos relacionados.");
+    expect(emptyContainer.querySelector("[data-contextual-suggestion-expand]")).toBeNull();
+
+    const oneContainer = await renderMemoryPanelContent({
+      suggestions: createMemorySuggestions(1),
+    });
+    expect(oneContainer.querySelectorAll("article")).toHaveLength(1);
+    expect(oneContainer.querySelector("[data-contextual-suggestion-expand]")).toBeNull();
+
+    const fiveContainer = await renderMemoryPanelContent({
+      suggestions: createMemorySuggestions(5),
+    });
+    expect(fiveContainer.querySelectorAll("article")).toHaveLength(5);
+    expect(fiveContainer.querySelector("[data-contextual-suggestion-expand]")).toBeNull();
+
+    const sixContainer = await renderMemoryPanelContent({
+      suggestions: createMemorySuggestions(6),
+    });
+    expect(sixContainer.querySelectorAll("article")).toHaveLength(5);
+    expect(getButton(sixContainer, "Ver 1 más").getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+
+    const fourteenContainer = await renderMemoryPanelContent({
+      suggestions: createMemorySuggestions(14),
+    });
+    expect(fourteenContainer.querySelectorAll("article")).toHaveLength(5);
+    expect(getButton(fourteenContainer, "Ver 9 más").getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+    expect(
+      fourteenContainer.querySelector("[data-contextual-suggestion-list='memories']")
+        ?.className,
+    ).not.toContain("overflow-y-auto");
+
+    await click(getButton(fourteenContainer, "Ver 9 más"));
+
+    const expandedRows = Array.from(fourteenContainer.querySelectorAll("article"));
+    expect(expandedRows).toHaveLength(14);
+    expect(
+      fourteenContainer.querySelector("[data-contextual-suggestion-list='memories']")
+        ?.className,
+    ).toContain("overflow-y-auto");
+    expect(expandedRows.map((row) => row.textContent)).toEqual(
+      Array.from({ length: 14 }, (_, index) =>
+        expect.stringContaining(`Recuerdo ${index + 1}`),
+      ),
+    );
+
+    await click(getButton(fourteenContainer, "Mostrar menos"));
+    expect(fourteenContainer.querySelectorAll("article")).toHaveLength(5);
+  });
+
+  it("collapses an expanded concept panel when the open suggestion set shrinks", async () => {
+    const container = document.createElement("div");
+    document.body.replaceChildren(container);
+    const root = createRoot(container);
+
+    function ConceptChangingHarness() {
+      const [expanded, setExpanded] = useState(false);
+      const [suggestions, setSuggestions] = useState(createConceptSuggestions(6));
+
+      return createElement(
+        "div",
+        null,
+        createElement(
+          "button",
+          {
+            type: "button",
+            onClick: () => setSuggestions(createConceptSuggestions(1)),
+          },
+          "Reducir sugerencias",
+        ),
+        createElement(ConceptPanelContent, {
+          suggestions,
+          expanded,
+          selectedContextIds: [],
+          selectedEmergingCandidateIds: [],
+          highlightedConceptKeys: new Set<string>(),
+          onExpandedChange: setExpanded,
+          onToggleExisting: vi.fn(),
+          onToggleEmerging: vi.fn(),
+        }),
+      );
+    }
+
+    await act(async () => {
+      root.render(createElement(ConceptChangingHarness));
+      await flushPromises();
+    });
+
+    await click(getButton(container, "Ver 1 más"));
+    expect(container.querySelectorAll("[data-concept-suggestion-row]")).toHaveLength(6);
+
+    await click(getButton(container, "Reducir sugerencias"));
+
+    expect(container.querySelectorAll("[data-concept-suggestion-row]")).toHaveLength(1);
+    expect(container.querySelector("[data-contextual-suggestion-expand]")).toBeNull();
+  });
+
+  it("keeps memory and concept expansion states independent when switching panels", async () => {
+    const container = document.createElement("div");
+    document.body.replaceChildren(container);
+    const root = createRoot(container);
+
+    function SwitchingHarness() {
+      const [panel, setPanel] = useState<"memories" | "concepts">("memories");
+      const [expanded, setExpanded] = useState({
+        concepts: false,
+        memories: false,
+      });
+
+      return createElement(
+        "div",
+        null,
+        createElement(
+          "button",
+          { type: "button", onClick: () => setPanel("memories") },
+          "Abrir memorias",
+        ),
+        createElement(
+          "button",
+          { type: "button", onClick: () => setPanel("concepts") },
+          "Abrir conceptos",
+        ),
+        panel === "memories"
+          ? createElement(MemoryPanelContent, {
+              suggestions: createMemorySuggestions(6),
+              expanded: expanded.memories,
+              loading: false,
+              error: false,
+              onExpandedChange: (nextExpanded) =>
+                setExpanded((current) => ({
+                  ...current,
+                  memories: nextExpanded,
+                })),
+              onRetry: vi.fn(),
+              onOpenCapture: vi.fn(),
+            })
+          : createElement(ConceptPanelContent, {
+              suggestions: createConceptSuggestions(6),
+              expanded: expanded.concepts,
+              selectedContextIds: [],
+              selectedEmergingCandidateIds: [],
+              highlightedConceptKeys: new Set<string>(),
+              onExpandedChange: (nextExpanded) =>
+                setExpanded((current) => ({
+                  ...current,
+                  concepts: nextExpanded,
+                })),
+              onToggleExisting: vi.fn(),
+              onToggleEmerging: vi.fn(),
+            }),
+      );
+    }
+
+    await act(async () => {
+      root.render(createElement(SwitchingHarness));
+      await flushPromises();
+    });
+
+    await click(getButton(container, "Ver 1 más"));
+    expect(container.querySelectorAll("article")).toHaveLength(6);
+
+    await click(getButton(container, "Abrir conceptos"));
+    expect(container.querySelectorAll("[data-concept-suggestion-row]")).toHaveLength(5);
+    expect(getButton(container, "Ver 1 más").getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+
+    await click(getButton(container, "Ver 1 más"));
+    expect(container.querySelectorAll("[data-concept-suggestion-row]")).toHaveLength(6);
+
+    await click(getButton(container, "Abrir memorias"));
+    expect(container.querySelectorAll("article")).toHaveLength(6);
   });
 
   it("opens the memory explorer from the rail without leaving the canvas", async () => {
@@ -2311,20 +2649,12 @@ describe("CaptureSurface", () => {
 
     const panel = getDialog(screen.container, "Me recuerda a…") as HTMLElement;
     const panelColumn = screen.container.querySelector("[data-canvas-panel-column]");
-    const contextLayer = screen.container.querySelector("[data-canvas-context-layer]");
-    const contextPanelAnchor = screen.container.querySelector(
-      "[data-canvas-context-panel-anchor]",
-    );
 
-    expect(panelColumn?.contains(panel)).toBe(false);
-    expect(contextLayer?.contains(panel)).toBe(true);
-    expect(contextPanelAnchor?.contains(panel)).toBe(true);
-    expect(panel.className).toContain("min-w-[var(--vinema-canvas-panel-min-width)]");
-    expect(panel.className).toContain("w-[var(--vinema-canvas-panel-preferred-width)]");
+    expect(panelColumn?.contains(panel)).toBe(true);
+    expect(panel.getAttribute("data-canvas-contextual-panel")).toBe("");
+    expect(panel.className).toContain("vinema-canvas-contextual-panel");
+    expect(panel.className).toContain("min-w-0");
     expect(panel.className).toContain("max-h-[var(--vinema-canvas-panel-max-height)]");
-    expect(panel.className).toContain(
-      "max-w-[calc(100vw-var(--vinema-canvas-icon-width)-var(--vinema-canvas-panel-gutter)-1rem)]",
-    );
     expect(panel.className).toContain("box-border");
     expect(panel.className).toContain("flex-col");
     expect(panel.className).toContain("opacity-100");
@@ -2333,6 +2663,9 @@ describe("CaptureSurface", () => {
       "shrink-0",
     );
     expect(panel.querySelector("[data-canvas-side-panel-content]")?.className).toContain(
+      "overflow-hidden",
+    );
+    expect(panel.querySelector("[data-canvas-side-panel-content]")?.className).not.toContain(
       "overflow-y-auto",
     );
     expect(panel.querySelector("[data-canvas-side-panel-content]")?.className).toContain(
@@ -2367,28 +2700,31 @@ describe("CaptureSurface", () => {
       screen.container,
       "Conceptos detectados",
     ) as HTMLElement;
+    const conceptPanelClassName = conceptPanel.className;
 
     await openMemoryPanel(screen.container);
     const memoryPanel = getDialog(screen.container, "Me recuerda a…") as HTMLElement;
+    const memoryPanelClassName = memoryPanel.className;
     await click(getButtonByLabel(screen.container, "Canvas")!);
     const preferencesPanel = getDialog(
       screen.container,
       "Configuración del Canvas",
     ) as HTMLElement;
+    const preferencesPanelClassName = preferencesPanel.className;
     await click(getButtonByLabel(screen.container, "Estado")!);
     const statusPanel = screen.container.querySelector(
       '[data-canvas-side-panel-active="memoryStatus"]',
     ) as HTMLElement;
 
-    expect(memoryPanel.className).toBe(conceptPanel.className);
-    expect(preferencesPanel.className).toBe(conceptPanel.className);
-    expect(statusPanel.className).toBe(conceptPanel.className);
-    expect(conceptPanel.className).toContain("transition-[opacity,transform]");
-    expect(conceptPanel.className).toContain("duration-150");
-    expect(conceptPanel.className).toContain("animate-[vinema-panel-enter_150ms_ease-out]");
-    expect(conceptPanel.className).toContain("max-h-[var(--vinema-canvas-panel-max-height)]");
-    expect(conceptPanel.className).toContain("min-w-[var(--vinema-canvas-panel-min-width)]");
-    expect(conceptPanel.className).toContain("w-[var(--vinema-canvas-panel-preferred-width)]");
+    expect(memoryPanelClassName).toBe(conceptPanelClassName);
+    expect(preferencesPanelClassName).not.toBe(conceptPanelClassName);
+    expect(statusPanel.className).toBe(preferencesPanelClassName);
+    expect(conceptPanelClassName).toContain("transition-[opacity,transform]");
+    expect(conceptPanelClassName).toContain("duration-150");
+    expect(conceptPanelClassName).toContain("animate-[vinema-panel-enter_150ms_ease-out]");
+    expect(conceptPanelClassName).toContain("max-h-[var(--vinema-canvas-panel-max-height)]");
+    expect(conceptPanelClassName).toContain("vinema-canvas-contextual-panel");
+    expect(preferencesPanelClassName).toContain("w-[var(--vinema-canvas-panel-preferred-width)]");
     expect(statusPanel.querySelector("[data-canvas-side-panel-header]")?.textContent).toContain(
       "Estado",
     );
@@ -2435,32 +2771,135 @@ describe("CaptureSurface", () => {
     expect(screen.container.querySelector("[data-canvas-panel-column]")?.className).toContain(
       "z-30",
     );
-    const contextBar = screen.container.querySelector("[data-canvas-context-bar]");
+    const railClassName = rail?.className;
+    const panelColumn = screen.container.querySelector("[data-canvas-panel-column]");
+    const panelColumnClassName = panelColumn?.className;
 
     expect(getLinkByLabel(screen.container, "Memoria")).toBeUndefined();
     expect(getButtonByLabel(screen.container, "Administrar")).toBeUndefined();
     expect(getButtonByLabel(screen.container, "Explorar conocimiento")).toBeDefined();
     expect(getButtonByLabel(screen.container, "Explorar conceptos")).toBeDefined();
-    expect(rail?.querySelectorAll("[data-canvas-panel-trigger]")).toHaveLength(4);
-    expect(rail?.querySelectorAll("[data-context-indicator]")).toHaveLength(0);
-    expect(contextBar?.querySelectorAll("[data-context-indicator]")).toHaveLength(2);
-    expect(conceptPanel.className).toContain("w-[var(--vinema-canvas-panel-preferred-width)]");
+    expect(rail?.querySelectorAll("[data-canvas-panel-trigger]")).toHaveLength(6);
+    expect(rail?.querySelectorAll("[data-context-indicator]")).toHaveLength(2);
+    expect(conceptPanel.className).toContain("vinema-canvas-contextual-panel");
     expect(conceptIndicator.getAttribute("aria-pressed")).toBe("true");
     expect(conceptIndicator.getAttribute("data-canvas-panel-active")).toBe("");
     expect(conceptIndicator.className).toContain("hover:bg-zinc-100");
-    expect(inactiveMemoryIndicator.className).toContain("opacity-90");
-    expect(inactiveMemoryIndicator.className).toContain("hover:opacity-100");
+    expect(inactiveMemoryIndicator.getAttribute("aria-pressed")).toBe("false");
 
     await openMemoryPanel(screen.container);
     const memoryPanel = getDialog(screen.container, "Me recuerda a…") as HTMLElement;
     const memoryIndicator = screen.container.querySelector(
       '[data-context-indicator-panel="memories"]',
     ) as HTMLElement;
-    expect(memoryPanel.className).toContain("w-[var(--vinema-canvas-panel-preferred-width)]");
+    expect(memoryPanel.className).toContain("vinema-canvas-contextual-panel");
     expect(memoryIndicator.getAttribute("aria-pressed")).toBe("true");
     expect(conceptIndicator.getAttribute("aria-pressed")).toBe("false");
+    expect(rail?.className).toBe(railClassName);
+    expect(screen.container.querySelector("[data-canvas-panel-column]")?.className).toBe(
+      panelColumnClassName,
+    );
     expect(getDialog(screen.container, "Conceptos detectados")).toBeUndefined();
     expect(screen.container.querySelectorAll("[data-canvas-side-panel]")).toHaveLength(1);
+  });
+
+  it("anchors rail panels to the triggering button and clamps inside the viewport", async () => {
+    setViewportSize({ width: 900, height: 500 });
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function getMockRect(this: HTMLElement) {
+        if (this.matches("[data-canvas-rail-layout]")) {
+          return createDomRect({ left: 14, top: 100, width: 56, height: 300 });
+        }
+
+        if (this.matches("[data-canvas-side-panel]")) {
+          return createDomRect({ left: 78, top: 0, width: 320, height: 260 });
+        }
+
+        switch (this.getAttribute("aria-label")) {
+          case "Conceptos detectados":
+            return createDomRect({ left: 22, top: 160, width: 40, height: 40 });
+          case "Estado":
+            return createDomRect({ left: 22, top: 460, width: 40, height: 40 });
+          default:
+            return createDomRect({ left: 0, top: 0, width: 0, height: 0 });
+        }
+      });
+
+    try {
+      const screen = await renderCaptureSurface();
+
+      await changeTextarea(screen.container, "Revisar Railway");
+      await advanceTime(500);
+      await openConceptPanel(screen.container);
+
+      const conceptPanel = getDialog(
+        screen.container,
+        "Conceptos detectados",
+      ) as HTMLElement;
+      await waitFor(() => conceptPanel.style.top === "152px");
+
+      expect(conceptPanel.className).toContain("fixed");
+      expect(conceptPanel.style.left).toBe("78px");
+      expect(conceptPanel.style.top).toBe("152px");
+
+      await click(getButtonByLabel(screen.container, "Estado")!);
+      const statusPanel = screen.container.querySelector(
+        '[data-canvas-side-panel-active="memoryStatus"]',
+      ) as HTMLElement;
+      await waitFor(() => statusPanel.style.top === "228px");
+
+      expect(statusPanel.className).toContain("fixed");
+      expect(statusPanel.style.left).toBe("78px");
+      expect(statusPanel.style.top).toBe("228px");
+      expect(screen.container.querySelector("[data-canvas-rail-layout]")?.className).toContain(
+        "vinema-canvas-rail-dock",
+      );
+    } finally {
+      rectSpy.mockRestore();
+    }
+  });
+
+  it("keeps the active rail button centered on the visible dock axis", async () => {
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function getMockRect(this: HTMLElement) {
+        if (this.matches("[data-canvas-rail-layout]")) {
+          return createDomRect({ left: 14, top: 100, width: 68, height: 300 });
+        }
+
+        if (this.getAttribute("aria-label") === "Conceptos detectados") {
+          return createDomRect({ left: 28, top: 160, width: 40, height: 40 });
+        }
+
+        return createDomRect({ left: 0, top: 0, width: 0, height: 0 });
+      });
+
+    try {
+      const screen = await renderCaptureSurface();
+
+      await changeTextarea(screen.container, "Revisar Railway");
+      await advanceTime(500);
+      await openConceptPanel(screen.container);
+
+      const dock = screen.container.querySelector(
+        "[data-canvas-rail-layout]",
+      ) as HTMLElement;
+      const activeButton = getContextIndicator(
+        screen.container,
+        "Conceptos detectados",
+      )!;
+      const dockRect = dock.getBoundingClientRect();
+      const buttonRect = activeButton.getBoundingClientRect();
+      const dockCenter = dockRect.left + dockRect.width / 2;
+      const buttonCenter = buttonRect.left + buttonRect.width / 2;
+
+      expect(dock.className).toContain("vinema-canvas-rail-dock");
+      expect(activeButton.getAttribute("data-canvas-panel-active")).toBe("");
+      expect(buttonCenter).toBe(dockCenter);
+    } finally {
+      rectSpy.mockRestore();
+    }
   });
 
   it("previews contextual canvas panels on hover while click keeps a panel pinned", async () => {
@@ -2479,8 +2918,8 @@ describe("CaptureSurface", () => {
     await changeTextarea(screen.container, "Revisar Mitcom y Railway");
     await advanceTime(500);
 
-    const conceptIcon = getContextIndicator(screen.container, "conceptos sugeridos");
-    const memoryIcon = getContextIndicator(screen.container, "Memoria");
+    const conceptIcon = getContextIndicator(screen.container, "Conceptos detectados");
+    const memoryIcon = getContextIndicator(screen.container, "Memorias sugeridas");
 
     await hoverElement(conceptIcon);
     const previewPanel = getDialog(screen.container, "Conceptos detectados") as HTMLElement;
@@ -2579,16 +3018,19 @@ describe("CaptureSurface", () => {
     await changeTextarea(screen.container, "Revisar Mitcom");
     await advanceTime(500);
 
-    expect(getContextIndicator(screen.container, "Memoria")).toBeDefined();
+    expect(getContextIndicator(screen.container, "Memorias sugeridas")).toBeDefined();
 
     await changeTextarea(screen.container, "Texto sin coincidencias qwerty");
     await advanceTime(100);
 
-    expect(getContextIndicator(screen.container, "Memoria")).toBeDefined();
+    expect(getContextIndicator(screen.container, "Memorias sugeridas")).toBeDefined();
 
     await advanceTime(400);
 
-    expect(getContextIndicator(screen.container, "Memoria")).toBeUndefined();
+    const memoryIndicator = getContextIndicator(screen.container, "Memorias sugeridas");
+    expect(memoryIndicator).toBeDefined();
+    expect(memoryIndicator?.querySelector("[data-canvas-rail-badge]")).toBeNull();
+    expect(memoryIndicator?.className).toContain("opacity-45");
   });
 
   it("keeps hover preview interactive when the pointer enters the panel corridor", async () => {
@@ -2597,7 +3039,7 @@ describe("CaptureSurface", () => {
     await changeTextarea(screen.container, "Revisar Railway");
     await advanceTime(500);
 
-    const conceptIcon = getContextIndicator(screen.container, "conceptos sugeridos");
+    const conceptIcon = getContextIndicator(screen.container, "Conceptos detectados");
 
     await hoverElement(conceptIcon);
     const panel = getDialog(screen.container, "Conceptos detectados") as HTMLElement;
@@ -2605,10 +3047,10 @@ describe("CaptureSurface", () => {
     expect(panel.className).toContain("pointer-events-auto");
 
     await unhoverElement(conceptIcon);
-    const contextLayer = screen.container.querySelector(
-      "[data-canvas-context-layer]",
+    const panelCorridor = screen.container.querySelector(
+      "[data-canvas-panel-hover-corridor]",
     ) as HTMLElement;
-    await hoverElement(contextLayer);
+    await hoverElement(panelCorridor);
     await advanceTime(100);
     expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
     await advanceTime(140);
@@ -2620,7 +3062,7 @@ describe("CaptureSurface", () => {
       "true",
     );
 
-    await unhoverElement(contextLayer);
+    await unhoverElement(panelCorridor);
     await advanceTime(240);
     expect(screen.container.querySelector("[data-canvas-side-panel]")?.getAttribute(
       "data-panel-state",
@@ -2648,15 +3090,15 @@ describe("CaptureSurface", () => {
     await changeTextarea(screen.container, "Revisar Railway");
     await advanceTime(500);
 
-    const conceptIcon = getContextIndicator(screen.container, "conceptos sugeridos");
+    const conceptIcon = getContextIndicator(screen.container, "Conceptos detectados");
 
     await hoverElement(conceptIcon);
     const panel = getDialog(screen.container, "Conceptos detectados") as HTMLElement;
     const interactionRegion = screen.container.querySelector(
       "[data-canvas-panel-interaction-region]",
     ) as HTMLElement;
-    const panelAnchor = screen.container.querySelector(
-      "[data-canvas-context-panel-anchor]",
+    const panelCorridor = screen.container.querySelector(
+      "[data-canvas-panel-hover-corridor]",
     ) as HTMLElement;
     const panelHeader = panel.querySelector(
       "[data-canvas-side-panel-header]",
@@ -2667,15 +3109,14 @@ describe("CaptureSurface", () => {
 
     expect(interactionRegion).toBeDefined();
     expect(interactionRegion.className).toContain("pointer-events-auto");
-    expect(interactionRegion.className).toContain("gap-2");
-    expect(panelAnchor.className).not.toContain("mt-2");
+    expect(panelCorridor.className).toContain("pl-[var(--vinema-canvas-panel-gutter)]");
 
     await unhoverElement(conceptIcon);
-    await hoverElement(panelAnchor);
+    await hoverElement(panelCorridor);
     await advanceTime(240);
     expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
 
-    await unhoverElement(panelAnchor);
+    await unhoverElement(panelCorridor);
     await hoverElement(panelHeader);
     await advanceTime(240);
     expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
@@ -2744,7 +3185,7 @@ describe("CaptureSurface", () => {
     await changeTextarea(screen.container, "Revisar Railway");
     await advanceTime(500);
 
-    const conceptIcon = getContextIndicator(screen.container, "conceptos sugeridos");
+    const conceptIcon = getContextIndicator(screen.container, "Conceptos detectados");
     await hoverElement(conceptIcon);
 
     expect(getButton(screen.container, "Railway").getAttribute("aria-pressed")).toBe(
@@ -2880,7 +3321,7 @@ describe("CaptureSurface", () => {
     );
     await advanceTime(500);
 
-    expect(getContextIndicator(screen.container, "conceptos sugeridos")).toBeDefined();
+    expect(getContextIndicator(screen.container, "Conceptos detectados")).toBeDefined();
     await openConceptPanel(screen.container);
     expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
     expect(screen.container.textContent).toContain("Perfumes");
@@ -3158,7 +3599,7 @@ describe("CaptureSurface", () => {
 
     await changeTextarea(screen.container, "Mitcom y Servidor revisan pendientes");
     await advanceTime(500);
-    await hoverElement(getContextIndicator(screen.container, "conceptos sugeridos"));
+    await hoverElement(getContextIndicator(screen.container, "Conceptos detectados"));
 
     expect(screen.container.textContent).not.toContain("Relacionado ahora");
     expect(screen.container.textContent).not.toContain("Podría faltar");
@@ -3167,7 +3608,7 @@ describe("CaptureSurface", () => {
       "Suele formar parte de este mismo contexto",
     );
 
-    await click(getContextIndicator(screen.container, "conceptos sugeridos")!);
+    await click(getContextIndicator(screen.container, "Conceptos detectados")!);
 
     expect(screen.container.textContent).toContain("Sponsor");
     expect(screen.container.textContent).toContain(
@@ -3376,7 +3817,8 @@ describe("CaptureSurface", () => {
     expect(getDialog(screen.container, "Conceptos detectados")).toBeUndefined();
     expect(screen.container.textContent).not.toContain("Railway");
     expect(screen.container.textContent).not.toContain("Actualizar sugerencias");
-    expect(screen.container.querySelectorAll("[data-context-indicator]")).toHaveLength(0);
+    expect(screen.container.querySelectorAll("[data-context-indicator]")).toHaveLength(2);
+    expect(screen.container.querySelectorAll("[data-canvas-rail-badge]")).toHaveLength(0);
   });
 
   it("closes an open panel when its contextual indicator disappears", async () => {
@@ -3392,7 +3834,8 @@ describe("CaptureSurface", () => {
     await advanceTime(500);
 
     expect(getDialog(screen.container, "Conceptos detectados")).toBeUndefined();
-    expect(screen.container.querySelectorAll("[data-context-indicator]")).toHaveLength(0);
+    expect(screen.container.querySelectorAll("[data-context-indicator]")).toHaveLength(2);
+    expect(screen.container.querySelectorAll("[data-canvas-rail-badge]")).toHaveLength(0);
   });
 
   it("does not let stale concept suggestions replace newer input", async () => {
@@ -3664,8 +4107,9 @@ describe("CaptureSurface", () => {
     expect(getTextarea(screen.container)?.value).toBe(
       "Después de muchas reuniones me cuesta concentrarme.",
     );
-    expect(getContextIndicator(screen.container, "Memoria")).toBeUndefined();
-    expect(screen.container.querySelectorAll("[data-context-indicator]")).toHaveLength(0);
+    expect(getContextIndicator(screen.container, "Memorias sugeridas")).toBeDefined();
+    expect(screen.container.querySelectorAll("[data-context-indicator]")).toHaveLength(2);
+    expect(screen.container.querySelectorAll("[data-canvas-rail-badge]")).toHaveLength(0);
     expect(getButton(screen.container, "Reintentar")).toBeUndefined();
   });
 });
@@ -3718,26 +4162,71 @@ async function renderConceptPanelContent({
   suggestions,
   selectedContextIds = [],
   selectedEmergingCandidateIds = [],
+  expanded: initialExpanded = false,
 }: {
   suggestions: Parameters<typeof ConceptPanelContent>[0]["suggestions"];
   selectedContextIds?: string[];
   selectedEmergingCandidateIds?: string[];
+  expanded?: boolean;
 }) {
   const container = document.createElement("div");
   document.body.replaceChildren(container);
   const root = createRoot(container);
 
+  function ConceptPanelHarness() {
+    const [expanded, setExpanded] = useState(initialExpanded);
+
+    return createElement(ConceptPanelContent, {
+      suggestions,
+      expanded,
+      selectedContextIds,
+      selectedEmergingCandidateIds,
+      highlightedConceptKeys: new Set<string>(),
+      onExpandedChange: setExpanded,
+      onToggleExisting: vi.fn(),
+      onToggleEmerging: vi.fn(),
+    });
+  }
+
   await act(async () => {
-    root.render(
-      createElement(ConceptPanelContent, {
-        suggestions,
-        selectedContextIds,
-        selectedEmergingCandidateIds,
-        highlightedConceptKeys: new Set<string>(),
-        onToggleExisting: vi.fn(),
-        onToggleEmerging: vi.fn(),
-      }),
-    );
+    root.render(createElement(ConceptPanelHarness));
+    await flushPromises();
+  });
+
+  return container;
+}
+
+async function renderMemoryPanelContent({
+  suggestions,
+  expanded: initialExpanded = false,
+  loading = false,
+  error = false,
+}: {
+  suggestions: Parameters<typeof MemoryPanelContent>[0]["suggestions"];
+  expanded?: boolean;
+  loading?: boolean;
+  error?: boolean;
+}) {
+  const container = document.createElement("div");
+  document.body.replaceChildren(container);
+  const root = createRoot(container);
+
+  function MemoryPanelHarness() {
+    const [expanded, setExpanded] = useState(initialExpanded);
+
+    return createElement(MemoryPanelContent, {
+      suggestions,
+      expanded,
+      loading,
+      error,
+      onExpandedChange: setExpanded,
+      onRetry: vi.fn(),
+      onOpenCapture: vi.fn(),
+    });
+  }
+
+  await act(async () => {
+    root.render(createElement(MemoryPanelHarness));
     await flushPromises();
   });
 
@@ -3800,6 +4289,49 @@ function createContext({
     updatedAt: "2026-01-01T00:00:00.000Z",
     archivedAt: null,
   };
+}
+
+function createConceptSuggestions(
+  count: number,
+): Parameters<typeof ConceptPanelContent>[0]["suggestions"] {
+  return Array.from({ length: count }, (_, index) => {
+    const position = index + 1;
+    const context = createContext({
+      id: `concept-${position}`,
+      name: `Concept ${position}`,
+    });
+
+    return {
+      kind: "existing",
+      context,
+      conceptId: context.id,
+      label: context.name,
+      score: count - index,
+      evidenceCaptureIds: [],
+      matchedTerms: [],
+      knowledgeSuggestionKind: "RELATED_NOW",
+      knowledgeSuggestionReasons: [],
+    };
+  });
+}
+
+function createMemorySuggestions(
+  count: number,
+): Parameters<typeof MemoryPanelContent>[0]["suggestions"] {
+  return Array.from({ length: count }, (_, index) => {
+    const position = index + 1;
+
+    return {
+      node: createStoredNode({
+        id: `memory-${position}`,
+        content: `Recuerdo ${position} con acuerdos y pendientes compartidos.`,
+        updatedAt: `2026-01-${String(position).padStart(2, "0")}T00:00:00.000Z`,
+      }),
+      score: count - index,
+      excerpt: `Recuerdo ${position} con acuerdos y pendientes compartidos.`,
+      reasons: [],
+    };
+  });
 }
 
 function createRelationsFor(
@@ -3902,6 +4434,30 @@ function setViewportSize({
   });
 }
 
+function createDomRect({
+  left,
+  top,
+  width,
+  height,
+}: {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}) {
+  return {
+    bottom: top + height,
+    height,
+    left,
+    right: left + width,
+    top,
+    width,
+    x: left,
+    y: top,
+    toJSON: () => ({}),
+  } as DOMRect;
+}
+
 function setPointerCapability(pointer: "fine" | "coarse") {
   Object.defineProperty(window, "matchMedia", {
     configurable: true,
@@ -3922,7 +4478,7 @@ function setPointerCapability(pointer: "fine" | "coarse") {
 }
 
 async function openConceptPanel(container: HTMLElement) {
-  const indicator = getContextIndicator(container, "conceptos sugeridos");
+  const indicator = getContextIndicator(container, "Conceptos detectados");
   if (!indicator) {
     throw new Error("Concept indicator not found");
   }
@@ -3932,7 +4488,7 @@ async function openConceptPanel(container: HTMLElement) {
 
 async function openMemoryPanel(container: HTMLElement) {
   const indicator =
-    getContextIndicator(container, "Memoria") ??
+    getContextIndicator(container, "Memorias sugeridas") ??
     getContextIndicator(container, "No se pudo buscar recuerdos");
 
   if (!indicator) {
