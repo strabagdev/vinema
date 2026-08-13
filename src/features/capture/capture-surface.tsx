@@ -1,7 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { Activity, Brain, Check, Lightbulb, Network, Settings2, X } from "lucide-react";
+import {
+  Activity,
+  Brain,
+  Check,
+  Lightbulb,
+  Network,
+  Settings2,
+  Sparkles,
+  X,
+} from "lucide-react";
 import type { CSSProperties, MouseEvent, ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ConceptWorkspaceClient } from "@/app/concepts/concept-workspace-client";
@@ -1079,10 +1088,10 @@ export function CaptureSurface({
                 onHoverEnd={() => leavePreviewTrigger("concepts")}
                 onClick={() => openPanel("concepts")}
               >
-                <Brain
+                <Sparkles
                   className="h-5 w-5"
                   aria-hidden="true"
-                  data-canvas-rail-icon="concepts"
+                  data-canvas-rail-icon="concept-suggestions"
                 />
                 {contextualConceptCount > 0 ? (
                   <CanvasRailBadge count={contextualConceptCount} />

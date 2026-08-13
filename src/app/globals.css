@@ -54,50 +54,50 @@
 
 :root[data-vinema-theme="dark"] {
   color-scheme: dark;
-  --vinema-background: hsl(240 7% 8%);
-  --vinema-canvas-surface: hsl(240 7% 8%);
-  --vinema-surface: hsl(240 6% 11%);
-  --vinema-surface-elevated: hsl(240 6% 13% / 0.96);
-  --vinema-surface-panel: hsl(240 6% 12% / 0.96);
-  --vinema-surface-modal: hsl(240 6% 12%);
-  --vinema-text-primary: hsl(240 11% 94%);
-  --vinema-text-secondary: hsl(240 8% 82%);
-  --vinema-text-muted: hsl(240 6% 68%);
-  --vinema-text-faint: hsl(240 6% 56%);
-  --vinema-border: hsl(240 5% 29%);
-  --vinema-border-subtle: hsl(240 5% 22%);
-  --vinema-border-strong: hsl(240 5% 38%);
-  --vinema-hover: hsl(240 5% 20%);
+  --vinema-background: hsl(240 14% 3%);
+  --vinema-canvas-surface: hsl(240 14% 3%);
+  --vinema-surface: hsl(240 8% 10%);
+  --vinema-surface-elevated: hsl(240 7% 14% / 0.98);
+  --vinema-surface-panel: hsl(240 7% 13% / 0.98);
+  --vinema-surface-modal: hsl(240 7% 14%);
+  --vinema-text-primary: hsl(240 12% 91%);
+  --vinema-text-secondary: hsl(240 8% 78%);
+  --vinema-text-muted: hsl(240 6% 66%);
+  --vinema-text-faint: hsl(240 5% 56%);
+  --vinema-border: hsl(240 5% 27%);
+  --vinema-border-subtle: hsl(240 5% 20%);
+  --vinema-border-strong: hsl(240 5% 36%);
+  --vinema-hover: hsl(240 6% 19%);
   --vinema-selection: rgb(52 211 153 / 0.2);
-  --vinema-input: hsl(240 6% 10%);
-  --vinema-input-border: hsl(240 5% 26%);
-  --vinema-focus: hsl(240 8% 84%);
-  --vinema-overlay: hsl(240 10% 3.9% / 0.58);
-  --vinema-shadow-panel: 0 12px 34px rgb(0 0 0 / 0.36);
-  --vinema-shadow-modal: 0 25px 54px rgb(0 0 0 / 0.52);
+  --vinema-input: hsl(240 8% 9%);
+  --vinema-input-border: hsl(240 5% 28%);
+  --vinema-focus: hsl(240 10% 82%);
+  --vinema-overlay: hsl(240 14% 2% / 0.68);
+  --vinema-shadow-panel: 0 14px 32px rgb(0 0 0 / 0.3);
+  --vinema-shadow-modal: 0 28px 58px rgb(0 0 0 / 0.44);
   --vinema-accent-amber-soft: hsl(36 72% 18%);
   --vinema-accent-amber: hsl(38 92% 64%);
   --vinema-accent-amber-muted: hsl(39 90% 52%);
   --vinema-accent-indigo-soft: hsl(236 42% 22%);
   --vinema-accent-indigo: hsl(235 88% 76%);
   --vinema-accent-indigo-muted: hsl(235 72% 66%);
-  --background: 240 7% 8%;
-  --foreground: 240 12% 92%;
-  --card: 240 6% 12%;
-  --card-foreground: 240 12% 92%;
-  --popover: 240 6% 12%;
-  --popover-foreground: 240 12% 92%;
-  --primary: 240 12% 92%;
-  --primary-foreground: 240 7% 8%;
-  --secondary: 240 5% 17%;
-  --secondary-foreground: 240 12% 92%;
-  --muted: 240 5% 17%;
-  --muted-foreground: 240 6% 68%;
-  --accent: 240 5% 17%;
-  --accent-foreground: 240 12% 92%;
-  --border: 240 5% 24%;
-  --input: 240 5% 26%;
-  --ring: 240 8% 84%;
+  --background: 240 14% 3%;
+  --foreground: 240 12% 91%;
+  --card: 240 7% 14%;
+  --card-foreground: 240 12% 91%;
+  --popover: 240 7% 14%;
+  --popover-foreground: 240 12% 91%;
+  --primary: 240 12% 91%;
+  --primary-foreground: 240 14% 3%;
+  --secondary: 240 6% 19%;
+  --secondary-foreground: 240 12% 91%;
+  --muted: 240 6% 19%;
+  --muted-foreground: 240 6% 66%;
+  --accent: 240 6% 19%;
+  --accent-foreground: 240 12% 91%;
+  --border: 240 5% 27%;
+  --input: 240 5% 28%;
+  --ring: 240 10% 82%;
 }
 
 @theme inline {
@@ -144,6 +144,10 @@ body {
   --vinema-canvas-padding-y: 1rem;
   --vinema-canvas-context-reserve: 3rem;
   --vinema-canvas-editor-start: 42%;
+  --vinema-canvas-editor-start-effective: max(
+    0rem,
+    calc(var(--vinema-canvas-editor-start) - var(--vinema-canvas-context-reserve))
+  );
   --vinema-canvas-editor-end-space: 30%;
   --vinema-canvas-font-size: 1.25rem;
   --vinema-canvas-line-height: 1.7;
@@ -252,15 +256,27 @@ body {
     --vinema-canvas-dock-width: 3.25rem;
     --vinema-canvas-submit-gap: 0.5rem;
     --vinema-canvas-context-panel-width: min(22.5rem, calc(100vw - 1.5rem));
-    --vinema-canvas-edge-gutter: 0.75rem;
+    --vinema-canvas-edge-gutter: 1.25rem;
     --vinema-canvas-padding-x: 0;
     --vinema-canvas-padding-y: 0.75rem;
     --vinema-canvas-context-reserve: 2.75rem;
+    --vinema-canvas-editor-start-effective: max(
+      8rem,
+      calc(42dvh - 4.3rem - env(safe-area-inset-bottom) - var(--vinema-canvas-context-reserve))
+    );
   }
 
   .vinema-canvas-editor {
     font-size: 1.08rem;
     line-height: 1.62;
+  }
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+  .vinema-canvas-layout,
+  .vinema-canvas {
+    --vinema-canvas-edge-gutter: 2rem;
+    --vinema-canvas-padding-x: 0;
   }
 }
 
@@ -338,7 +354,7 @@ body {
 :root[data-vinema-theme="dark"] .bg-white,
 :root[data-vinema-theme="dark"] .bg-white\/95,
 :root[data-vinema-theme="dark"] .bg-white\/70 {
-  background-color: var(--vinema-surface-elevated) !important;
+  background-color: var(--vinema-surface-panel) !important;
 }
 
 :root[data-vinema-theme="dark"] .bg-zinc-50,
@@ -362,7 +378,7 @@ body {
 }
 
 :root[data-vinema-theme="dark"] .hover\:bg-zinc-800:hover {
-  background-color: hsl(240 8% 78%) !important;
+  background-color: var(--vinema-text-secondary) !important;
 }
 
 :root[data-vinema-theme="dark"] .bg-indigo-50 {
@@ -441,6 +457,11 @@ body {
   --tw-ring-color: var(--vinema-focus) !important;
 }
 
+:root[data-vinema-theme="dark"] .focus-visible\:ring-offset-2:focus-visible,
+:root[data-vinema-theme="dark"] .focus\:ring-offset-2:focus {
+  --tw-ring-offset-color: var(--vinema-background) !important;
+}
+
 :root[data-vinema-theme="dark"] .shadow-2xl {
   box-shadow: var(--vinema-shadow-modal) !important;
 }
@@ -449,12 +470,21 @@ body {
   box-shadow: var(--vinema-shadow-panel) !important;
 }
 
+:root[data-vinema-theme="dark"] .vinema-canvas-rail-dock {
+  box-shadow: var(--vinema-shadow-panel);
+}
+
 :root[data-vinema-theme="dark"] input,
 :root[data-vinema-theme="dark"] textarea,
 :root[data-vinema-theme="dark"] select {
   background-color: var(--vinema-input);
   color: var(--vinema-text-primary);
   border-color: var(--vinema-input-border);
+}
+
+:root[data-vinema-theme="dark"] input::placeholder,
+:root[data-vinema-theme="dark"] textarea::placeholder {
+  color: var(--vinema-text-faint);
 }
 
 :root[data-vinema-theme="dark"] .bg-transparent {

@@ -581,6 +581,9 @@ describe("CaptureSurface", () => {
     expect(mainRegion?.className).toContain("row-[1]");
     expect(mainRegion?.className).toContain("vinema-canvas-main-grid");
     expect(mainRegion?.className).toContain("overflow-hidden");
+    expect(mainRegion?.className).not.toContain("pl-");
+    expect(mainRegion?.className).not.toContain("pr-");
+    expect(mainRegion?.className).not.toContain("translate");
     expect(iconRail).toBeDefined();
     expect(iconRail?.className).toContain("col-[1]");
     expect(iconRail?.className).toContain("z-20");
@@ -623,6 +626,8 @@ describe("CaptureSurface", () => {
     );
     expect(composer?.className).toContain("col-[2]");
     expect(composer?.className).toContain("h-full");
+    expect(composer?.className).toContain("justify-self-center");
+    expect(composer?.className).toContain("box-border");
     expect(composer?.className).toContain("px-[var(--vinema-canvas-padding-x)]");
     expect(scrollViewport?.className).toContain("h-full");
     expect(scrollViewport?.className).toContain("overflow-y-auto");
@@ -634,6 +639,7 @@ describe("CaptureSurface", () => {
     expect(writingTrack?.getAttribute("data-canvas-context-reserve")).toBe("structural");
     expect(dock).toBeDefined();
     expect(dock?.className).toContain("col-[3]");
+    expect(dock?.className).toContain("box-border");
     expect(dock?.className).toContain(
       "grid-cols-[var(--vinema-canvas-submit-gap)_var(--vinema-canvas-dock-width)_minmax(0,1fr)]",
     );
@@ -643,12 +649,15 @@ describe("CaptureSurface", () => {
     expect(dock?.firstElementChild?.className).toContain("row-[2]");
     expect(dock?.firstElementChild?.className).toContain("items-start");
     expect(dock?.className).toContain("max-sm:fixed");
+    expect(dock?.className).toContain(
+      "max-sm:right-[var(--vinema-canvas-edge-gutter)]",
+    );
     expect(getCanvasPrompts("mixed")).toContain(textarea?.getAttribute("placeholder"));
     expect(
       (composer as HTMLElement | null)?.style.getPropertyValue(
         "--vinema-canvas-editor-start",
       ),
-    ).toBe("42%");
+    ).toBe("var(--vinema-canvas-editor-start-effective, 42%)");
     expect(textarea?.className).toContain("row-[2]");
     expect(textarea?.className).not.toContain("pt-[calc(50%-0.85em)]");
     expect(textarea?.className).toContain("overflow-hidden");
@@ -1105,6 +1114,26 @@ describe("CaptureSurface", () => {
     expect(writingTrack?.className).toBe(initialWritingTrackClassName);
     expect(rail?.querySelectorAll("[data-canvas-panel-trigger]")).toHaveLength(6);
     expect(rail?.querySelectorAll("[data-context-indicator]")).toHaveLength(2);
+    expect(
+      getContextIndicator(screen.container, "Conceptos detectados")?.querySelector(
+        '[data-canvas-rail-icon="concept-suggestions"]',
+      ),
+    ).toBeDefined();
+    expect(
+      getContextIndicator(screen.container, "Conceptos detectados")?.querySelector(
+        '[data-canvas-rail-icon="knowledge"]',
+      ),
+    ).toBeNull();
+    expect(
+      getButtonByLabel(screen.container, "Explorar conocimiento")?.querySelector(
+        '[data-canvas-rail-icon="knowledge"]',
+      ),
+    ).toBeDefined();
+    expect(
+      getButtonByLabel(screen.container, "Explorar conceptos")?.querySelector(
+        '[data-canvas-rail-icon="concept-network"]',
+      ),
+    ).toBeDefined();
     expect(getButtonByLabel(screen.container, "Canvas")).toBeDefined();
   });
 
@@ -1142,9 +1171,21 @@ describe("CaptureSurface", () => {
     );
     expect(textarea.className).toContain("row-[2]");
     expect(textarea.className).toContain("w-full");
-    expect(writingSurface.className).not.toContain("border");
-    expect(scrollViewport.className).not.toContain("border");
-    expect(writingTrack.className).not.toContain("border");
+    expect(
+      writingSurface.className
+        .split(/\s+/)
+        .some((className) => className === "border" || className.startsWith("border-")),
+    ).toBe(false);
+    expect(
+      scrollViewport.className
+        .split(/\s+/)
+        .some((className) => className === "border" || className.startsWith("border-")),
+    ).toBe(false);
+    expect(
+      writingTrack.className
+        .split(/\s+/)
+        .some((className) => className === "border" || className.startsWith("border-")),
+    ).toBe(false);
     expect(screen.container.querySelector("hr")).toBeNull();
 
     await changeTextarea(
