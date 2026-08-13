@@ -7,7 +7,7 @@ export const CANVAS_APPEARANCE_MIRROR_KEY = "vinema:appearance";
 
 export const CANVAS_TEXT_SIZES = [14, 16, 18, 20] as const;
 export const CANVAS_APPEARANCES = ["light", "dark", "system"] as const;
-export const CANVAS_MAX_WIDTH = "920px";
+export const CANVAS_MAX_WIDTH = "60rem";
 export const CANVAS_FONT_FAMILY =
   "var(--font-geist-sans), Arial, Helvetica, sans-serif";
 

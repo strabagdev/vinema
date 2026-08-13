@@ -779,7 +779,7 @@ describe("CaptureSurface", () => {
     expect(canvas?.hasAttribute("data-canvas-font")).toBe(false);
     expect(canvas?.getAttribute("data-canvas-appearance")).toBe("light");
     expect(canvas?.style.getPropertyValue("--vinema-canvas-max-width")).toBe(
-      "920px",
+      "60rem",
     );
     expect(getTextarea(screen.container)?.style.fontSize).toBe("20px");
     expect(getTextarea(screen.container)?.style.fontFamily).toContain(
