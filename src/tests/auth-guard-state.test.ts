@@ -8,12 +8,16 @@ const mocks = vi.hoisted(() => ({
   pathname: "/",
   replace: vi.fn(),
   push: vi.fn(),
-  auth: {
-    isAuthenticated: false,
-    isLoading: true,
-    state: {
-      status: "BOOT",
-    } as AuthState,
+    auth: {
+      authStatus: "BOOT",
+      isAuthenticated: false,
+      isLoading: true,
+      syncState: {
+        connectivity: "UNKNOWN",
+      },
+      state: {
+        status: "BOOT",
+      } as AuthState,
   },
 }));
 
@@ -38,8 +42,12 @@ describe("AuthGuard state presentation", () => {
     mocks.replace.mockReset();
     mocks.push.mockReset();
     mocks.auth = {
+      authStatus: "BOOT",
       isAuthenticated: false,
       isLoading: true,
+      syncState: {
+        connectivity: "UNKNOWN",
+      },
       state: {
         status: "BOOT",
       } as AuthState,
@@ -56,17 +64,56 @@ describe("AuthGuard state presentation", () => {
     container.remove();
   });
 
-  it("shows the preparing screen only for blocking startup state", async () => {
+  it("shows the neutral startup screen only for blocking startup state", async () => {
+    vi.useFakeTimers();
     await renderGuard();
 
-    expect(container.textContent).toContain("Preparando Vinema");
+    expect(container.querySelector("[data-vinema-initial-loading]")).toBeNull();
+    await advanceTimers(180);
+
+    const startup = container.querySelector("[data-vinema-initial-loading]");
+
+    expect(container.textContent).not.toContain("Preparando Vinema");
+    expect(container.textContent).not.toContain("Restaurando sesion");
     expect(container.textContent).not.toContain("Protected");
+    expect(container.querySelector(".rounded-lg")).toBeNull();
+    expect(startup).toBeDefined();
+    expect(startup?.className).toContain("fixed");
+    expect(startup?.className).toContain("inset-0");
+    expect(startup?.className).toContain("min-h-dvh");
+    expect(startup?.className).toContain("bg-[var(--vinema-surface-background)]");
+    expect(startup?.getAttribute("data-vinema-initial-loading-theme")).toBe(
+      "semantic",
+    );
+    expect(startup?.getAttribute("data-vinema-initial-loading-motion")).toBe(
+      "reduced-safe",
+    );
+    expect(startup?.getAttribute("data-vinema-initial-loading-stage")).toBe("auth");
+    expect(
+      startup?.querySelector("[data-vinema-initial-loading-message]")?.textContent,
+    ).toBe("Preparando tu espacio");
+    expect(
+      (
+        startup?.querySelector(
+          "[data-vinema-initial-loading-progress]",
+        ) as HTMLElement | null
+      )?.style.width,
+    ).toBe("25%");
+    expect(startup?.textContent).not.toContain("%");
+    expect(startup?.querySelector("[data-vinema-brand='monogram']")).toBeDefined();
+    expect(startup?.querySelector(".vinema-initial-loading-logo")).toBeDefined();
+
+    vi.useRealTimers();
   });
 
   it("allows local-only authenticated sessions", async () => {
     mocks.auth = {
+      authStatus: "AUTHENTICATED_LOCAL",
       isAuthenticated: true,
       isLoading: false,
+      syncState: {
+        connectivity: "ONLINE",
+      },
       state: {
         status: "AUTHENTICATED_LOCAL",
       } as AuthState,
@@ -90,3 +137,10 @@ describe("AuthGuard state presentation", () => {
     });
   }
 });
+
+async function advanceTimers(ms: number) {
+  await act(async () => {
+    vi.advanceTimersByTime(ms);
+    await Promise.resolve();
+  });
+}

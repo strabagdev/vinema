@@ -118,6 +118,39 @@ body {
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
 
+.vinema-initial-loading-logo {
+  animation: vinema-initial-loading-pulse 1.8s ease-in-out infinite;
+}
+
+.vinema-initial-loading-progress {
+  transition: width 180ms ease;
+}
+
+.vinema-initial-loading-exit {
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vinema-initial-loading-logo,
+  .vinema-initial-loading-progress,
+  .vinema-initial-loading-exit {
+    animation: none;
+    transition: none;
+  }
+}
+
+@keyframes vinema-initial-loading-pulse {
+  0%,
+  100% {
+    opacity: 0.68;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
 ::selection {
   background: var(--vinema-selection);
 }

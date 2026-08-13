@@ -2,6 +2,10 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
+import {
+  VinemaInitialLoading,
+  type VinemaInitialLoadingStage,
+} from "@/components/app-shell/vinema-initial-loading";
 import { useAuth } from "@/features/auth/auth-provider";
 
 const PUBLIC_ROUTES = new Set(["/login", "/register"]);
@@ -9,8 +13,13 @@ const PUBLIC_ROUTES = new Set(["/login", "/register"]);
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { isAuthenticated, isLoading, state } = useAuth();
+  const { authStatus, isAuthenticated, isLoading, syncState } = useAuth();
   const publicRoute = PUBLIC_ROUTES.has(pathname);
+  const blocking = isLoading || (publicRoute && isAuthenticated) || !isAuthenticated;
+  const stage: VinemaInitialLoadingStage =
+    authStatus === "AUTHENTICATED_OFFLINE" || syncState.connectivity === "OFFLINE"
+      ? "offline"
+      : "auth";
 
   useEffect(() => {
     if (isLoading) {
@@ -31,17 +40,11 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
 
-  if (isLoading || (publicRoute && isAuthenticated) || !isAuthenticated) {
-    return (
-      <div className="flex min-h-screen flex-1 items-center justify-center bg-zinc-50 px-6 text-sm text-zinc-500">
-        {state.status === "CHECKING_LOCAL_SESSION" || state.status === "VALIDATING_REMOTE"
-          ? "Restaurando sesion..."
-          : "Preparando Vinema..."}
-      </div>
-    );
-  }
-
-  return <>{children}</>;
+  return (
+    <VinemaInitialLoading active={blocking} stage={stage}>
+      {blocking ? null : children}
+    </VinemaInitialLoading>
+  );
 }
 
 export function isPublicAuthRoute(pathname: string) {

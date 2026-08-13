@@ -57,4 +57,16 @@ describe("Vinema brand assets", () => {
       expect(existsSync(icon)).toBe(true);
     }
   });
+
+  it("keeps initial loading motion compatible with reduced-motion preferences", () => {
+    const globals = readFileSync("src/app/globals.css", "utf8");
+
+    expect(globals).toContain(".vinema-initial-loading-logo");
+    expect(globals).toContain(".vinema-initial-loading-progress");
+    expect(globals).toContain(".vinema-initial-loading-exit");
+    expect(globals).toContain("@keyframes vinema-initial-loading-pulse");
+    expect(globals).toContain("@media (prefers-reduced-motion: reduce)");
+    expect(globals).toContain("animation: none;");
+    expect(globals).toContain("transition: none;");
+  });
 });
