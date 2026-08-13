@@ -232,6 +232,114 @@ body {
   background: var(--vinema-canvas-selection);
 }
 
+.vinema-rich-editor .ProseMirror {
+  min-height: 1lh;
+  outline: none;
+  color: var(--vinema-text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.vinema-rich-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--vinema-canvas-placeholder);
+  pointer-events: none;
+}
+
+.vinema-rich-editor .ProseMirror:focus p.is-editor-empty:first-child::before {
+  opacity: 0;
+}
+
+.vinema-rich-editor .ProseMirror h1,
+.vinema-rich-editor .ProseMirror h2,
+.vinema-rich-editor .ProseMirror h3 {
+  margin: 0;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.vinema-rich-editor .ProseMirror h1 {
+  font-size: 1.75em;
+}
+
+.vinema-rich-editor .ProseMirror h2 {
+  font-size: 1.35em;
+}
+
+.vinema-rich-editor .ProseMirror h3 {
+  font-size: 1.12em;
+}
+
+.vinema-rich-editor .ProseMirror p,
+.vinema-rich-editor .ProseMirror blockquote,
+.vinema-rich-editor .ProseMirror ul,
+.vinema-rich-editor .ProseMirror ol {
+  margin: 0;
+}
+
+.vinema-rich-editor .ProseMirror > * + * {
+  margin-top: 0.85em;
+}
+
+.vinema-rich-editor .ProseMirror ul,
+.vinema-rich-editor .ProseMirror ol {
+  padding-left: 1.35em;
+}
+
+.vinema-rich-editor .ProseMirror ul {
+  list-style: disc;
+}
+
+.vinema-rich-editor .ProseMirror ol {
+  list-style: decimal;
+}
+
+.vinema-rich-editor .ProseMirror ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+
+.vinema-rich-editor .ProseMirror ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55em;
+}
+
+.vinema-rich-editor .ProseMirror ul[data-type="taskList"] label {
+  margin-top: 0.2em;
+}
+
+.vinema-rich-editor .ProseMirror ul[data-type="taskList"] input {
+  accent-color: rgb(20 131 91);
+}
+
+.vinema-rich-editor .ProseMirror blockquote {
+  border-left: 2px solid var(--vinema-border-strong);
+  padding-left: 0.85em;
+  color: var(--vinema-text-secondary);
+}
+
+.vinema-rich-editor .ProseMirror code {
+  border-radius: 0.3rem;
+  background: var(--vinema-surface);
+  padding: 0.08em 0.28em;
+  font-size: 0.9em;
+}
+
+.vinema-rich-editor .ProseMirror hr {
+  margin-block: 1.2em;
+  border: 0;
+  border-top: 1px solid var(--vinema-border-subtle);
+}
+
+.vinema-rich-editor .ProseMirror a {
+  color: rgb(20 131 91);
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
 @keyframes vinema-panel-enter {
   from {
     opacity: 0;

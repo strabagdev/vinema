@@ -33,8 +33,16 @@ import {
   CanvasSubmitButton,
   CanvasWritingSurface,
   VinemaCanvas,
-  VinemaCanvasEditor,
 } from "@/features/canvas/vinema-canvas";
+import {
+  VinemaCanvasRichEditor,
+  type RichTextSelectionSnapshot,
+  type VinemaCanvasEditorHandle,
+} from "@/features/canvas/vinema-rich-editor";
+import {
+  markdownToRichDocument,
+  richDocumentToPlainText,
+} from "@/features/canvas/rich-content";
 import type {
   AssociationSuggestion,
   ConceptSuggestion,
@@ -55,7 +63,7 @@ import {
 } from "@/features/capture/capture-flow";
 import {
   createSelectionEmergingConcept,
-  readValidTextareaSelection,
+  createValidCapturedSelection,
   resolveCapturedSelectionConcept,
   type CapturedTextSelection,
   type CaptureSelectionResolution,
@@ -144,6 +152,7 @@ export function CaptureSurface({
   const feedback = useVisualFeedback();
   const canvasPreferences = useCanvasPreferences(storage);
   const [content, setContent] = useState("");
+  const [plainTextContent, setPlainTextContent] = useState("");
   const [draftLoaded, setDraftLoaded] = useState(false);
   const [draftStatus, setDraftStatus] = useState<DraftStatus>("idle");
   const [draftError, setDraftError] = useState<string | null>(null);
@@ -186,6 +195,7 @@ export function CaptureSurface({
   const [selectionResolution, setSelectionResolution] =
     useState<CaptureSelectionResolution | null>(null);
   const [selectionProcessing, setSelectionProcessing] = useState(false);
+  const [editorFocused, setEditorFocused] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savePromiseRef = useRef<Promise<unknown> | null>(null);
   const closePanelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -193,22 +203,23 @@ export function CaptureSurface({
   const panelTriggerRefs = useRef<Partial<Record<ToolPanel, HTMLButtonElement | null>>>(
     {},
   );
-  const previousPanelContentRef = useRef(content);
+  const previousPanelContentRef = useRef(plainTextContent);
   const highlightTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map(),
   );
   const captureInFlightRef = useRef(false);
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const suppressNextEditorFocusRef = useRef(false);
+  const editorRef = useRef<VinemaCanvasEditorHandle | null>(null);
   const workspaceDialogTriggerRef = useRef<HTMLElement | null>(null);
   const currentWorkspaceEntry = workspaceHistory.at(-1) ?? null;
   const currentWorkspaceView = currentWorkspaceEntry?.view ?? null;
-  const hasContent = content.trim().length > 0;
+  const hasContent = plainTextContent.trim().length > 0;
   const placeholder = useStableCanvasPrompt({
     category: "mixed",
-    content,
+    content: plainTextContent,
   });
   const associationState = useAssociationSuggestions({
-    text: content,
+    text: plainTextContent,
     workspaceId: workspace.id,
     selectedCaptureIds: EMPTY_SELECTED_CAPTURE_IDS,
     selectedContextIds,
@@ -292,7 +303,7 @@ export function CaptureSurface({
     setPreviewPanel(null);
     setClosingPreviewPanel(null);
     queueMicrotask(() => {
-      textareaRef.current?.focus();
+      editorRef.current?.focus();
     });
   }, [clearPanelCloseTimer]);
 
@@ -403,11 +414,11 @@ export function CaptureSurface({
   ]);
 
   useEffect(() => {
-    if (previousPanelContentRef.current === content) {
+    if (previousPanelContentRef.current === plainTextContent) {
       return;
     }
 
-    previousPanelContentRef.current = content;
+    previousPanelContentRef.current = plainTextContent;
 
     if (
       visiblePanel &&
@@ -417,7 +428,7 @@ export function CaptureSurface({
         closePanels();
       });
     }
-  }, [closePanels, content, hasSelectedConceptSuggestions, visiblePanel]);
+  }, [closePanels, hasSelectedConceptSuggestions, plainTextContent, visiblePanel]);
 
   useEffect(() => {
     let cancelled = false;
@@ -481,13 +492,21 @@ export function CaptureSurface({
       if (capturedSelection) {
         event.preventDefault();
         clearCapturedSelection();
-        queueMicrotask(() => textareaRef.current?.focus());
+        queueMicrotask(() => editorRef.current?.focus());
         return;
       }
 
       if (visiblePanel) {
         event.preventDefault();
         closePanels();
+        return;
+      }
+
+      if (editorFocused) {
+        event.preventDefault();
+        suppressNextEditorFocusRef.current = true;
+        setEditorFocused(false);
+        queueMicrotask(() => editorRef.current?.focus());
       }
     }
 
@@ -496,7 +515,7 @@ export function CaptureSurface({
     return () => {
       window.removeEventListener("keydown", handleEscape);
     };
-  }, [capturedSelection, closePanels, currentWorkspaceView, visiblePanel]);
+  }, [capturedSelection, closePanels, currentWorkspaceView, editorFocused, visiblePanel]);
 
   useEffect(() => {
     if (!visiblePanel) {
@@ -526,6 +545,29 @@ export function CaptureSurface({
   }, [closePanels, visiblePanel]);
 
   useEffect(() => {
+    function handleEditorPointerDown(event: PointerEvent) {
+      if (!(event.target instanceof Element)) {
+        return;
+      }
+
+      if (
+        event.target.closest("[data-canvas-rich-editor-host]") ||
+        event.target.closest("[data-canvas-format-toolbar]")
+      ) {
+        return;
+      }
+
+      setEditorFocused(false);
+    }
+
+    window.addEventListener("pointerdown", handleEditorPointerDown, true);
+
+    return () => {
+      window.removeEventListener("pointerdown", handleEditorPointerDown, true);
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
 
     async function restoreDraft() {
@@ -533,7 +575,9 @@ export function CaptureSurface({
         const draft = await loadCaptureDraft(storage);
 
         if (!cancelled && draft) {
+          const draftDocument = markdownToRichDocument(draft.content);
           setContent(draft.content);
+          setPlainTextContent(richDocumentToPlainText(draftDocument));
           setSelectedContextIds(draft.selectedContextIds);
           setSelectedEmergingConcepts(draft.selectedEmergingConcepts);
           setDraftStatus("saved");
@@ -560,7 +604,7 @@ export function CaptureSurface({
   useEffect(() => {
     function focusEditor() {
       queueMicrotask(() => {
-        textareaRef.current?.focus();
+        editorRef.current?.focus();
       });
     }
 
@@ -582,7 +626,7 @@ export function CaptureSurface({
       clearTimeout(saveTimerRef.current);
     }
 
-    if (!content.trim()) {
+    if (!plainTextContent.trim()) {
       saveTimerRef.current = setTimeout(() => {
         const savePromise = saveCaptureDraft(storage, content)
           .then(() => {
@@ -621,7 +665,14 @@ export function CaptureSurface({
         clearTimeout(saveTimerRef.current);
       }
     };
-  }, [content, draftLoaded, selectedContextIds, selectedEmergingConcepts, storage]);
+  }, [
+    content,
+    draftLoaded,
+    plainTextContent,
+    selectedContextIds,
+    selectedEmergingConcepts,
+    storage,
+  ]);
 
   useEffect(() => {
     if (draftStatus === "saving") {
@@ -643,14 +694,17 @@ export function CaptureSurface({
       return;
     }
 
-    if (!content.trim()) {
+    if (!plainTextContent.trim()) {
       feedback.error("Escribe algo antes de capturar.");
       return;
     }
 
     captureInFlightRef.current = true;
+    suppressNextEditorFocusRef.current = true;
     setCapturing(true);
+    setEditorFocused(false);
     clearPanelCloseTimer();
+    let captureSucceeded = false;
 
     try {
       if (saveTimerRef.current) {
@@ -670,6 +724,7 @@ export function CaptureSurface({
         selectedEmergingConcepts,
       });
       setContent("");
+      setPlainTextContent("");
       setSelectedContextIds([]);
       setSelectedEmergingConcepts([]);
       setSelectedExistingConceptSuggestions([]);
@@ -679,12 +734,13 @@ export function CaptureSurface({
       setPreviewPanel(null);
       setDraftStatus("idle");
       feedback.capture();
+      captureSucceeded = true;
       void onCaptureCommitted?.();
       if (result.relationError) {
         feedback.error("Algunas asociaciones no pudieron persistirse.");
       }
       queueMicrotask(() => {
-        textareaRef.current?.focus();
+        editorRef.current?.focus();
       });
     } catch (error) {
       const message = error instanceof Error
@@ -693,6 +749,9 @@ export function CaptureSurface({
       feedback.error(message);
     } finally {
       captureInFlightRef.current = false;
+      if (!captureSucceeded) {
+        suppressNextEditorFocusRef.current = false;
+      }
       setCapturing(false);
     }
   }
@@ -756,18 +815,15 @@ export function CaptureSurface({
     highlightTimersRef.current.set(key, timer);
   }
 
-  function updateCapturedSelection() {
-    setCapturedSelection(readValidTextareaSelection(textareaRef.current));
-    setSelectionResolution(null);
-  }
-
   function clearCapturedSelection() {
     setCapturedSelection(null);
     setSelectionResolution(null);
   }
 
   async function captureSelectedText() {
-    const selection = capturedSelection ?? readValidTextareaSelection(textareaRef.current);
+    const selection =
+      capturedSelection ??
+      readValidEditorSelection(editorRef.current?.getSelection() ?? null);
 
     if (!selection || selectionProcessing) {
       clearCapturedSelection();
@@ -806,7 +862,7 @@ export function CaptureSurface({
           feedback,
           alreadyAssociated ? "Ya estaba asociado" : "Concepto asociado",
         );
-        queueMicrotask(() => textareaRef.current?.focus());
+        queueMicrotask(() => editorRef.current?.focus());
         return;
       }
 
@@ -839,7 +895,7 @@ export function CaptureSurface({
       feedback,
       alreadySelected ? "Ya estaba asociado" : "Concepto incorporado",
     );
-    queueMicrotask(() => textareaRef.current?.focus());
+    queueMicrotask(() => editorRef.current?.focus());
   }
 
   function chooseAmbiguousSelectionConcept(contextId: string) {
@@ -861,7 +917,7 @@ export function CaptureSurface({
       feedback,
       alreadyAssociated ? "Ya estaba asociado" : "Concepto asociado",
     );
-    queueMicrotask(() => textareaRef.current?.focus());
+    queueMicrotask(() => editorRef.current?.focus());
   }
 
   function snapshotPanel(panel: ToolPanel) {
@@ -938,7 +994,7 @@ export function CaptureSurface({
   }
 
   async function persistCurrentDraft() {
-    if (!content.trim()) {
+    if (!plainTextContent.trim()) {
       return;
     }
 
@@ -960,6 +1016,7 @@ export function CaptureSurface({
     view: WorkspaceView,
     event: MouseEvent<HTMLElement>,
   ) {
+    setEditorFocused(false);
     workspaceDialogTriggerRef.current = event.currentTarget;
     setWorkspaceHistory([createWorkspaceHistoryEntry(view)]);
   }
@@ -1245,32 +1302,36 @@ export function CaptureSurface({
           ) : null}
         </CanvasPanelColumn>
         <CanvasWritingSurface>
-          <VinemaCanvasEditor
+          <VinemaCanvasRichEditor
             id="capture"
-            ref={textareaRef}
+            ref={editorRef}
             preferences={canvasPreferences.preferences}
-            aria-label="Capturar"
             className="row-[2] w-full"
             placeholder={placeholder}
             value={content}
-            onKeyDown={(event) => {
-              if (
-                event.key === "Enter" &&
-                (event.ctrlKey === true || event.metaKey === true)
-              ) {
-                event.preventDefault();
-                void handleCapture();
+            formatToolbarOpen={editorFocused}
+            onFormatToolbarOpenChange={setEditorFocused}
+            onModEnter={() => void handleCapture()}
+            onFocusChange={(focused) => {
+              if (focused && suppressNextEditorFocusRef.current) {
+                suppressNextEditorFocusRef.current = false;
+                return;
               }
-            }}
-            onMouseUp={updateCapturedSelection}
-            onKeyUp={updateCapturedSelection}
-            onSelect={updateCapturedSelection}
-            onChange={(event) => {
-              const nextContent = event.target.value;
 
+              setEditorFocused(focused);
+            }}
+            onSelectionChange={(selection) => {
+              setCapturedSelection(readValidEditorSelection(selection));
+              setSelectionResolution(null);
+            }}
+            onChange={({ markdown, plainText }) => {
               clearCapturedSelection();
-              setContent(nextContent);
-              setDraftStatus(nextContent.trim() ? "saving" : "idle");
+              setContent(markdown);
+              setPlainTextContent(plainText);
+              if (plainText.trim()) {
+                setEditorFocused(true);
+              }
+              setDraftStatus(plainText.trim() ? "saving" : "idle");
               setDraftError(null);
             }}
           />
@@ -1279,7 +1340,7 @@ export function CaptureSurface({
             resolution={selectionResolution}
             processing={selectionProcessing}
             touch={!canUseDesktopPopover()}
-            anchorElement={textareaRef.current}
+            anchorElement={editorRef.current?.element ?? null}
             onCapture={() => void captureSelectedText()}
             onConfirmNew={() => confirmNewSelectionConcept()}
             onChoose={chooseAmbiguousSelectionConcept}
@@ -1287,11 +1348,13 @@ export function CaptureSurface({
           />
         </CanvasWritingSurface>
         <CanvasCaptureDock>
-          <CanvasSubmitButton
-            visible={hasContent}
-            capturing={capturing}
-            onCapture={() => void handleCapture()}
-          />
+          <div className="relative flex items-start" data-canvas-capture-actions="">
+            <CanvasSubmitButton
+              visible={hasContent}
+              capturing={capturing}
+              onCapture={() => void handleCapture()}
+            />
+          </div>
         </CanvasCaptureDock>
       </CanvasMainRegion>
       <ApplicationWorkspaceDialog
@@ -1997,6 +2060,29 @@ function canUseDesktopPopover() {
   }
 
   return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+}
+
+function readValidEditorSelection(
+  selection: RichTextSelectionSnapshot | null,
+): CapturedTextSelection | null {
+  if (!selection) {
+    return null;
+  }
+
+  const validSelection = createValidCapturedSelection({
+    text: selection.text,
+    start: selection.start,
+    end: selection.end,
+  });
+
+  if (!validSelection) {
+    return null;
+  }
+
+  return {
+    ...validSelection,
+    selectionRect: selection.selectionRect,
+  };
 }
 
 function showSelectionFeedback(

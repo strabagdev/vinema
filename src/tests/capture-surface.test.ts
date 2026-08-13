@@ -445,6 +445,7 @@ const device: Device = {
   createdAt: "2026-01-01T00:00:00.000Z",
   lastSeenAt: "2026-01-01T00:00:00.000Z",
 };
+const richEditorTestValues = new WeakMap<Element, string>();
 
 describe("workspace navigation snapshots", () => {
   it("treats equivalent map transforms as unchanged even with a new object", () => {
@@ -653,6 +654,11 @@ describe("CaptureSurface", () => {
       "max-sm:right-[var(--vinema-canvas-edge-gutter)]",
     );
     expect(getCanvasPrompts("mixed")).toContain(textarea?.getAttribute("placeholder"));
+    expect(screen.container.querySelector("[data-canvas-format-trigger]")).toBeNull();
+    expect(document.body.querySelector("[data-canvas-format-toolbar]")).toBeNull();
+    await focusEditor(screen.container);
+    expect(screen.container.querySelector("[data-canvas-format-trigger]")).toBeNull();
+    expect(document.body.querySelector("[data-canvas-format-toolbar]")).toBeDefined();
     expect(
       (composer as HTMLElement | null)?.style.getPropertyValue(
         "--vinema-canvas-editor-start",
@@ -721,13 +727,17 @@ describe("CaptureSurface", () => {
     await advanceTime(500);
 
     expect(composer.className).toBe(initialComposerClassName);
-    expect(getTextarea(screen.container)?.className).toBe(initialTextareaClassName);
+    expect(getStableEditorClassName(getTextarea(screen.container))).toBe(
+      getStableEditorClassNameFromString(initialTextareaClassName),
+    );
 
     await changeTextarea(screen.container, "Texto corto en el punto inicial");
     await advanceTime(500);
 
     expect(composer.className).toBe(initialComposerClassName);
-    expect(getTextarea(screen.container)?.className).toBe(initialTextareaClassName);
+    expect(getStableEditorClassName(getTextarea(screen.container))).toBe(
+      getStableEditorClassNameFromString(initialTextareaClassName),
+    );
 
     await changeTextarea(
       screen.container,
@@ -736,7 +746,9 @@ describe("CaptureSurface", () => {
     await advanceTime(500);
 
     expect(composer.className).toBe(initialComposerClassName);
-    expect(getTextarea(screen.container)?.className).toBe(initialTextareaClassName);
+    expect(getStableEditorClassName(getTextarea(screen.container))).toBe(
+      getStableEditorClassNameFromString(initialTextareaClassName),
+    );
     expect(getTextarea(screen.container)?.className).toContain("overflow-hidden");
   });
 
@@ -759,7 +771,9 @@ describe("CaptureSurface", () => {
       await advanceTime(500);
 
       expect(getTextarea(screen.container)?.style.fontSize).toBe(`${textSize}px`);
-      expect(getTextarea(screen.container)?.className).toBe(initialClassName);
+      expect(getStableEditorClassName(getTextarea(screen.container))).toBe(
+        getStableEditorClassNameFromString(initialClassName ?? ""),
+      );
 
       await act(async () => {
         screen.root.unmount();
@@ -1137,6 +1151,148 @@ describe("CaptureSurface", () => {
     expect(getButtonByLabel(screen.container, "Canvas")).toBeDefined();
   });
 
+  it("shows the rich format toolbar while editing without a format button", async () => {
+    const storage = new MemoryStorageAdapter();
+    const nodeRepository = new InMemoryNodeRepository();
+    const screen = await renderCaptureSurface({ nodeRepository, storage });
+    expect(screen.container.querySelector("[data-canvas-format-trigger]")).toBeNull();
+    expect(document.body.querySelector("[data-canvas-format-toolbar]")).toBeNull();
+    await focusEditor(screen.container);
+    const submit = screen.container.querySelector("[data-capture-submit]");
+    const initialSubmitClassName = submit?.className;
+
+    if (!submit) {
+      throw new Error("Expected capture control.");
+    }
+
+    const toolbar = document.body.querySelector("[data-canvas-format-toolbar]");
+    expect(toolbar).toBeDefined();
+    expect(toolbar?.className).toContain("left-1/2");
+    expect(toolbar?.className).toContain("top-[4.25rem]");
+    expect(toolbar?.className).toContain("-translate-x-1/2");
+    expect(toolbar?.className).toContain("w-max");
+    expect(toolbar?.className).toContain("max-w-[calc(100vw-2rem)]");
+    expect(toolbar?.className).toContain("flex-nowrap");
+    expect(toolbar?.className).toContain("overflow-x-auto");
+    expect(toolbar?.className).toContain("overflow-y-hidden");
+    expect(toolbar?.className).toContain("rounded-full");
+    expect(toolbar?.className).not.toContain("flex-wrap");
+    expect(toolbar?.className.split(/\s+/)).not.toContain("w-[calc(100vw-2rem)]");
+    expect(toolbar?.className).not.toContain("max-sm:w-[calc");
+    expect(toolbar?.getAttribute("data-canvas-format-toolbar-layout")).toBe(
+      "single-row",
+    );
+    expect(toolbar?.getAttribute("data-canvas-format-toolbar-width")).toBe(
+      "content",
+    );
+    expect(toolbar?.getAttribute("data-canvas-format-toolbar-scroll")).toBe(
+      "horizontal",
+    );
+    for (const label of [
+      "Normal",
+      "H1",
+      "H2",
+      "H3",
+      "Negrita",
+      "Cursiva",
+      "Lista con vinetas",
+      "Lista numerada",
+      "Tarea",
+      "Cita",
+      "Codigo inline",
+      "Separador",
+      "Enlace",
+      "Cerrar barra de formato",
+    ]) {
+      expect(getButtonByLabel(document.body, label)).toBeDefined();
+    }
+    expect(document.body.querySelector("input[placeholder='Enlace']")).toBeNull();
+    expect(document.body.querySelector("input[placeholder='URL']")).toBeNull();
+    expect(document.body.querySelector("[data-canvas-link-popover]")).toBeNull();
+    expect(queryButton(document.body, "Aplicar")).toBeUndefined();
+    expect(
+      Array.from(toolbar?.querySelectorAll("button") ?? []).find(
+        (button) => button.textContent?.trim() === "Cerrar",
+      ),
+    ).toBeUndefined();
+    expect(
+      getButtonByLabel(document.body, "Cerrar barra de formato")?.querySelector("svg"),
+    ).toBeDefined();
+
+    await click(getButtonByLabel(document.body, "Enlace")!);
+    const linkPopover = document.body.querySelector("[data-canvas-link-popover]");
+    expect(linkPopover).toBeDefined();
+    expect(linkPopover?.getAttribute("role")).toBe("dialog");
+    expect(linkPopover?.getAttribute("aria-label")).toBe("Editar enlace");
+    expect(document.body.querySelector("input[placeholder='URL']")).toBeDefined();
+    expect(queryButton(document.body, "Aplicar")).toBeDefined();
+    expect(queryButton(document.body, "Quitar enlace")).toBeDefined();
+    await click(queryButton(document.body, "Quitar enlace")!);
+    expect(document.body.querySelector("[data-canvas-link-popover]")).toBeNull();
+    expect(document.body.querySelector("[data-canvas-format-toolbar]")).toBeDefined();
+    expect(submit.className).toBe(initialSubmitClassName);
+
+    await changeTextarea(screen.container, "Codelco");
+    expect(document.body.querySelector("[data-canvas-format-toolbar]")).toBeDefined();
+    await selectTextareaText(screen.container, "Codelco");
+    expect(document.body.querySelector("[data-canvas-format-toolbar]")).toBeDefined();
+    await click(getButtonByLabel(document.body, "Negrita")!);
+    await advanceTime(500);
+
+    await expect(storage.get(CAPTURE_DRAFT_KEY)).resolves.toMatchObject({
+      content: "**Codelco**",
+    });
+    expect(getTextarea(screen.container)?.value).toBe("Codelco");
+    expect(document.body.querySelector("[data-canvas-format-toolbar]")).toBeDefined();
+
+    await pointerDown(document.body);
+
+    expect(screen.container.querySelector("[data-canvas-format-trigger]")).toBeNull();
+    expect(document.body.querySelector("[data-canvas-format-toolbar]")).toBeNull();
+
+    await changeTextarea(screen.container, "Codelco Andes");
+    expect(document.body.querySelector("[data-canvas-format-toolbar]")).toBeDefined();
+
+    await keydownWindow({ key: "Escape" });
+
+    expect(document.body.querySelector("[data-canvas-format-toolbar]")).toBeNull();
+    expect(document.activeElement).toBe(getTextarea(screen.container));
+  });
+
+  it("keeps the rich format toolbar compact across desktop, tablet and mobile widths", async () => {
+    for (const viewport of [
+      { width: 1440, height: 900 },
+      { width: 820, height: 760 },
+      { width: 390, height: 760 },
+    ]) {
+      setViewportSize(viewport);
+      const screen = await renderCaptureSurface({
+        nodeRepository: new InMemoryNodeRepository(),
+      });
+
+      await focusEditor(screen.container);
+
+      const toolbar = document.body.querySelector("[data-canvas-format-toolbar]");
+
+      expect(toolbar).toBeDefined();
+      expect(toolbar?.className).toContain("w-max");
+      expect(toolbar?.className).toContain("max-w-[calc(100vw-2rem)]");
+      expect(toolbar?.className).toContain("flex-nowrap");
+      expect(toolbar?.className).toContain("overflow-x-auto");
+      expect(toolbar?.className).toContain("overflow-y-hidden");
+      expect(toolbar?.className).not.toContain("flex-wrap");
+      expect(toolbar?.className.split(/\s+/)).not.toContain("w-[calc(100vw-2rem)]");
+      expect(toolbar?.className).not.toContain("max-sm:w-[calc");
+      expect(document.body.querySelector("input[placeholder='Enlace']")).toBeNull();
+      expect(document.body.querySelector("input[placeholder='URL']")).toBeNull();
+
+      await act(async () => {
+        screen.root.unmount();
+        await flushPromises();
+      });
+    }
+  });
+
   it("keeps rail contextual controls from narrowing the editor", async () => {
     const nodeRepository = new InMemoryNodeRepository([
       createStoredNode({
@@ -1211,7 +1367,9 @@ describe("CaptureSurface", () => {
     expect(screen.container.querySelector("[data-canvas-scroll-viewport]")?.className).toBe(
       initialScrollViewportClassName,
     );
-    expect(getTextarea(screen.container)?.className).toBe(initialTextareaClassName);
+    expect(getStableEditorClassName(getTextarea(screen.container))).toBe(
+      getStableEditorClassNameFromString(initialTextareaClassName),
+    );
     expect(getTextarea(screen.container)?.className).toContain("w-full");
   });
 
@@ -1908,6 +2066,8 @@ describe("CaptureSurface", () => {
     const screen = await renderCaptureSurface({ storage, nodeRepository });
 
     await changeTextarea(screen.container, "Reunion con Mitcom sobre soporte");
+    await focusEditor(screen.container);
+    expect(document.body.querySelector("[data-canvas-format-toolbar]")).toBeDefined();
     await advanceTime(500);
     await doubleClick(getButton(screen.container, "Capturar"));
 
@@ -1923,6 +2083,7 @@ describe("CaptureSurface", () => {
     await waitFor(async () => (await storage.get(CAPTURE_DRAFT_KEY)) === null);
     await expect(storage.get(CAPTURE_DRAFT_KEY)).resolves.toBeNull();
     expect(document.activeElement).toBe(getTextarea(screen.container));
+    expect(document.body.querySelector("[data-canvas-format-toolbar]")).toBeNull();
     expect(screen.container.textContent).not.toContain(
       "Reunion con Mitcom sobre soporte",
     );
@@ -2090,8 +2251,8 @@ describe("CaptureSurface", () => {
     expect(action?.className).toContain("z-[60]");
     expect(action?.closest("[data-capture-canvas]")).toBeNull();
     expect(action?.closest("[class*='overflow-hidden']")).toBeNull();
-    expect(action?.style.top).not.toBe("");
-    expect(action?.style.left).not.toBe("");
+    expect(action?.getAttribute("data-floating-layer")).toBe("popover");
+    expect(action?.getAttribute("data-placement")).toBeDefined();
   });
 
   it("keeps a new selection local until the capture is saved", async () => {
@@ -4397,7 +4558,64 @@ function createRelationsFor(
 }
 
 function getTextarea(container: HTMLElement) {
-  return container.querySelector("textarea");
+  const textarea = container.querySelector("textarea");
+
+  if (textarea) {
+    return textarea;
+  }
+
+  const editor = container.querySelector<HTMLElement>(
+    "[data-canvas-rich-editor-content]",
+  );
+
+  if (!editor) {
+    return null;
+  }
+
+  if (!("value" in editor)) {
+    Object.defineProperty(editor, "value", {
+      configurable: true,
+      get() {
+        const textContent = editor.textContent ?? "";
+
+        return textContent ? richEditorTestValues.get(editor) ?? textContent : "";
+      },
+      set(value: string) {
+        richEditorTestValues.set(editor, value);
+      },
+    });
+  }
+
+  return editor as HTMLElement & {
+    value: string;
+    selectionStart?: number;
+    selectionEnd?: number;
+    setSelectionRange?: (start: number, end: number) => void;
+  };
+}
+
+function getStableEditorClassName(element: Element | null) {
+  return getStableEditorClassNameFromString(element?.className ?? "");
+}
+
+function getStableEditorClassNameFromString(className: string) {
+  return className
+    .split(/\s+/)
+    .filter((item) => item && item !== "ProseMirror-focused")
+    .join(" ");
+}
+
+async function focusEditor(container: HTMLElement) {
+  const editor = getTextarea(container);
+
+  if (!editor) {
+    throw new Error("Editor not found");
+  }
+
+  await act(async () => {
+    editor.dispatchEvent(new FocusEvent("focus", { bubbles: true }));
+    await flushPromises();
+  });
 }
 
 function getButton(container: HTMLElement, name: string) {
@@ -4560,12 +4778,21 @@ function getLinkByLabel(container: HTMLElement, label: string) {
 async function changeTextarea(container: HTMLElement, value: string) {
   const textarea = getTextarea(container);
   if (!textarea) {
-    throw new Error("Textarea not found");
+    throw new Error("Editor not found");
   }
 
   await act(async () => {
     setNativeValue(textarea, value);
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    if (textarea.hasAttribute("data-canvas-rich-editor-content")) {
+      textarea.dispatchEvent(
+        new CustomEvent("vinema:set-rich-editor-markdown", {
+          bubbles: true,
+          detail: { markdown: value },
+        }),
+      );
+    } else {
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    }
     await flushPromises();
   });
 }
@@ -4592,8 +4819,17 @@ async function selectTextareaRange(container: HTMLElement, start: number, end: n
 
   await act(async () => {
     textarea.focus();
-    textarea.setSelectionRange(start, end);
-    textarea.dispatchEvent(new Event("select", { bubbles: true }));
+    if (typeof textarea.setSelectionRange === "function") {
+      textarea.setSelectionRange(start, end);
+      textarea.dispatchEvent(new Event("select", { bubbles: true }));
+    } else {
+      textarea.dispatchEvent(
+        new CustomEvent("vinema:set-rich-editor-selection", {
+          bubbles: true,
+          detail: { start, end },
+        }),
+      );
+    }
     textarea.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
     await flushPromises();
   });
@@ -4609,6 +4845,24 @@ async function keydownTextarea(
   }
 
   await act(async () => {
+    if (
+      textarea.hasAttribute("data-canvas-rich-editor-content") &&
+      eventInit.key === "Enter" &&
+      !eventInit.ctrlKey &&
+      !eventInit.metaKey
+    ) {
+      const nextValue = `${textarea.value}\n`;
+      setNativeValue(textarea, nextValue);
+      textarea.dispatchEvent(
+        new CustomEvent("vinema:set-rich-editor-markdown", {
+          bubbles: true,
+          detail: { markdown: nextValue },
+        }),
+      );
+      await flushPromises();
+      return;
+    }
+
     textarea.dispatchEvent(
       new KeyboardEvent("keydown", {
         bubbles: true,
@@ -4688,15 +4942,26 @@ function createPointerEvent(type: "pointerover" | "pointerout") {
 }
 
 function setNativeValue(
-  element: HTMLInputElement | HTMLTextAreaElement,
+  element: HTMLInputElement | HTMLTextAreaElement | HTMLElement,
   value: string,
 ) {
   const prototype = Object.getPrototypeOf(element) as
     | HTMLInputElement
-    | HTMLTextAreaElement;
+    | HTMLTextAreaElement
+    | HTMLElement;
   const valueSetter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
 
-  valueSetter?.call(element, value);
+  if ("value" in element) {
+    (element as typeof element & { value: string }).value = value;
+    return;
+  }
+
+  if (valueSetter) {
+    valueSetter.call(element, value);
+    return;
+  }
+
+  element.textContent = value;
 }
 
 async function click(button: HTMLButtonElement) {
