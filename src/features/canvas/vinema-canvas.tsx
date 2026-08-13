@@ -40,9 +40,56 @@ export function VinemaCanvas({
   children: ReactNode;
 }) {
   useApplyCanvasAppearance(preferences);
+  const canvasRef = useRef<HTMLElement | null>(null);
+
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+
+    if (!canvas || typeof window === "undefined") {
+      return;
+    }
+
+    function updateSafeInlineStart() {
+      const dock = document.querySelector<HTMLElement>("[data-canvas-rail-layout]");
+      const styles = window.getComputedStyle(canvas!);
+      const edgeGutter = parseCssLength(
+        styles.getPropertyValue("--vinema-canvas-edge-gutter"),
+      );
+      const dockRect = dock?.getBoundingClientRect() ?? null;
+      const safeInlineStart = calculateCanvasSafeInlineStart({
+        dockRect,
+        edgeGutter,
+        viewportWidth: window.innerWidth,
+      });
+
+      canvas!.style.setProperty(
+        "--vinema-canvas-safe-inline-start",
+        `${safeInlineStart}px`,
+      );
+    }
+
+    updateSafeInlineStart();
+    window.addEventListener("resize", updateSafeInlineStart);
+
+    const dock = document.querySelector<HTMLElement>("[data-canvas-rail-layout]");
+    const resizeObserver =
+      typeof ResizeObserver === "undefined" || !dock
+        ? null
+        : new ResizeObserver(updateSafeInlineStart);
+
+    if (resizeObserver && dock) {
+      resizeObserver.observe(dock);
+    }
+
+    return () => {
+      window.removeEventListener("resize", updateSafeInlineStart);
+      resizeObserver?.disconnect();
+    };
+  }, []);
 
   return (
     <main
+      ref={canvasRef}
       className="vinema-canvas grid h-full min-h-0 w-full flex-1 grid-rows-[minmax(0,1fr)_auto] overflow-hidden pt-2"
       style={getCanvasPreferenceStyle()}
       data-capture-canvas=""
@@ -52,6 +99,42 @@ export function VinemaCanvas({
       {children}
     </main>
   );
+}
+
+export function calculateCanvasSafeInlineStart({
+  dockRect,
+  edgeGutter,
+  viewportWidth,
+  dockGap = 24,
+  mobileBreakpoint = 640,
+}: {
+  dockRect: Pick<DOMRectReadOnly, "right"> | null;
+  edgeGutter: number;
+  viewportWidth: number;
+  dockGap?: number;
+  mobileBreakpoint?: number;
+}) {
+  if (viewportWidth <= mobileBreakpoint || !dockRect) {
+    return edgeGutter;
+  }
+
+  return Math.max(edgeGutter, dockRect.right + dockGap);
+}
+
+function parseCssLength(value: string) {
+  const trimmed = value.trim();
+
+  if (trimmed.endsWith("rem")) {
+    const rootFontSize = Number.parseFloat(
+      window.getComputedStyle(document.documentElement).fontSize,
+    );
+
+    return Number.parseFloat(trimmed) * (Number.isFinite(rootFontSize) ? rootFontSize : 16);
+  }
+
+  const parsed = Number.parseFloat(trimmed);
+
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 export function CanvasMainRegion({ children }: { children: ReactNode }) {

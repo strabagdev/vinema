@@ -41,7 +41,7 @@ describe("selection concept popover positioning", () => {
     document.body.replaceChildren();
   });
 
-  it("places its bottom edge 8 px above the selected text without overlap", () => {
+  it("places its bottom edge 10 px above the selected text without overlap", () => {
     const selectionRect = rect({ left: 300, top: 220, width: 80, height: 20 });
     const panelSize = { width: 200, height: 40 };
     const position = calculateSelectionPopoverPosition({
@@ -53,15 +53,15 @@ describe("selection concept popover positioning", () => {
 
     expect(position).toEqual({
       left: 240,
-      top: 172,
+      top: 170,
       placement: "top",
     });
-    expect(popoverBottom).toBe(selectionRect.top - 8);
+    expect(popoverBottom).toBe(selectionRect.top - 10);
     expect(popoverBottom).toBeLessThan(selectionRect.top);
     expect(popoverBottom <= selectionRect.top).toBe(true);
   });
 
-  it("falls back completely below the selection with 8 px of separation", () => {
+  it("falls back completely below the selection with 10 px of separation", () => {
     const selectionRect = rect({ left: 300, top: 20, width: 80, height: 20 });
     const position = calculateSelectionPopoverPosition({
       selectionRect,
@@ -71,10 +71,10 @@ describe("selection concept popover positioning", () => {
 
     expect(position).toEqual({
       left: 240,
-      top: 48,
+      top: 50,
       placement: "bottom",
     });
-    expect(position.top).toBe(selectionRect.bottom + 8);
+    expect(position.top).toBe(selectionRect.bottom + 10);
     expect(position.top).toBeGreaterThan(selectionRect.bottom);
   });
 
@@ -88,7 +88,7 @@ describe("selection concept popover positioning", () => {
     });
 
     expect(position.placement).toBe("top");
-    expect(position.top + panelSize.height).toBe(selectionRect.top - 8);
+    expect(position.top + panelSize.height).toBe(selectionRect.top - 10);
     expect(position.top + panelSize.height).toBeLessThan(selectionRect.top);
   });
 
@@ -104,8 +104,8 @@ describe("selection concept popover positioning", () => {
       boundaryRect: rect({ left: 100, top: 0, width: 400, height: 600 }),
     });
 
-    expect(leftEdge.left).toBe(108);
-    expect(rightEdge.left).toBe(252);
+    expect(leftEdge.left).toBe(112);
+    expect(rightEdge.left).toBe(248);
   });
 
   it("repositions from the live textarea selection after internal scroll", async () => {
@@ -130,7 +130,7 @@ describe("selection concept popover positioning", () => {
     });
     roots.push(root);
 
-    expect(getPopover().style.top).toBe("172px");
+    expect(getPopover().style.top).toBe("170px");
 
     markerRect = rect({ left: 280, top: 140, width: 80, height: 20 });
     textarea.scrollTop = 80;
@@ -140,7 +140,7 @@ describe("selection concept popover positioning", () => {
       await flushPromises();
     });
 
-    expect(getPopover().style.top).toBe("92px");
+    expect(getPopover().style.top).toBe("90px");
   });
 
   it("keeps the final measured popover rectangle above the selection after content grows", async () => {
@@ -169,7 +169,7 @@ describe("selection concept popover positioning", () => {
     });
     roots.push(root);
 
-    expect(getPopover().getBoundingClientRect().bottom).toBe(selectionRect.top - 8);
+    expect(getPopover().getBoundingClientRect().bottom).toBe(selectionRect.top - 10);
 
     panelHeight = 96;
 
@@ -192,9 +192,28 @@ describe("selection concept popover positioning", () => {
 
     const finalPopoverRect = getPopover().getBoundingClientRect();
 
-    expect(finalPopoverRect.bottom).toBe(selectionRect.top - 8);
+    expect(finalPopoverRect.bottom).toBe(selectionRect.top - 10);
     expect(finalPopoverRect.bottom).toBeLessThan(selectionRect.top);
-    expect(finalPopoverRect.bottom <= selectionRect.top - 8).toBe(true);
+    expect(finalPopoverRect.bottom <= selectionRect.top - 10).toBe(true);
+  });
+
+  it("keeps the floating action compact instead of rendering a bottom sheet", () => {
+    const { root } = renderPopover({
+      selection: selectionWithRect(rect({ left: 280, top: 220, width: 80, height: 20 })),
+      getElementRect: (element) => {
+        if (element.getAttribute("data-capture-selection-action") !== null) {
+          return rect({ left: 0, top: 0, width: 168, height: 36 });
+        }
+
+        return rect({ left: 0, top: 0, width: 500, height: 300 });
+      },
+    });
+    roots.push(root);
+
+    expect(getPopover().className).toContain("rounded-full");
+    expect(getPopover().className).toContain("max-w-[calc(100vw-1.5rem)]");
+    expect(getPopover().className).not.toContain("inset-x-3");
+    expect(getPopover().className).not.toContain("bottom-[");
   });
 
   it("keeps the textarea selection while interacting with the popover", async () => {

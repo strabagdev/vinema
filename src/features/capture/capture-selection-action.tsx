@@ -1,3 +1,4 @@
+import { ScanText } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
@@ -24,18 +25,17 @@ type FloatingPosition = {
   placement: "top" | "bottom";
 };
 
-const FLOATING_GAP = 8;
-const FLOATING_BOUNDARY_PADDING = 8;
+const FLOATING_GAP = 10;
+const FLOATING_BOUNDARY_PADDING = 12;
 const FALLBACK_PANEL_SIZE = {
-  width: 320,
-  height: 120,
+  width: 168,
+  height: 36,
 };
 
 export function CaptureSelectionAction({
   selection,
   resolution,
   processing,
-  touch,
   anchorElement,
   onCapture,
   onConfirmNew,
@@ -70,7 +70,7 @@ export function CaptureSelectionAction({
   }, [portalElement]);
 
   useLayoutEffect(() => {
-    if (!selection || touch || !anchorElement) {
+    if (!selection || !anchorElement) {
       return;
     }
 
@@ -80,8 +80,13 @@ export function CaptureSelectionAction({
     let resizeObserver: ResizeObserver | null = null;
 
     function updatePosition() {
-      const currentSelection = readValidTextareaSelection(currentAnchor);
+      const currentSelection =
+        currentAnchor instanceof HTMLTextAreaElement
+          ? readValidTextareaSelection(currentAnchor)
+          : null;
+      const liveSelectionRect = getLiveSelectionRect(currentAnchor);
       const selectionRect =
+        liveSelectionRect ??
         currentSelection?.selectionRect ??
         currentSelectionState.selectionRect ??
         currentAnchor.getBoundingClientRect();
@@ -133,30 +138,28 @@ export function CaptureSelectionAction({
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", scheduleUpdatePosition, true);
     };
-  }, [anchorElement, processing, resolution, selection, touch]);
+  }, [anchorElement, processing, resolution, selection]);
 
   if (!selection) {
     return null;
   }
 
   const newConceptLabel = normalizeConceptDisplayLabel(selection.text);
-  const panelStyle = getPanelStyle({ position, touch });
+  const panelStyle = getPanelStyle({ position });
 
   const panel = (
     <div
       ref={panelRef}
       className={cn(
-        "z-[60] rounded-xl border border-zinc-200 bg-white/95 p-2 text-sm shadow-lg backdrop-blur-sm",
-        touch
-          ? "fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))]"
-          : "fixed max-w-[calc(100vw-1.5rem)]",
+        "fixed z-[60] max-w-[calc(100vw-1.5rem)] rounded-full border border-[var(--vinema-border)] bg-[var(--vinema-surface-elevated)] p-1 text-sm text-[var(--vinema-text-primary)] shadow-[var(--vinema-shadow-panel)] backdrop-blur-sm",
+        resolution && "rounded-xl p-2",
       )}
       style={panelStyle}
       role="group"
       aria-label={`Seleccion capturada: ${selection.text}`}
       data-capture-selection-action=""
       data-floating-layer="popover"
-      data-placement={touch ? "bottom" : (position?.placement ?? "top")}
+      data-placement={position?.placement ?? "top"}
       onPointerDown={(event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -168,10 +171,11 @@ export function CaptureSelectionAction({
           type="button"
           size="sm"
           variant="ghost"
-          className="h-8"
+          className="h-8 rounded-full px-3 text-[var(--vinema-text-primary)] hover:bg-[var(--vinema-hover)]"
           disabled={processing}
           onClick={onCapture}
         >
+          <ScanText className="h-4 w-4" aria-hidden="true" />
           Capturar seleccion
         </Button>
       ) : null}
@@ -241,34 +245,28 @@ export function calculateSelectionPopoverPosition({
   const topCandidate = selectionRect.top - panelSize.height - FLOATING_GAP;
   const bottomCandidate = selectionRect.bottom + FLOATING_GAP;
   const minimumTop = boundaryRect.top + FLOATING_BOUNDARY_PADDING;
+  const maximumTop = Math.max(
+    minimumTop,
+    boundaryRect.bottom - panelSize.height - FLOATING_BOUNDARY_PADDING,
+  );
   const hasRoomAbove = topCandidate >= minimumTop;
 
   if (hasRoomAbove) {
     return {
       left,
-      top: topCandidate,
+      top: clamp(topCandidate, minimumTop, maximumTop),
       placement: "top",
     };
   }
 
   return {
     left,
-    top: bottomCandidate,
+    top: clamp(bottomCandidate, minimumTop, maximumTop),
     placement: "bottom",
   };
 }
 
-function getPanelStyle({
-  position,
-  touch,
-}: {
-  position: FloatingPosition | null;
-  touch: boolean;
-}): CSSProperties | undefined {
-  if (touch) {
-    return undefined;
-  }
-
+function getPanelStyle({ position }: { position: FloatingPosition | null }): CSSProperties {
   if (!position) {
     return {
       left: 0,
@@ -284,8 +282,9 @@ function getPanelStyle({
 }
 
 function getVisibleBoundaryRect(anchorElement: HTMLElement): FloatingRect {
+  const reservedTop = getFloatingTopBoundary();
   const viewportRect = rectFromBounds({
-    top: 0,
+    top: reservedTop,
     right: window.innerWidth,
     bottom: window.innerHeight,
     left: 0,
@@ -305,6 +304,50 @@ function getVisibleBoundaryRect(anchorElement: HTMLElement): FloatingRect {
   }
 
   return boundary;
+}
+
+function getLiveSelectionRect(anchorElement: HTMLElement): DOMRectReadOnly | null {
+  const selection = anchorElement.ownerDocument.defaultView?.getSelection();
+
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+    return null;
+  }
+
+  const range = selection.getRangeAt(0);
+  const ancestor = range.commonAncestorContainer;
+  const host =
+    ancestor instanceof Element ? ancestor : ancestor.parentElement;
+
+  if (!host || !anchorElement.contains(host)) {
+    return null;
+  }
+
+  const firstVisibleRect = typeof range.getClientRects === "function"
+    ? Array.from(range.getClientRects()).find(
+        (rect) => rect.width > 0 && rect.height > 0,
+      )
+    : null;
+
+  if (firstVisibleRect) {
+    return firstVisibleRect;
+  }
+
+  if (typeof range.getBoundingClientRect !== "function") {
+    return null;
+  }
+
+  const fallback = range.getBoundingClientRect();
+
+  return fallback.width > 0 || fallback.height > 0 ? fallback : null;
+}
+
+function getFloatingTopBoundary() {
+  const header = document.querySelector<HTMLElement>("[data-app-header]");
+  const toolbar = document.querySelector<HTMLElement>("[data-canvas-format-toolbar]");
+  const headerBottom = header?.getBoundingClientRect().bottom ?? 0;
+  const toolbarBottom = toolbar?.getBoundingClientRect().bottom ?? 0;
+
+  return Math.max(headerBottom, toolbarBottom);
 }
 
 function clipsOverflow(style: CSSStyleDeclaration) {

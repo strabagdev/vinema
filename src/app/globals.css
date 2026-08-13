@@ -169,9 +169,10 @@ body {
   --vinema-canvas-context-panel-width: 20rem;
   --vinema-canvas-max-width: 60rem;
   --vinema-canvas-edge-gutter: 1.25rem;
+  --vinema-canvas-safe-inline-start: var(--vinema-canvas-edge-gutter);
   --vinema-canvas-center-width: min(
     var(--vinema-canvas-max-width),
-    calc(100vw - (2 * var(--vinema-canvas-edge-gutter)))
+    calc(100vw - (2 * var(--vinema-canvas-safe-inline-start)))
   );
   --vinema-canvas-padding-x: 1.25rem;
   --vinema-canvas-padding-y: 1rem;

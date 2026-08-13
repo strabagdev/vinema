@@ -14,6 +14,7 @@ import {
   CANVAS_PREFERENCES_KEY,
   DEFAULT_CANVAS_PREFERENCES,
 } from "@/features/canvas/canvas-preferences";
+import { calculateCanvasSafeInlineStart } from "@/features/canvas/vinema-canvas";
 import { getCanvasPrompts } from "@/features/canvas/canvas-prompts";
 import {
   CAPTURE_DRAFT_KEY,
@@ -630,6 +631,12 @@ describe("CaptureSurface", () => {
     expect(composer?.className).toContain("justify-self-center");
     expect(composer?.className).toContain("box-border");
     expect(composer?.className).toContain("px-[var(--vinema-canvas-padding-x)]");
+    expect(composer?.className).toContain("max-w-[var(--vinema-canvas-max-width)]");
+    expect(
+      (canvas as HTMLElement | null)?.style.getPropertyValue(
+        "--vinema-canvas-safe-inline-start",
+      ),
+    ).toBe("24px");
     expect(scrollViewport?.className).toContain("h-full");
     expect(scrollViewport?.className).toContain("overflow-y-auto");
     expect(scrollViewport?.className).toContain("vinema-scrollbar");
@@ -696,6 +703,37 @@ describe("CaptureSurface", () => {
     });
     await expect(nodeRepository.listByWorkspace(workspace.id)).resolves.toEqual([]);
     expect(screen.container.querySelector("[data-capture-submit]")).toBeDefined();
+  });
+
+  it("calculates safe editorial width from the measured left dock geometry", () => {
+    expect(
+      calculateCanvasSafeInlineStart({
+        dockRect: { right: 82 },
+        edgeGutter: 32,
+        viewportWidth: 900,
+      }),
+    ).toBe(106);
+    expect(
+      calculateCanvasSafeInlineStart({
+        dockRect: { right: 82 },
+        edgeGutter: 32,
+        viewportWidth: 1600,
+      }),
+    ).toBe(106);
+    expect(
+      calculateCanvasSafeInlineStart({
+        dockRect: { right: 82 },
+        edgeGutter: 20,
+        viewportWidth: 390,
+      }),
+    ).toBe(20);
+    expect(
+      calculateCanvasSafeInlineStart({
+        dockRect: null,
+        edgeGutter: 32,
+        viewportWidth: 900,
+      }),
+    ).toBe(32);
   });
 
   it("keeps the editor vertical origin stable from empty to long content", async () => {
