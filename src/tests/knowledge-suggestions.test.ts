@@ -135,7 +135,7 @@ describe("Knowledge Suggestions v1", () => {
     expect(sponsor?.evidenceNodeIds.length).toBeGreaterThanOrEqual(3);
   });
 
-  it("does not suggest archived concepts, archived captures or already present concepts", () => {
+  it("does not suggest forgotten capture tombstones or already present concepts while retaining legacy archived concepts", () => {
     const contexts = [
       context({ id: "mitcom", name: "Mitcom" }),
       context({ id: "tracking", name: "Tracking" }),

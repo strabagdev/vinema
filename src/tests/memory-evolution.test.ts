@@ -161,19 +161,25 @@ describe("Memory Evolution v1", () => {
     expect(signals.some((signal) => signal.conceptId === "alias")).toBe(false);
   });
 
-  it("excludes archived captures, deleted captures, archived concepts and unaccepted associations", () => {
+  it("excludes forgotten capture tombstones, deleted captures and unaccepted associations while retaining legacy archived concepts", () => {
     const contexts = [
       context({ id: "vinema", name: "Vinema" }),
       context({ id: "archived", name: "Archivado", archivedAt: "2026-01-01T00:00:00.000Z" }),
     ];
     const nodes = [
       node({ id: "active", updatedAt: "2026-07-20T10:00:00.000Z" }),
-      node({ id: "archived-node", status: "ARCHIVED", updatedAt: "2026-07-20T10:00:00.000Z" }),
+      node({ id: "legacy-status-node", status: "ARCHIVED", updatedAt: "2026-07-20T10:00:00.000Z" }),
+      node({
+        id: "forgotten-node",
+        archivedAt: "2026-07-21T10:00:00.000Z",
+        updatedAt: "2026-07-21T10:00:00.000Z",
+      }),
       node({ id: "deleted-node", deletedAt: "2026-07-20T10:00:00.000Z" }),
     ];
     const relations = [
       relation({ nodeId: "active", contextId: "vinema" }),
-      relation({ nodeId: "archived-node", contextId: "vinema" }),
+      relation({ nodeId: "legacy-status-node", contextId: "vinema" }),
+      relation({ nodeId: "forgotten-node", contextId: "vinema" }),
       relation({ nodeId: "deleted-node", contextId: "vinema" }),
       relation({ nodeId: "active", contextId: "archived" }),
       relation({

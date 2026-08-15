@@ -122,7 +122,7 @@ describe("Behavioral Engine v1", () => {
     expect(patterns.some((pattern) => pattern.conceptIds.includes("alias"))).toBe(false);
   });
 
-  it("excludes archived captures, archived concepts and discarded associations", () => {
+  it("excludes forgotten capture tombstones and discarded associations while retaining legacy archived concepts", () => {
     const contexts = [
       context({ id: "mitcom", name: "Mitcom" }),
       context({ id: "tracking", name: "Tracking" }),
@@ -135,9 +135,14 @@ describe("Behavioral Engine v1", () => {
         "2026-07-20T10:00:00.000Z",
       ]),
       node({
-        id: "archived-node",
+        id: "legacy-status-node",
         status: "ARCHIVED",
         updatedAt: "2026-07-21T10:00:00.000Z",
+      }),
+      node({
+        id: "forgotten-node",
+        archivedAt: "2026-07-22T10:00:00.000Z",
+        updatedAt: "2026-07-22T10:00:00.000Z",
       }),
     ];
     const relations = [
@@ -157,6 +162,9 @@ describe("Behavioral Engine v1", () => {
 
     expect(kindIds(patterns)).toContain("RECURRENT_PAIR:mitcom+tracking");
     expect(patterns.some((pattern) => pattern.conceptIds.includes("archived"))).toBe(true);
+    expect(
+      patterns.some((pattern) => pattern.evidenceNodeIds.includes("forgotten-node")),
+    ).toBe(false);
     expect(patterns.some((pattern) => pattern.conceptIds.includes("discarded"))).toBe(false);
   });
 

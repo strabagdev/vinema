@@ -2,7 +2,7 @@
 
 **Versión:** 1.0
 **Estado:** Vigente
-**Última actualización:** 2026-08-04
+**Última actualización:** 2026-08-15
 **Propósito:** Registrar las decisiones consolidadas que explican la forma actual del producto y proteger su coherencia futura.
 
 > Una decisión vigente solo puede modificarse mediante una nueva decisión que la reemplace explícitamente. Las decisiones anteriores no se eliminan: cambian de estado y conservan su trazabilidad.
@@ -955,6 +955,46 @@ trata el contenido como pendiente/interrumpido sin limpieza destructiva.
 - `VIN-003-local-core.md`
 - `implementation/VIN-008C3D-authentication-lifecycle.md`
 - `../src/features/auth/local-knowledge-incorporation.ts`
+
+## DEC-034 — La evidencia temporal cognitiva es compartida
+
+**Fecha:** 2026-08-15
+**Estado:** Vigente
+**Ámbito:** Arquitectura / Motor Cognitivo
+
+### Decisión
+
+Behavioral Engine y Memory Evolution consumen una capa compartida de evidencia
+temporal derivada desde capturas, conceptos y relaciones aceptadas. Los motores
+siguen separados: Behavioral interpreta patrones de coocurrencia y Evolution
+interpreta trayectorias temporales.
+
+### Motivo
+
+Ambos motores dependen de la misma evidencia activa, ventanas temporales,
+canonicalizacion de aliases y reglas de exclusión. Duplicar esa preparación
+crea divergencias silenciosas, especialmente ante capturas olvidadas y campos
+legados de archivado.
+
+### Consecuencias
+
+`deletedAt` excluye una captura de la evidencia cognitiva. `node.archivedAt`
+representa una captura olvidada/tombstone y también se excluye.
+`context.archivedAt` permanece como compatibilidad histórica y no excluye por
+sí solo un concepto de análisis cognitivo mientras existan capturas activas que
+lo respalden.
+
+El orquestador debe construir y reutilizar el modelo de evidencia cuando derive
+respuesta cognitiva. Nuevas fuentes como similitud semántica o fusión de
+evidencia deberán entrar como capas posteriores, no como duplicación de filtros
+temporales en cada motor.
+
+### Evidencia
+
+- `cognitive-engine.md`
+- `../src/features/cognition/memory-evidence/memory-evidence-model.ts`
+- `../src/features/cognition/behavioral-engine/behavioral-engine.ts`
+- `../src/features/cognition/memory-evolution/memory-evolution-detector.ts`
 
 ## Decisiones pendientes de consolidación
 

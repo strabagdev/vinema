@@ -1,8 +1,14 @@
 import type { Context } from "@/domain/context/context";
-import { normalizeContextNameForComparison } from "@/domain/context/context";
 import type { NodeContextRelation } from "@/domain/context/node-context-relation";
 import type { Node } from "@/domain/node/node";
-import { getContentTimestamp } from "@/features/capture/capture-timestamps";
+import {
+  combinations,
+  createMemoryEvidenceModel,
+  type MemoryEvidenceModel,
+  type MemoryEvidenceNode,
+  relationshipKey,
+  type RelationshipMemorySeries,
+} from "@/features/cognition/memory-evidence/memory-evidence-model";
 
 export type BehavioralPatternKind =
   | "RECURRENT_PAIR"
@@ -36,52 +42,66 @@ export interface DeriveBehavioralPatternsOptions {
   now?: Date;
   recentWindowDays?: number;
   maxPatterns?: number;
-}
-
-interface BehavioralMemory {
-  nodeId: string;
-  timestamp: number;
-  conceptIds: string[];
-}
-
-interface ConceptRecord {
-  context: Context;
-  normalizedLabel: string;
-  identityLabels: Set<string>;
+  evidenceModel?: MemoryEvidenceModel;
 }
 
 interface PatternBucket {
   conceptIds: string[];
-  memories: Map<string, BehavioralMemory>;
+  memories: Map<string, MemoryEvidenceNode>;
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-const DEFAULT_RECENT_WINDOW_DAYS = 60;
+type BehavioralMetrics = Pick<
+  RelationshipMemorySeries,
+  | "totalCount"
+  | "recentCount"
+  | "previousCount"
+  | "monthlySpread"
+  | "firstSeenAt"
+  | "latestActivityAt"
+  | "sharedEvidenceNodeIds"
+>;
+
+export const DEFAULT_BEHAVIORAL_RECENT_WINDOW_DAYS = 60;
 const DEFAULT_MAX_PATTERNS = 24;
 const MIN_PAIR_OCCURRENCES = 3;
 const MIN_CLUSTER_OCCURRENCES = 2;
 const MAX_CLUSTER_SIZE = 5;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function deriveBehavioralPatterns({
   contexts,
   relations,
   nodes,
   now = new Date(),
-  recentWindowDays = DEFAULT_RECENT_WINDOW_DAYS,
+  recentWindowDays = DEFAULT_BEHAVIORAL_RECENT_WINDOW_DAYS,
   maxPatterns = DEFAULT_MAX_PATTERNS,
+  evidenceModel,
 }: DeriveBehavioralPatternsOptions): BehavioralPattern[] {
   if (maxPatterns <= 0) {
     return [];
   }
 
-  const memories = getBehavioralMemories({ contexts, relations, nodes });
+  const model =
+    evidenceModel ??
+    createMemoryEvidenceModel({
+      contexts,
+      relations,
+      nodes,
+      now,
+      recentWindowDays,
+    });
+  const memories = model.evidenceNodes.filter(
+    (memory) => memory.conceptIds.length >= 2,
+  );
 
   if (memories.length === 0) {
     return [];
   }
 
   return [
-    ...deriveRelationshipBehavior({ memories, now, recentWindowDays }),
+    ...deriveRelationshipBehavior({
+      relationshipSeries: Array.from(model.relationshipSeriesByKey.values()),
+    }),
     ...deriveRecurringClusters({ memories, now, recentWindowDays }),
   ]
     .sort(compareBehavioralPatterns)
@@ -89,53 +109,53 @@ export function deriveBehavioralPatterns({
 }
 
 export function deriveRelationshipBehavior({
-  memories,
-  now = new Date(),
-  recentWindowDays = DEFAULT_RECENT_WINDOW_DAYS,
+  relationshipSeries,
 }: {
-  memories: BehavioralMemory[];
-  now?: Date;
-  recentWindowDays?: number;
+  relationshipSeries: RelationshipMemorySeries[];
 }): BehavioralPattern[] {
-  const buckets = new Map<string, PatternBucket>();
-
-  for (const memory of memories) {
-    for (const conceptIds of combinations(memory.conceptIds, 2)) {
-      addMemoryToBucket(buckets, conceptIds, memory);
-    }
-  }
-
   const patterns: BehavioralPattern[] = [];
 
-  for (const bucket of buckets.values()) {
-    const metrics = calculateMetrics({
-      memories: Array.from(bucket.memories.values()),
-      now,
-      recentWindowDays,
-    });
-
-    if (metrics.totalOccurrences < MIN_PAIR_OCCURRENCES) {
+  for (const series of relationshipSeries) {
+    if (series.totalCount < MIN_PAIR_OCCURRENCES) {
       continue;
     }
 
     patterns.push(
       createPattern({
         kind: "RECURRENT_PAIR",
-        bucket,
-        metrics,
+        conceptIds: series.conceptIds,
+        metrics: series,
       }),
     );
 
-    if (isEmerging(metrics)) {
-      patterns.push(createPattern({ kind: "EMERGING_RELATIONSHIP", bucket, metrics }));
+    if (isEmerging(series)) {
+      patterns.push(
+        createPattern({
+          kind: "EMERGING_RELATIONSHIP",
+          conceptIds: series.conceptIds,
+          metrics: series,
+        }),
+      );
     }
 
-    if (isDeclining(metrics)) {
-      patterns.push(createPattern({ kind: "DECLINING_RELATIONSHIP", bucket, metrics }));
+    if (isDeclining(series)) {
+      patterns.push(
+        createPattern({
+          kind: "DECLINING_RELATIONSHIP",
+          conceptIds: series.conceptIds,
+          metrics: series,
+        }),
+      );
     }
 
-    if (isStable(metrics)) {
-      patterns.push(createPattern({ kind: "STABLE_RELATIONSHIP", bucket, metrics }));
+    if (isStable(series)) {
+      patterns.push(
+        createPattern({
+          kind: "STABLE_RELATIONSHIP",
+          conceptIds: series.conceptIds,
+          metrics: series,
+        }),
+      );
     }
   }
 
@@ -145,9 +165,9 @@ export function deriveRelationshipBehavior({
 export function deriveRecurringClusters({
   memories,
   now = new Date(),
-  recentWindowDays = DEFAULT_RECENT_WINDOW_DAYS,
+  recentWindowDays = DEFAULT_BEHAVIORAL_RECENT_WINDOW_DAYS,
 }: {
-  memories: BehavioralMemory[];
+  memories: MemoryEvidenceNode[];
   now?: Date;
   recentWindowDays?: number;
 }): BehavioralPattern[] {
@@ -171,11 +191,15 @@ export function deriveRecurringClusters({
         recentWindowDays,
       });
 
-      if (metrics.totalOccurrences < MIN_CLUSTER_OCCURRENCES) {
+      if (metrics.totalCount < MIN_CLUSTER_OCCURRENCES) {
         return null;
       }
 
-      return createPattern({ kind: "RECURRING_CLUSTER", bucket, metrics });
+      return createPattern({
+        kind: "RECURRING_CLUSTER",
+        conceptIds: bucket.conceptIds,
+        metrics,
+      });
     })
     .filter((pattern): pattern is BehavioralPattern => pattern !== null);
 }
@@ -202,131 +226,13 @@ export function describeBehavioralPattern(
   }
 }
 
-function getBehavioralMemories({
-  contexts,
-  relations,
-  nodes,
-}: {
-  contexts: Context[];
-  relations: NodeContextRelation[];
-  nodes: Node[];
-}): BehavioralMemory[] {
-  const activeNodesById = new Map(
-    nodes
-      .filter((node) => node.deletedAt === null)
-      .map((node) => [node.id, node]),
-  );
-  const conceptRecords = getConceptRecords(contexts);
-  const conceptIdsByNodeId = getAcceptedConceptIdsByNodeId({
-    relations,
-    activeNodesById,
-    conceptRecords,
-  });
-  const memories: BehavioralMemory[] = [];
-
-  for (const [nodeId, conceptIds] of conceptIdsByNodeId.entries()) {
-    const node = activeNodesById.get(nodeId);
-
-    if (!node || conceptIds.length < 2) {
-      continue;
-    }
-
-    const timestamp = Date.parse(getContentTimestamp(node));
-
-    if (!Number.isFinite(timestamp)) {
-      continue;
-    }
-
-    memories.push({
-      nodeId,
-      timestamp,
-      conceptIds: [...conceptIds].sort(),
-    });
-  }
-
-  return memories.sort((first, second) => first.timestamp - second.timestamp || first.nodeId.localeCompare(second.nodeId));
-}
-
-function getConceptRecords(contexts: Context[]) {
-  const byId = new Map<string, ConceptRecord>();
-
-  for (const context of contexts) {
-    const normalizedLabel = normalizeContextNameForComparison(context.name);
-
-    if (!normalizedLabel) {
-      continue;
-    }
-
-    byId.set(context.id, {
-      context,
-      normalizedLabel,
-      identityLabels: new Set(
-        [context.name, ...(context.aliases ?? []), ...(context.normalizedAliases ?? [])]
-          .map((label) => normalizeContextNameForComparison(label))
-          .filter(Boolean),
-      ),
-    });
-  }
-
-  return { byId };
-}
-
-function getAcceptedConceptIdsByNodeId({
-  relations,
-  activeNodesById,
-  conceptRecords,
-}: {
-  relations: NodeContextRelation[];
-  activeNodesById: Map<string, Node>;
-  conceptRecords: ReturnType<typeof getConceptRecords>;
-}) {
-  const conceptIdsByNodeId = new Map<string, string[]>();
-  const identityLabelsByNodeId = new Map<string, Set<string>>();
-
-  for (const relation of relations) {
-    if (
-      relation.relationType === "CAPTURE_ASSOCIATION" ||
-      !activeNodesById.has(relation.nodeId)
-    ) {
-      continue;
-    }
-
-    const conceptRecord = conceptRecords.byId.get(relation.contextId);
-
-    if (!conceptRecord) {
-      continue;
-    }
-
-    const usedLabels = identityLabelsByNodeId.get(relation.nodeId) ?? new Set<string>();
-    const overlaps = Array.from(conceptRecord.identityLabels).some((label) =>
-      usedLabels.has(label),
-    );
-
-    if (overlaps) {
-      continue;
-    }
-
-    for (const label of conceptRecord.identityLabels) {
-      usedLabels.add(label);
-    }
-
-    identityLabelsByNodeId.set(relation.nodeId, usedLabels);
-    conceptIdsByNodeId.set(relation.nodeId, [
-      ...(conceptIdsByNodeId.get(relation.nodeId) ?? []),
-      relation.contextId,
-    ]);
-  }
-
-  return conceptIdsByNodeId;
-}
-
 function addMemoryToBucket(
   buckets: Map<string, PatternBucket>,
   conceptIds: string[],
-  memory: BehavioralMemory,
+  memory: MemoryEvidenceNode,
 ) {
   const sortedConceptIds = [...conceptIds].sort();
-  const key = sortedConceptIds.join("+");
+  const key = relationshipKey(sortedConceptIds);
   const bucket =
     buckets.get(key) ??
     ({
@@ -343,10 +249,10 @@ function calculateMetrics({
   now,
   recentWindowDays,
 }: {
-  memories: BehavioralMemory[];
+  memories: MemoryEvidenceNode[];
   now: Date;
   recentWindowDays: number;
-}) {
+}): BehavioralMetrics {
   const nowMs = now.getTime();
   const recentStart = nowMs - recentWindowDays * DAY_MS;
   const previousStart = recentStart - recentWindowDays * DAY_MS;
@@ -359,13 +265,13 @@ function calculateMetrics({
   ).size;
 
   return {
-    totalOccurrences: memories.length,
-    recentOccurrences: timestamps.filter((timestamp) => timestamp >= recentStart && timestamp <= nowMs).length,
-    previousOccurrences: timestamps.filter((timestamp) => timestamp >= previousStart && timestamp < recentStart).length,
+    totalCount: memories.length,
+    recentCount: timestamps.filter((timestamp) => timestamp >= recentStart && timestamp <= nowMs).length,
+    previousCount: timestamps.filter((timestamp) => timestamp >= previousStart && timestamp < recentStart).length,
     monthlySpread,
-    firstObservedAt: timestamps[0] ? new Date(Math.min(...timestamps)) : null,
-    lastObservedAt: timestamps[0] ? new Date(Math.max(...timestamps)) : null,
-    evidenceNodeIds: memories
+    firstSeenAt: timestamps[0] ? new Date(Math.min(...timestamps)) : null,
+    latestActivityAt: timestamps[0] ? new Date(Math.max(...timestamps)) : null,
+    sharedEvidenceNodeIds: memories
       .sort((first, second) => second.timestamp - first.timestamp || first.nodeId.localeCompare(second.nodeId))
       .map((memory) => memory.nodeId)
       .slice(0, 5),
@@ -374,25 +280,25 @@ function calculateMetrics({
 
 function createPattern({
   kind,
-  bucket,
+  conceptIds,
   metrics,
 }: {
   kind: BehavioralPatternKind;
-  bucket: PatternBucket;
-  metrics: ReturnType<typeof calculateMetrics>;
+  conceptIds: string[];
+  metrics: BehavioralMetrics;
 }): BehavioralPattern {
   return {
-    id: createPatternId(kind, bucket.conceptIds),
+    id: createPatternId(kind, conceptIds),
     kind,
-    conceptIds: bucket.conceptIds,
+    conceptIds,
     strength: calculatePatternStrength(metrics),
-    firstObservedAt: metrics.firstObservedAt,
-    lastObservedAt: metrics.lastObservedAt,
-    evidenceNodeIds: metrics.evidenceNodeIds,
+    firstObservedAt: metrics.firstSeenAt,
+    lastObservedAt: metrics.latestActivityAt,
+    evidenceNodeIds: metrics.sharedEvidenceNodeIds,
     metrics: {
-      totalOccurrences: metrics.totalOccurrences,
-      recentOccurrences: metrics.recentOccurrences,
-      previousOccurrences: metrics.previousOccurrences,
+      totalOccurrences: metrics.totalCount,
+      recentOccurrences: metrics.recentCount,
+      previousOccurrences: metrics.previousCount,
       monthlySpread: metrics.monthlySpread,
     },
   };
@@ -402,69 +308,46 @@ function createPatternId(kind: BehavioralPatternKind, conceptIds: string[]) {
   return `behavior:${kind.toLocaleLowerCase("en-US")}:${conceptIds.join("+")}`;
 }
 
-function calculatePatternStrength(metrics: ReturnType<typeof calculateMetrics>) {
+function calculatePatternStrength(metrics: BehavioralMetrics) {
   if (
-    metrics.totalOccurrences >= 6 ||
-    (metrics.totalOccurrences >= 4 && metrics.monthlySpread >= 3)
+    metrics.totalCount >= 6 ||
+    (metrics.totalCount >= 4 && metrics.monthlySpread >= 3)
   ) {
     return "STRONG";
   }
 
-  if (metrics.totalOccurrences >= 3 || metrics.monthlySpread >= 2) {
+  if (metrics.totalCount >= 3 || metrics.monthlySpread >= 2) {
     return "MEDIUM";
   }
 
   return "WEAK";
 }
 
-function isEmerging(metrics: ReturnType<typeof calculateMetrics>) {
+function isEmerging(metrics: BehavioralMetrics) {
   return (
-    metrics.totalOccurrences >= MIN_PAIR_OCCURRENCES &&
-    metrics.recentOccurrences >= 2 &&
-    metrics.recentOccurrences >= Math.max(2, metrics.previousOccurrences * 2)
+    metrics.totalCount >= MIN_PAIR_OCCURRENCES &&
+    metrics.recentCount >= 2 &&
+    metrics.recentCount >= Math.max(2, metrics.previousCount * 2)
   );
 }
 
-function isDeclining(metrics: ReturnType<typeof calculateMetrics>) {
+function isDeclining(metrics: BehavioralMetrics) {
   return (
-    metrics.totalOccurrences >= MIN_PAIR_OCCURRENCES &&
-    metrics.previousOccurrences >= 2 &&
-    metrics.recentOccurrences * 2 <= metrics.previousOccurrences
+    metrics.totalCount >= MIN_PAIR_OCCURRENCES &&
+    metrics.previousCount >= 2 &&
+    metrics.recentCount * 2 <= metrics.previousCount
   );
 }
 
-function isStable(metrics: ReturnType<typeof calculateMetrics>) {
+function isStable(metrics: BehavioralMetrics) {
   return (
-    metrics.totalOccurrences >= 4 &&
+    metrics.totalCount >= 4 &&
     metrics.monthlySpread >= 3 &&
-    metrics.recentOccurrences > 0 &&
-    metrics.previousOccurrences > 0 &&
-    metrics.recentOccurrences * 2 >= metrics.previousOccurrences &&
-    metrics.previousOccurrences * 2 >= metrics.recentOccurrences
+    metrics.recentCount > 0 &&
+    metrics.previousCount > 0 &&
+    metrics.recentCount * 2 >= metrics.previousCount &&
+    metrics.previousCount * 2 >= metrics.recentCount
   );
-}
-
-function combinations(values: string[], size: number): string[][] {
-  if (size <= 0 || values.length < size) {
-    return [];
-  }
-
-  const result: string[][] = [];
-
-  function visit(start: number, current: string[]) {
-    if (current.length === size) {
-      result.push(current);
-      return;
-    }
-
-    for (let index = start; index <= values.length - (size - current.length); index += 1) {
-      visit(index + 1, [...current, values[index]]);
-    }
-  }
-
-  visit(0, []);
-
-  return result;
 }
 
 function compareBehavioralPatterns(first: BehavioralPattern, second: BehavioralPattern) {

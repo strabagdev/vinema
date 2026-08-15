@@ -1,9 +1,20 @@
 import type { Context } from "@/domain/context/context";
 import type { NodeContextRelation } from "@/domain/context/node-context-relation";
 import type { Node } from "@/domain/node/node";
-import { deriveBehavioralPatterns } from "@/features/cognition/behavioral-engine/behavioral-engine";
-import { deriveMemoryEvolutionSignals } from "@/features/cognition/memory-evolution";
+import {
+  DEFAULT_BEHAVIORAL_RECENT_WINDOW_DAYS,
+  deriveBehavioralPatterns,
+} from "@/features/cognition/behavioral-engine/behavioral-engine";
+import {
+  DEFAULT_DORMANT_DAYS,
+  DEFAULT_RECENT_WINDOW_DAYS,
+  deriveMemoryEvolutionSignals,
+} from "@/features/cognition/memory-evolution";
 import { deriveSemanticStatements } from "@/features/cognition/semantic-understanding";
+import {
+  createMemoryEvidenceModel,
+  type MemoryEvidenceModel,
+} from "@/features/cognition/memory-evidence/memory-evidence-model";
 import type {
   KnowledgeSuggestion,
   KnowledgeSuggestionConfidence,
@@ -19,6 +30,8 @@ export interface DeriveKnowledgeSuggestionsOptions {
   nodes: Node[];
   now?: Date;
   limit?: number;
+  behavioralEvidenceModel?: MemoryEvidenceModel;
+  evolutionEvidenceModel?: MemoryEvidenceModel;
 }
 
 type SuggestionBucket = {
@@ -50,6 +63,8 @@ export function deriveKnowledgeSuggestions({
   nodes,
   now = new Date(),
   limit = DEFAULT_LIMIT,
+  behavioralEvidenceModel,
+  evolutionEvidenceModel,
 }: DeriveKnowledgeSuggestionsOptions): KnowledgeSuggestion[] {
   if (limit <= 0) {
     return [];
@@ -87,6 +102,15 @@ export function deriveKnowledgeSuggestions({
     relations: activeRelations,
     nodes: activeNodes,
     now,
+    evidenceModel:
+      behavioralEvidenceModel ??
+      createMemoryEvidenceModel({
+        contexts,
+        relations: activeRelations,
+        nodes: activeNodes,
+        now,
+        recentWindowDays: DEFAULT_BEHAVIORAL_RECENT_WINDOW_DAYS,
+      }),
   });
   const semanticStatements = deriveSemanticStatements({
     contexts,
@@ -99,6 +123,16 @@ export function deriveKnowledgeSuggestions({
     relations: activeRelations,
     nodes: activeNodes,
     now,
+    evidenceModel:
+      evolutionEvidenceModel ??
+      createMemoryEvidenceModel({
+        contexts,
+        relations: activeRelations,
+        nodes: activeNodes,
+        now,
+        recentWindowDays: DEFAULT_RECENT_WINDOW_DAYS,
+        dormantDays: DEFAULT_DORMANT_DAYS,
+      }),
   });
 
   for (const relationship of relationships) {

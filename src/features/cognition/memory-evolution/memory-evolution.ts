@@ -1,3 +1,5 @@
+import type { ConceptMemorySeries } from "@/features/cognition/memory-evidence/memory-evidence-model";
+
 export type MemoryEvolutionKind =
   | "NEW_CONCEPT"
   | "GROWING_CONCEPT"
@@ -28,13 +30,7 @@ export interface MemoryEvolutionSignal {
   evidenceNodeIds: string[];
 }
 
-export interface ConceptEvolutionInput {
-  conceptId: string;
-  canonicalLabel: string;
-  memoryIds: string[];
-  timestampsByNodeId: Map<string, number>;
-  connectionIdsByNodeId: Map<string, string[]>;
-}
+export type ConceptEvolutionInput = ConceptMemorySeries;
 
 export interface EvolutionWindows {
   recentStart: number;

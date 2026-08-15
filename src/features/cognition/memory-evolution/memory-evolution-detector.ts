@@ -1,12 +1,15 @@
 import type { Context } from "@/domain/context/context";
 import type { NodeContextRelation } from "@/domain/context/node-context-relation";
 import type { Node } from "@/domain/node/node";
-import { getContentTimestamp } from "@/features/capture/capture-timestamps";
-import { createConceptIdentity, normalizeConceptIdentityLabel } from "@/features/concepts/concept-identity";
+import {
+  createMemoryEvidenceModel,
+  type ConceptMemorySeries,
+  latestEvidenceNodeIds,
+  type MemoryEvidenceModel,
+} from "@/features/cognition/memory-evidence/memory-evidence-model";
 import {
   DEFAULT_DORMANT_DAYS,
   DEFAULT_RECENT_WINDOW_DAYS,
-  type ConceptEvolutionInput,
   type EvolutionWindows,
   type MemoryEvolutionKind,
   type MemoryEvolutionSignal,
@@ -21,11 +24,7 @@ export interface DeriveMemoryEvolutionSignalsOptions {
   recentWindowDays?: number;
   dormantDays?: number;
   maxSignals?: number;
-}
-
-interface ConceptRecord {
-  context: Context;
-  identityLabels: Set<string>;
+  evidenceModel?: MemoryEvidenceModel;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -39,15 +38,30 @@ export function deriveMemoryEvolutionSignals({
   recentWindowDays = DEFAULT_RECENT_WINDOW_DAYS,
   dormantDays = DEFAULT_DORMANT_DAYS,
   maxSignals = DEFAULT_MAX_SIGNALS,
+  evidenceModel,
 }: DeriveMemoryEvolutionSignalsOptions): MemoryEvolutionSignal[] {
   if (maxSignals <= 0) {
     return [];
   }
 
-  const model = createEvolutionModel({ contexts, relations, nodes });
-  const windows = createEvolutionWindows({ now, recentWindowDays, dormantDays });
+  const model =
+    evidenceModel ??
+    createMemoryEvidenceModel({
+      contexts,
+      relations,
+      nodes,
+      now,
+      recentWindowDays,
+      dormantDays,
+    });
+  const windows: EvolutionWindows = {
+    observedAt: model.windows.observedAt,
+    recentStart: model.windows.recentStart,
+    previousStart: model.windows.previousStart,
+    dormantDays,
+  };
 
-  return Array.from(model.conceptsById.values())
+  return Array.from(model.conceptSeriesById.values())
     .flatMap((input) =>
       deriveConceptEvolution({
         input,
@@ -62,69 +76,53 @@ export function deriveConceptEvolution({
   input,
   windows,
 }: {
-  input: ConceptEvolutionInput;
+  input: ConceptMemorySeries;
   windows: EvolutionWindows;
 }): MemoryEvolutionSignal[] {
-  const timestamps = input.memoryIds
-    .map((nodeId) => input.timestampsByNodeId.get(nodeId))
-    .filter((timestamp): timestamp is number => typeof timestamp === "number")
-    .sort((first, second) => first - second);
+  const timestamps = input.timestamps;
 
   if (timestamps.length === 0) {
     return [];
   }
 
-  const recentNodeIds = input.memoryIds.filter((nodeId) =>
-    isRecent(input.timestampsByNodeId.get(nodeId), windows),
-  );
-  const previousNodeIds = input.memoryIds.filter((nodeId) =>
-    isPrevious(input.timestampsByNodeId.get(nodeId), windows),
-  );
-  const historicalNodeIds = input.memoryIds.filter((nodeId) =>
-    isHistorical(input.timestampsByNodeId.get(nodeId), windows),
-  );
   const latestTimestamp = Math.max(...timestamps);
   const inactiveDays = Math.floor(
     Math.max(0, windows.observedAt.getTime() - latestTimestamp) / DAY_MS,
   );
   const metricsBase = {
-    totalMemories: input.memoryIds.length,
-    recentMemories: recentNodeIds.length,
-    previousMemories: previousNodeIds.length,
+    totalMemories: input.evidenceNodeIds.length,
+    recentMemories: input.recentEvidenceNodeIds.length,
+    previousMemories: input.previousEvidenceNodeIds.length,
     inactiveDays,
-    historicalMonthlySpread: countMonthlySpread(timestamps),
-    recentTopConnections: topConnections(
-      recentNodeIds,
-      input.connectionIdsByNodeId,
-      input.conceptId,
-    ),
-    historicalTopConnections: topConnections(
-      historicalNodeIds,
-      input.connectionIdsByNodeId,
-      input.conceptId,
-    ),
+    historicalMonthlySpread: input.monthlySpread,
+    recentTopConnections: input.recentTopConnections,
+    historicalTopConnections: input.historicalTopConnections,
   };
   const signals: MemoryEvolutionSignal[] = [];
   const firstObservedAt = Math.min(...timestamps);
+  const timestampByNodeId = input.timestampByNodeId;
 
-  if (firstObservedAt >= windows.recentStart && input.memoryIds.length >= 1) {
+  if (firstObservedAt >= windows.recentStart && input.evidenceNodeIds.length >= 1) {
     signals.push(
       createSignal({
         kind: "NEW_CONCEPT",
         input,
         windows,
         metrics: metricsBase,
-        evidenceNodeIds: latestNodeIds(recentNodeIds, input.timestampsByNodeId),
-        strength: input.memoryIds.length >= 2 ? "MEDIUM" : "WEAK",
+        evidenceNodeIds: latestEvidenceNodeIds(
+          input.recentEvidenceNodeIds,
+          timestampByNodeId,
+        ),
+        strength: input.evidenceNodeIds.length >= 2 ? "MEDIUM" : "WEAK",
       }),
     );
   }
 
   const revived = isRevived({
-    recentNodeIds,
-    previousNodeIds,
-    historicalNodeIds,
-    timestampsByNodeId: input.timestampsByNodeId,
+    recentNodeIds: input.recentEvidenceNodeIds,
+    previousNodeIds: input.previousEvidenceNodeIds,
+    historicalNodeIds: input.historicalEvidenceNodeIds,
+    timestampsByNodeId: timestampByNodeId,
     windows,
   });
 
@@ -135,16 +133,19 @@ export function deriveConceptEvolution({
         input,
         windows,
         metrics: metricsBase,
-        evidenceNodeIds: latestNodeIds(recentNodeIds, input.timestampsByNodeId),
-        strength: recentNodeIds.length >= 2 ? "STRONG" : "MEDIUM",
+        evidenceNodeIds: latestEvidenceNodeIds(
+          input.recentEvidenceNodeIds,
+          timestampByNodeId,
+        ),
+        strength: input.recentEvidenceNodeIds.length >= 2 ? "STRONG" : "MEDIUM",
       }),
     );
   }
 
   if (
-    recentNodeIds.length >= 2 &&
-    previousNodeIds.length >= 1 &&
-    recentNodeIds.length >= previousNodeIds.length * 2
+    input.recentEvidenceNodeIds.length >= 2 &&
+    input.previousEvidenceNodeIds.length >= 1 &&
+    input.recentEvidenceNodeIds.length >= input.previousEvidenceNodeIds.length * 2
   ) {
     signals.push(
       createSignal({
@@ -152,15 +153,19 @@ export function deriveConceptEvolution({
         input,
         windows,
         metrics: metricsBase,
-        evidenceNodeIds: latestNodeIds(recentNodeIds, input.timestampsByNodeId),
-        strength: recentNodeIds.length >= 4 ? "STRONG" : "MEDIUM",
+        evidenceNodeIds: latestEvidenceNodeIds(
+          input.recentEvidenceNodeIds,
+          timestampByNodeId,
+        ),
+        strength: input.recentEvidenceNodeIds.length >= 4 ? "STRONG" : "MEDIUM",
       }),
     );
   }
 
   if (
-    previousNodeIds.length >= 2 &&
-    recentNodeIds.length * 2 <= previousNodeIds.length &&
+    input.previousEvidenceNodeIds.length >= 2 &&
+    input.recentEvidenceNodeIds.length * 2 <=
+      input.previousEvidenceNodeIds.length &&
     inactiveDays < windows.dormantDays
   ) {
     signals.push(
@@ -169,17 +174,21 @@ export function deriveConceptEvolution({
         input,
         windows,
         metrics: metricsBase,
-        evidenceNodeIds: latestNodeIds(previousNodeIds, input.timestampsByNodeId),
-        strength: previousNodeIds.length >= 4 ? "STRONG" : "MEDIUM",
+        evidenceNodeIds: latestEvidenceNodeIds(
+          input.previousEvidenceNodeIds,
+          timestampByNodeId,
+        ),
+        strength:
+          input.previousEvidenceNodeIds.length >= 4 ? "STRONG" : "MEDIUM",
       }),
     );
   }
 
   if (
-    input.memoryIds.length >= 3 &&
-    metricsBase.historicalMonthlySpread >= 2 &&
+    input.evidenceNodeIds.length >= 3 &&
+    input.monthlySpread >= 2 &&
     inactiveDays >= windows.dormantDays &&
-    recentNodeIds.length === 0
+    input.recentEvidenceNodeIds.length === 0
   ) {
     signals.push(
       createSignal({
@@ -187,18 +196,24 @@ export function deriveConceptEvolution({
         input,
         windows,
         metrics: metricsBase,
-        evidenceNodeIds: latestNodeIds(input.memoryIds, input.timestampsByNodeId),
+        evidenceNodeIds: latestEvidenceNodeIds(
+          input.evidenceNodeIds,
+          timestampByNodeId,
+        ),
         strength: inactiveDays >= windows.dormantDays * 2 ? "STRONG" : "MEDIUM",
       }),
     );
   }
 
   if (
-    input.memoryIds.length >= 4 &&
-    metricsBase.historicalMonthlySpread >= 3 &&
-    recentNodeIds.length > 0 &&
-    previousNodeIds.length > 0 &&
-    !hasExtremeVariation(recentNodeIds.length, previousNodeIds.length)
+    input.evidenceNodeIds.length >= 4 &&
+    input.monthlySpread >= 3 &&
+    input.recentEvidenceNodeIds.length > 0 &&
+    input.previousEvidenceNodeIds.length > 0 &&
+    !hasExtremeVariation(
+      input.recentEvidenceNodeIds.length,
+      input.previousEvidenceNodeIds.length,
+    )
   ) {
     signals.push(
       createSignal({
@@ -206,20 +221,26 @@ export function deriveConceptEvolution({
         input,
         windows,
         metrics: metricsBase,
-        evidenceNodeIds: latestNodeIds(input.memoryIds, input.timestampsByNodeId),
-        strength: metricsBase.historicalMonthlySpread >= 4 ? "STRONG" : "MEDIUM",
+        evidenceNodeIds: latestEvidenceNodeIds(
+          input.evidenceNodeIds,
+          timestampByNodeId,
+        ),
+        strength: input.monthlySpread >= 4 ? "STRONG" : "MEDIUM",
       }),
     );
   }
 
-  if (detectContextShift(metricsBase.recentTopConnections, metricsBase.historicalTopConnections)) {
+  if (detectContextShift(input.recentTopConnections, input.historicalTopConnections)) {
     signals.push(
       createSignal({
         kind: "SHIFTING_CONTEXT",
         input,
         windows,
         metrics: metricsBase,
-        evidenceNodeIds: latestNodeIds(recentNodeIds, input.timestampsByNodeId),
+        evidenceNodeIds: latestEvidenceNodeIds(
+          input.recentEvidenceNodeIds,
+          timestampByNodeId,
+        ),
         strength: "MEDIUM",
       }),
     );
@@ -244,152 +265,6 @@ export function detectContextShift(
   return overlap === 0;
 }
 
-function createEvolutionModel({
-  contexts,
-  relations,
-  nodes,
-}: {
-  contexts: Context[];
-  relations: NodeContextRelation[];
-  nodes: Node[];
-}) {
-  const activeNodesById = new Map(
-    nodes
-      .filter((node) => node.deletedAt === null)
-      .map((node) => [node.id, node]),
-  );
-  const conceptRecords = getConceptRecords(contexts);
-  const conceptIdsByNodeId = getAcceptedConceptIdsByNodeId({
-    relations,
-    activeNodesById,
-    conceptRecords,
-  });
-  const timestampsByNodeId = new Map<string, number>();
-  const connectionIdsByNodeId = new Map<string, string[]>();
-  const conceptMemoryIds = new Map<string, Set<string>>();
-
-  for (const [nodeId, conceptIds] of conceptIdsByNodeId.entries()) {
-    const node = activeNodesById.get(nodeId);
-    const timestamp = node ? Date.parse(getContentTimestamp(node)) : Number.NaN;
-
-    if (!node || !Number.isFinite(timestamp)) {
-      continue;
-    }
-
-    timestampsByNodeId.set(nodeId, timestamp);
-    connectionIdsByNodeId.set(nodeId, conceptIds);
-
-    for (const conceptId of conceptIds) {
-      const memoryIds = conceptMemoryIds.get(conceptId) ?? new Set<string>();
-      memoryIds.add(nodeId);
-      conceptMemoryIds.set(conceptId, memoryIds);
-    }
-  }
-
-  const conceptsById = new Map<string, ConceptEvolutionInput>();
-
-  for (const [conceptId, memoryIds] of conceptMemoryIds.entries()) {
-    const concept = conceptRecords.get(conceptId)?.context;
-
-    if (!concept) {
-      continue;
-    }
-
-    conceptsById.set(conceptId, {
-      conceptId,
-      canonicalLabel: concept.name,
-      memoryIds: Array.from(memoryIds).sort(),
-      timestampsByNodeId,
-      connectionIdsByNodeId,
-    });
-  }
-
-  return { conceptsById };
-}
-
-function getConceptRecords(contexts: Context[]) {
-  const records = new Map<string, ConceptRecord>();
-
-  for (const context of contexts) {
-    const identity = createConceptIdentity(context);
-    const identityLabels = new Set(
-      [identity.canonicalLabel, ...identity.aliases, ...identity.normalizedAliases]
-        .map(normalizeConceptIdentityLabel)
-        .filter(Boolean),
-    );
-
-    records.set(context.id, { context, identityLabels });
-  }
-
-  return records;
-}
-
-function getAcceptedConceptIdsByNodeId({
-  relations,
-  activeNodesById,
-  conceptRecords,
-}: {
-  relations: NodeContextRelation[];
-  activeNodesById: Map<string, Node>;
-  conceptRecords: Map<string, ConceptRecord>;
-}) {
-  const conceptIdsByNodeId = new Map<string, string[]>();
-  const identityLabelsByNodeId = new Map<string, Set<string>>();
-
-  for (const relation of relations) {
-    if (
-      relation.relationType === "CAPTURE_ASSOCIATION" ||
-      !activeNodesById.has(relation.nodeId)
-    ) {
-      continue;
-    }
-
-    const record = conceptRecords.get(relation.contextId);
-
-    if (!record) {
-      continue;
-    }
-
-    const used = identityLabelsByNodeId.get(relation.nodeId) ?? new Set<string>();
-    const overlaps = Array.from(record.identityLabels).some((label) => used.has(label));
-
-    if (overlaps) {
-      continue;
-    }
-
-    for (const label of record.identityLabels) {
-      used.add(label);
-    }
-
-    identityLabelsByNodeId.set(relation.nodeId, used);
-    conceptIdsByNodeId.set(relation.nodeId, [
-      ...(conceptIdsByNodeId.get(relation.nodeId) ?? []),
-      relation.contextId,
-    ]);
-  }
-
-  return conceptIdsByNodeId;
-}
-
-function createEvolutionWindows({
-  now,
-  recentWindowDays,
-  dormantDays,
-}: {
-  now: Date;
-  recentWindowDays: number;
-  dormantDays: number;
-}): EvolutionWindows {
-  const nowMs = now.getTime();
-
-  return {
-    observedAt: now,
-    recentStart: nowMs - recentWindowDays * DAY_MS,
-    previousStart: nowMs - recentWindowDays * 2 * DAY_MS,
-    dormantDays,
-  };
-}
-
 function createSignal({
   kind,
   input,
@@ -399,7 +274,7 @@ function createSignal({
   strength,
 }: {
   kind: MemoryEvolutionKind;
-  input: ConceptEvolutionInput;
+  input: ConceptMemorySeries;
   windows: EvolutionWindows;
   metrics: MemoryEvolutionSignal["metrics"];
   evidenceNodeIds: string[];
@@ -417,18 +292,6 @@ function createSignal({
   };
 }
 
-function isRecent(timestamp: number | undefined, windows: EvolutionWindows) {
-  return typeof timestamp === "number" && timestamp >= windows.recentStart && timestamp <= windows.observedAt.getTime();
-}
-
-function isPrevious(timestamp: number | undefined, windows: EvolutionWindows) {
-  return typeof timestamp === "number" && timestamp >= windows.previousStart && timestamp < windows.recentStart;
-}
-
-function isHistorical(timestamp: number | undefined, windows: EvolutionWindows) {
-  return typeof timestamp === "number" && timestamp < windows.recentStart;
-}
-
 function isRevived({
   recentNodeIds,
   previousNodeIds,
@@ -442,7 +305,11 @@ function isRevived({
   timestampsByNodeId: Map<string, number>;
   windows: EvolutionWindows;
 }) {
-  if (recentNodeIds.length === 0 || previousNodeIds.length > 0 || historicalNodeIds.length < 2) {
+  if (
+    recentNodeIds.length === 0 ||
+    previousNodeIds.length > 0 ||
+    historicalNodeIds.length < 2
+  ) {
     return false;
   }
 
@@ -454,54 +321,6 @@ function isRevived({
   );
 
   return oldestRecent - newestHistorical >= windows.dormantDays * DAY_MS;
-}
-
-function countMonthlySpread(timestamps: number[]) {
-  return new Set(
-    timestamps.map((timestamp) => {
-      const date = new Date(timestamp);
-      return `${date.getUTCFullYear()}-${date.getUTCMonth() + 1}`;
-    }),
-  ).size;
-}
-
-function topConnections(
-  nodeIds: string[],
-  connectionIdsByNodeId: Map<string, string[]>,
-  currentConceptId: string,
-) {
-  const counts = new Map<string, number>();
-
-  for (const nodeId of nodeIds) {
-    const conceptIds = connectionIdsByNodeId.get(nodeId) ?? [];
-
-    for (const conceptId of conceptIds) {
-      if (conceptId === currentConceptId) {
-        continue;
-      }
-
-      counts.set(conceptId, (counts.get(conceptId) ?? 0) + 1);
-    }
-  }
-
-  return Array.from(counts.entries())
-    .sort(([firstId, firstCount], [secondId, secondCount]) =>
-      secondCount - firstCount || firstId.localeCompare(secondId),
-    )
-    .map(([conceptId]) => conceptId)
-    .slice(0, 3);
-}
-
-function latestNodeIds(
-  nodeIds: string[],
-  timestampsByNodeId: Map<string, number>,
-) {
-  return [...nodeIds]
-    .sort((first, second) =>
-      (timestampsByNodeId.get(second) ?? 0) - (timestampsByNodeId.get(first) ?? 0) ||
-      first.localeCompare(second),
-    )
-    .slice(0, 5);
 }
 
 function hasExtremeVariation(recent: number, previous: number) {

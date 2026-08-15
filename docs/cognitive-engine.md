@@ -4,11 +4,40 @@ Vinema evoluciona mediante motores cognitivos pequeños, locales y deterministas
 El objetivo no es agregar pantallas, sino mejorar la capacidad de observar la
 memoria del usuario sin aumentar su carga cognitiva.
 
+## Memory Evidence Model
+
+El `MemoryEvidenceModel` es la capa temporal compartida para motores cognitivos
+que leen capturas, conceptos y asociaciones. No fusiona motores ni agrega
+semántica: normaliza la evidencia observable para que Behavioral Engine, Memory
+Evolution y Knowledge Suggestions no reimplementen reglas temporales o filtros
+de actividad.
+
+Responsabilidades:
+
+- construir nodos de evidencia desde `Node`, `Context` y
+  `NodeContextRelation`;
+- consolidar identidad conceptual y aliases por captura;
+- aceptar solo relaciones de concepto vigentes y excluir
+  `CAPTURE_ASSOCIATION`;
+- calcular ventanas reciente, anterior, histórica y dormancia cuando aplica;
+- construir series temporales de conceptos y relaciones;
+- exponer conteos, dispersión mensual, primera evidencia, última evidencia y
+  conexiones principales con orden determinista.
+
+Regla de archivado y ausencia:
+
+- `deletedAt` excluye una captura de la evidencia cognitiva;
+- `node.archivedAt` representa una captura olvidada/tombstone y también la
+  excluye;
+- `context.archivedAt` se conserva como compatibilidad histórica y no excluye
+  por sí solo un concepto de análisis cognitivo;
+- las relaciones no aceptadas y las asociaciones descartadas no participan.
+
 ## Behavioral Engine v1
 
-El Behavioral Engine observa la memoria y detecta patrones demostrables. No
-interpreta significado, no sugiere acciones y no usa IA, embeddings, LLM ni
-servicios externos.
+El Behavioral Engine observa series compartidas de evidencia y detecta patrones
+demostrables. No interpreta significado, no sugiere acciones y no usa IA,
+embeddings, LLM ni servicios externos.
 
 Patrones implementados:
 
@@ -21,10 +50,12 @@ Patrones implementados:
 
 Reglas:
 
-- solo capturas activas;
-- solo conceptos activos;
+- consume `MemoryEvidenceModel` cuando el orquestador ya lo construyó;
+- solo capturas presentes en evidencia compartida;
 - solo asociaciones aceptadas;
-- capturas archivadas o eliminadas no cuentan;
+- capturas eliminadas u olvidadas mediante `node.archivedAt` no cuentan;
+- conceptos con `context.archivedAt` legado pueden seguir contando mientras
+  exista evidencia activa;
 - asociaciones descartadas no cuentan;
 - aliases no se tratan como conceptos independientes;
 - una captura cuenta una sola vez por patrón;
@@ -98,8 +129,8 @@ Límites:
 
 ## Memory Evolution v1
 
-El Memory Evolution Engine observa cambios temporales demostrables en conceptos
-y conexiones. No interpreta por qué ocurren ni propone acciones.
+El Memory Evolution Engine observa cambios temporales demostrables en las series
+de conceptos compartidas. No interpreta por qué ocurren ni propone acciones.
 
 Señales implementadas:
 
@@ -119,9 +150,12 @@ Ventanas temporales iniciales:
 
 Reglas:
 
-- solo capturas activas;
-- solo conceptos activos;
+- consume `MemoryEvidenceModel` cuando el orquestador ya lo construyó;
+- solo capturas presentes en evidencia compartida;
 - solo asociaciones aceptadas;
+- capturas eliminadas u olvidadas mediante `node.archivedAt` no cuentan;
+- conceptos con `context.archivedAt` legado pueden seguir contando mientras
+  exista evidencia activa;
 - aliases no generan conceptos duplicados;
 - timestamps originales gobiernan restore y backup;
 - reset elimina señales al no existir evidencia local;
@@ -168,8 +202,8 @@ Reglas:
 - no persiste sugerencias;
 - no modifica `Node`, `Context` ni `NodeContextRelation`;
 - no muestra sugerencias de baja confianza en la superficie principal;
-- excluye capturas archivadas o eliminadas;
-- excluye conceptos archivados;
+- excluye capturas eliminadas u olvidadas mediante `node.archivedAt`;
+- conserva conceptos con `context.archivedAt` legado si tienen evidencia activa;
 - excluye conceptos ya presentes o seleccionados;
 - consolida aliases bajo el concepto canónico;
 - ordena de forma determinista por confianza, evidencia e intención contextual.
@@ -217,6 +251,8 @@ Responsabilidades:
 - coordinar Semantic Understanding;
 - coordinar Memory Evolution;
 - coordinar Knowledge Suggestions;
+- construir la evidencia temporal compartida una vez por consulta para los
+  motores que comparten ventanas equivalentes;
 - fusionar resultados;
 - deduplicar conceptos, relaciones, patrones, señales, sugerencias y evidencia;
 - ordenar la respuesta de forma determinista;

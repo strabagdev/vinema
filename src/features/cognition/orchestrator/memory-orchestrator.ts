@@ -1,8 +1,18 @@
 import type { Context } from "@/domain/context/context";
 import type { Node } from "@/domain/node/node";
-import { deriveBehavioralPatterns, type BehavioralPattern } from "@/features/cognition/behavioral-engine/behavioral-engine";
+import {
+  DEFAULT_BEHAVIORAL_RECENT_WINDOW_DAYS,
+  deriveBehavioralPatterns,
+  type BehavioralPattern,
+} from "@/features/cognition/behavioral-engine/behavioral-engine";
 import { deriveKnowledgeSuggestions, type KnowledgeSuggestion } from "@/features/cognition/knowledge-suggestions";
-import { deriveMemoryEvolutionSignals, type MemoryEvolutionSignal } from "@/features/cognition/memory-evolution";
+import {
+  DEFAULT_DORMANT_DAYS,
+  DEFAULT_RECENT_WINDOW_DAYS,
+  deriveMemoryEvolutionSignals,
+  type MemoryEvolutionSignal,
+} from "@/features/cognition/memory-evolution";
+import { createMemoryEvidenceModel } from "@/features/cognition/memory-evidence/memory-evidence-model";
 import { deriveSemanticStatements, type SemanticStatement } from "@/features/cognition/semantic-understanding";
 import { createConceptIdentity } from "@/features/concepts/concept-identity";
 import { deriveConceptProfile, type ConceptProfile } from "@/features/exploration/concept-profile";
@@ -20,6 +30,21 @@ export function deriveMemoryResponse({
   nodes,
 }: DeriveMemoryResponseOptions): MemoryResponse {
   const conceptsById = createConceptModel(contexts);
+  const behavioralEvidenceModel = createMemoryEvidenceModel({
+    contexts,
+    relations,
+    nodes,
+    now: query.now,
+    recentWindowDays: DEFAULT_BEHAVIORAL_RECENT_WINDOW_DAYS,
+  });
+  const evolutionEvidenceModel = createMemoryEvidenceModel({
+    contexts,
+    relations,
+    nodes,
+    now: query.now,
+    recentWindowDays: DEFAULT_RECENT_WINDOW_DAYS,
+    dormantDays: DEFAULT_DORMANT_DAYS,
+  });
   const queryConceptIds = resolveQueryConceptIds({
     detectedConceptIds: query.detectedConceptIds,
     selectedConceptIds: query.selectedConceptIds,
@@ -60,6 +85,7 @@ export function deriveMemoryResponse({
       relations,
       nodes,
       now: query.now,
+      evidenceModel: behavioralEvidenceModel,
     }),
   );
   const semanticStatements = dedupeSemanticStatements(
@@ -76,6 +102,7 @@ export function deriveMemoryResponse({
       relations,
       nodes,
       now: query.now,
+      evidenceModel: evolutionEvidenceModel,
     }),
   );
   const suggestions = dedupeSuggestions(
@@ -85,6 +112,8 @@ export function deriveMemoryResponse({
       relations,
       nodes,
       now: query.now,
+      behavioralEvidenceModel,
+      evolutionEvidenceModel,
     }),
   );
   const evidence = collectEvidence({
