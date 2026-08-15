@@ -38,6 +38,7 @@ export interface AuthSessionStorage {
   load(): Promise<StoredAuthSession | null>;
   save(session: StoredAuthSession): Promise<void>;
   clear(): Promise<void>;
+  clearIfCurrent?(refreshToken: string): Promise<boolean>;
 }
 
 export interface LocalAuthIdentityStorage {

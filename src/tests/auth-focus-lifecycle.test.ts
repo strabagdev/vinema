@@ -67,12 +67,17 @@ describe("auth focus lifecycle", () => {
   let root: Root;
   const originalFetch = globalThis.fetch;
   const originalApiUrl = process.env.NEXT_PUBLIC_API_URL;
+  const originalLocks = navigator.locks;
 
   beforeEach(() => {
     router.pathname = "/";
     router.push.mockReset();
     router.replace.mockReset();
     process.env.NEXT_PUBLIC_API_URL = "https://api.example.test/";
+    Object.defineProperty(navigator, "locks", {
+      configurable: true,
+      value: new TestWebLocks(),
+    });
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -85,6 +90,10 @@ describe("auth focus lifecycle", () => {
     container.remove();
     globalThis.fetch = originalFetch;
     process.env.NEXT_PUBLIC_API_URL = originalApiUrl;
+    Object.defineProperty(navigator, "locks", {
+      configurable: true,
+      value: originalLocks,
+    });
     await resetVinemaDbConnectionForTests();
     await deleteDB(VINEMA_DB_NAME);
   });
@@ -276,6 +285,21 @@ function wait(ms: number) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+class TestWebLocks {
+  private queues = new Map<string, Promise<unknown>>();
+
+  request<T>(
+    name: string,
+    _options: { mode: "exclusive" },
+    callback: () => T | Promise<T>,
+  ): Promise<T> {
+    const previous = this.queues.get(name) ?? Promise.resolve();
+    const next = previous.catch(() => undefined).then(callback);
+    this.queues.set(name, next.catch(() => undefined));
+    return next;
+  }
 }
 
 function Probe({ refreshButton = false }: { refreshButton?: boolean }) {

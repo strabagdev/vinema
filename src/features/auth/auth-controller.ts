@@ -7,6 +7,11 @@ import {
   type AuthState,
   type AuthStateEngine,
 } from "@/features/auth/auth-state-engine";
+import {
+  createAuthSessionCoordinator,
+  toStoredSession,
+  type AuthSessionCoordinator,
+} from "@/features/auth/auth-session-coordinator";
 import type { DeviceIdentityProvider } from "@/features/auth/device-identity-provider";
 import type {
   AuthSessionStorage,
@@ -21,6 +26,7 @@ import type { AuthenticatedSyncLifecycle } from "@/features/sync/authenticated-s
 const RESTORE_TIMEOUT_MS = 4_000;
 const REFRESH_EARLY_MS = 60_000;
 const MIN_REFRESH_DELAY_MS = 1_000;
+const MAX_REFRESH_TIMEOUT_MS = 2_147_483_647;
 
 type AuthControllerIntent =
   | "IDLE"
@@ -65,6 +71,11 @@ export type AuthControllerConfig = {
   isOnline?: () => boolean;
   addOnlineListener?: (listener: () => void) => () => void;
   restoreTimeoutMs?: number;
+  authSessionCoordinator?: AuthSessionCoordinator;
+  broadcastChannelFactory?: Parameters<
+    typeof createAuthSessionCoordinator
+  >[0]["broadcastChannelFactory"];
+  webLocks?: Parameters<typeof createAuthSessionCoordinator>[0]["webLocks"];
   logger?: { warn?(message: string, context?: Record<string, unknown>): void };
 };
 
@@ -83,6 +94,9 @@ export function createAuthController({
   isOnline = defaultIsOnline,
   addOnlineListener = defaultAddOnlineListener,
   restoreTimeoutMs = RESTORE_TIMEOUT_MS,
+  authSessionCoordinator,
+  broadcastChannelFactory,
+  webLocks,
   logger,
 }: AuthControllerConfig): AuthController {
   let accessToken: string | undefined;
@@ -94,6 +108,43 @@ export function createAuthController({
   let inFlightRefresh: Promise<AuthenticatedSession> | null = null;
   let refreshTimer: ReturnType<typeof setTimeout> | null = null;
   const abortControllers = new Set<AbortController>();
+  const sessionCoordinator = authSessionCoordinator ?? createAuthSessionCoordinator({
+    authSessionStorage,
+    clock,
+    nowMs,
+    setTimeoutFn,
+    clearTimeoutFn,
+    webLocks,
+    broadcastChannelFactory,
+    onSessionRenewed: async (session) => {
+      if (
+        disposed ||
+        activeIntent !== "IDLE" ||
+        !canAdoptBroadcastSession(session)
+      ) {
+        return;
+      }
+
+      const latest = await authSessionStorage.load().catch(() => null);
+      if (latest && latest.refreshToken !== session.refreshToken) {
+        return;
+      }
+
+      await persistSession(session);
+      activateOnlineSession(session);
+      activeIntent = "IDLE";
+    },
+    onSessionCleared: async ({ refreshToken: clearedRefreshToken }) => {
+      if (disposed || activeIntent === "LOGOUT" || refreshToken !== clearedRefreshToken) {
+        return;
+      }
+
+      accessToken = undefined;
+      refreshToken = undefined;
+      authStateEngine.dispatch({ type: "UNAUTHENTICATED", at: clock(), error: null });
+      activeIntent = "IDLE";
+    },
+  });
 
   const unsubscribeSync = authStateEngine.subscribe((state) => {
     reconcileRefreshTimer(state);
@@ -235,9 +286,12 @@ export function createAuthController({
     const localIdentity = currentState.status === "AUTHENTICATED_LOCAL"
       ? await localAuthIdentityStorage.load().catch(() => null)
       : null;
+    const storedSessionForLogout = currentState.status === "AUTHENTICATED_LOCAL"
+      ? null
+      : await authSessionStorage.load().catch(() => null);
     const remoteRefreshToken = currentState.status === "AUTHENTICATED_LOCAL"
       ? undefined
-      : refreshToken;
+      : refreshToken ?? storedSessionForLogout?.refreshToken;
     beginIntent("LOGOUT");
     authStateEngine.dispatch({ type: "LOGOUT_STARTED", at: clock() });
     authenticatedSync?.stop();
@@ -255,19 +309,14 @@ export function createAuthController({
         });
       });
     } else {
-      try {
-        await authSessionStorage.clear();
-      } catch (error) {
-        logger?.warn?.("auth logout local clear failed", {
-          error: error instanceof Error ? error.name : "Unknown",
-        });
-      }
+      await clearStoredSessionIfCurrent(remoteRefreshToken);
     }
 
     authStateEngine.dispatch({ type: "UNAUTHENTICATED", at: clock(), error: null });
     activeIntent = "IDLE";
 
     if (remoteRefreshToken) {
+      sessionCoordinator.announceLogout(remoteRefreshToken);
       void authClient.logout({ refreshToken: remoteRefreshToken }).catch((error) => {
         logger?.warn?.("auth logout remote failed", {
           code: toAuthError(error).code,
@@ -294,6 +343,9 @@ export function createAuthController({
     clearRefreshTimer();
     removeOnlineListener();
     authenticatedSync?.dispose();
+    if (!authSessionCoordinator) {
+      sessionCoordinator.dispose();
+    }
     unsubscribeSync();
     accessToken = undefined;
     refreshToken = undefined;
@@ -386,14 +438,9 @@ export function createAuthController({
       }
 
       if (session.deviceId !== storedSession.deviceId) {
-        await clearStoredSession();
+        await clearStoredSessionIfCurrent(storedSession.refreshToken);
         authStateEngine.dispatch({ type: "UNAUTHENTICATED", at: clock(), error: null });
         activeIntent = "IDLE";
-        return null;
-      }
-
-      await persistSession(session);
-      if (!isCurrent(operationId, "RESTORE")) {
         return null;
       }
 
@@ -414,7 +461,11 @@ export function createAuthController({
       }
 
       if (shouldClearStoredSession(authError)) {
-        await clearStoredSession();
+        const revokedRefreshToken = storedSession?.refreshToken;
+        await clearStoredSessionIfCurrent(revokedRefreshToken);
+        if (revokedRefreshToken) {
+          sessionCoordinator.announceRevoked(revokedRefreshToken);
+        }
       }
 
       accessToken = undefined;
@@ -439,20 +490,19 @@ export function createAuthController({
     const controller = createAbortController();
 
     try {
-      const session = await authClient.refresh(
-        { refreshToken: currentRefreshToken },
-        { signal: controller.signal },
-      );
+      const session = await sessionCoordinator.refresh({
+        refreshToken: currentRefreshToken,
+        execute: (coordinatedRefreshToken) =>
+          authClient.refresh(
+            { refreshToken: coordinatedRefreshToken },
+            { signal: controller.signal },
+          ),
+      });
       if (!isCurrent(operationId, intent)) {
         throw new AuthCancelledError();
       }
 
       assertSessionConsistency(session);
-      await persistSession(session);
-      if (!isCurrent(operationId, intent)) {
-        throw new AuthCancelledError();
-      }
-
       activateOnlineSession(session);
       activeIntent = "IDLE";
       return session;
@@ -468,7 +518,8 @@ export function createAuthController({
         throw error;
       }
 
-      await clearStoredSession();
+      await clearStoredSessionIfCurrent(currentRefreshToken);
+      sessionCoordinator.announceRevoked(currentRefreshToken);
       accessToken = undefined;
       refreshToken = undefined;
       authStateEngine.dispatch({ type: "UNAUTHENTICATED", at: clock(), error: null });
@@ -509,16 +560,7 @@ export function createAuthController({
   }
 
   async function persistSession(session: AuthenticatedSession) {
-    await authSessionStorage.save({
-      refreshToken: session.refreshToken,
-      sessionId: session.sessionId,
-      deviceId: session.deviceId,
-      storedAt: clock(),
-      user: session.user,
-      workspaceId: session.workspaceId,
-      accessTokenExpiresAt: session.accessTokenExpiresAt,
-      refreshTokenExpiresAt: session.refreshTokenExpiresAt,
-    });
+    await authSessionStorage.save(toStoredSession(session, clock()));
   }
 
   async function clearStoredSession() {
@@ -528,6 +570,31 @@ export function createAuthController({
       logger?.warn?.("auth session storage clear failed", {
         error: error instanceof Error ? error.name : "Unknown",
       });
+    }
+  }
+
+  async function clearStoredSessionIfCurrent(expectedRefreshToken: string | undefined) {
+    if (!expectedRefreshToken) {
+      return false;
+    }
+
+    try {
+      if (authSessionStorage.clearIfCurrent) {
+        return await authSessionStorage.clearIfCurrent(expectedRefreshToken);
+      }
+
+      const latest = await authSessionStorage.load();
+      if (latest?.refreshToken !== expectedRefreshToken) {
+        return false;
+      }
+
+      await authSessionStorage.clear();
+      return true;
+    } catch (error) {
+      logger?.warn?.("auth session storage conditional clear failed", {
+        error: error instanceof Error ? error.name : "Unknown",
+      });
+      return false;
     }
   }
 
@@ -612,7 +679,14 @@ export function createAuthController({
 
     try {
       return await Promise.race([
-        authClient.refresh({ refreshToken: refreshTokenInput }, { signal: controller.signal }),
+        sessionCoordinator.refresh({
+          refreshToken: refreshTokenInput,
+          execute: (coordinatedRefreshToken) =>
+            authClient.refresh(
+              { refreshToken: coordinatedRefreshToken },
+              { signal: controller.signal },
+            ),
+        }),
         timeout,
       ]);
     } finally {
@@ -660,7 +734,10 @@ export function createAuthController({
     }
 
     clearRefreshTimer();
-    const delayMs = Math.max(MIN_REFRESH_DELAY_MS, expiresAtMs - nowMs() - REFRESH_EARLY_MS);
+    const delayMs = Math.min(
+      Math.max(MIN_REFRESH_DELAY_MS, expiresAtMs - nowMs() - REFRESH_EARLY_MS),
+      MAX_REFRESH_TIMEOUT_MS,
+    );
     refreshTimer = setTimeoutFn(() => {
       refreshTimer = null;
       void refresh().catch(() => undefined);
@@ -690,6 +767,19 @@ export function createAuthController({
         "La sesion renovada no coincide con la sesion local.",
       );
     }
+  }
+
+  function canAdoptBroadcastSession(session: AuthenticatedSession) {
+    const current = authStateEngine.getState();
+    if (!current.user || !current.workspaceId || !current.deviceId) {
+      return true;
+    }
+
+    return (
+      session.user.id === current.user.id &&
+      session.workspaceId === current.workspaceId &&
+      session.deviceId === current.deviceId
+    );
   }
 
   function assertActive() {

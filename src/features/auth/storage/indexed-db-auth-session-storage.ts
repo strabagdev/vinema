@@ -60,6 +60,34 @@ export class IndexedDbAuthSessionStorage implements AuthSessionStorage {
       throw new AuthSessionStorageError("No se pudo limpiar la sesion local.", error);
     }
   }
+
+  async clearIfCurrent(refreshToken: string): Promise<boolean> {
+    try {
+      const db = await getVinemaDb();
+      const transaction = db.transaction(AUTH_SESSION_STORE, "readwrite");
+      const value = await transaction.store.get(CURRENT_AUTH_SESSION_KEY);
+      const parsed = parseStoredAuthSession(value);
+
+      if (!parsed) {
+        if (value !== undefined) {
+          await transaction.store.delete(CURRENT_AUTH_SESSION_KEY);
+        }
+        await transaction.done;
+        return false;
+      }
+
+      if (parsed.refreshToken !== refreshToken) {
+        await transaction.done;
+        return false;
+      }
+
+      await transaction.store.delete(CURRENT_AUTH_SESSION_KEY);
+      await transaction.done;
+      return true;
+    } catch (error) {
+      throw new AuthSessionStorageError("No se pudo limpiar la sesion local.", error);
+    }
+  }
 }
 
 export class IndexedDbLocalAuthIdentityStorage implements LocalAuthIdentityStorage {

@@ -1,7 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import "fake-indexeddb/auto";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuthClient } from "@/features/auth/auth-client";
 import { AuthClientError } from "@/features/auth/auth-client";
-import { createAuthController } from "@/features/auth/auth-controller";
+import {
+  createAuthController,
+  type AuthController,
+} from "@/features/auth/auth-controller";
 import {
   InMemoryAuthSessionStorage,
   InMemoryLocalAuthIdentityStorage,
@@ -44,14 +48,23 @@ const session = {
   refreshToken: "refresh-token",
   refreshTokenExpiresAt,
 };
+const activeControllers = new Set<AuthController>();
 
 describe("AuthController", () => {
+  afterEach(async () => {
+    for (const controller of activeControllers) {
+      controller.dispose();
+    }
+    activeControllers.clear();
+    TestBroadcastChannel.reset();
+  });
+
   it("enters local mode without remote auth and persists a reusable identity", async () => {
     const authStorage = new InMemoryAuthSessionStorage();
     const localStorage = new InMemoryLocalAuthIdentityStorage();
     const client = createAuthClientMock();
     const authenticatedSync = createAuthenticatedSyncMock();
-    const controller = createAuthController({
+    const controller = trackController(createAuthController({
       authClient: client,
       authSessionStorage: authStorage,
       localAuthIdentityStorage: localStorage,
@@ -59,7 +72,7 @@ describe("AuthController", () => {
       ensureLocalWorkspaceId: async () => workspaceId,
       authenticatedSync,
       clock: () => "2026-08-08T12:00:00.000Z",
-    });
+    }));
 
     const state = await controller.enterLocalMode();
 
@@ -91,13 +104,13 @@ describe("AuthController", () => {
     const authStorage = new InMemoryAuthSessionStorage();
     const localStorage = new InMemoryLocalAuthIdentityStorage();
     const client = createAuthClientMock();
-    const first = createAuthController({
+    const first = trackController(createAuthController({
       authClient: client,
       authSessionStorage: authStorage,
       localAuthIdentityStorage: localStorage,
       deviceIdentityProvider: createDeviceIdentityProvider(),
       ensureLocalWorkspaceId: async () => workspaceId,
-    });
+    }));
 
     await first.enterLocalMode();
     const initialIdentity = localStorage.snapshot();
@@ -117,13 +130,13 @@ describe("AuthController", () => {
       sessionId: initialIdentity?.sessionId,
     });
 
-    const restored = createAuthController({
+    const restored = trackController(createAuthController({
       authClient: client,
       authSessionStorage: authStorage,
       localAuthIdentityStorage: localStorage,
       deviceIdentityProvider: createDeviceIdentityProvider(),
       ensureLocalWorkspaceId: async () => "new-workspace",
-    });
+    }));
     await restored.initialize();
 
     expect(restored.getState()).toMatchObject({
@@ -138,7 +151,7 @@ describe("AuthController", () => {
   it("logs out locally before a hanging remote logout can finish", async () => {
     const storage = new InMemoryAuthSessionStorage();
     let remoteLogoutStarted = false;
-    const controller = createAuthController({
+    const controller = trackController(createAuthController({
       authClient: createAuthClientMock({
         logout: vi.fn(
           async () =>
@@ -150,7 +163,7 @@ describe("AuthController", () => {
       authSessionStorage: storage,
       deviceIdentityProvider: createDeviceIdentityProvider(),
       authenticatedSync: createAuthenticatedSyncMock(),
-    });
+    }));
 
     await controller.login({ email: user.email, password: "password-123" });
     expect(storage.snapshot()).not.toBeNull();
@@ -168,7 +181,7 @@ describe("AuthController", () => {
     await storage.save(validStoredSession());
     let resolveRestore: ((value: typeof session) => void) | undefined;
     let resolveRefresh: ((value: typeof session) => void) | undefined;
-    const controller = createAuthController({
+    const controller = trackController(createAuthController({
       authClient: createAuthClientMock({
         refresh: vi.fn()
           .mockImplementationOnce(
@@ -186,7 +199,7 @@ describe("AuthController", () => {
       }),
       authSessionStorage: storage,
       deviceIdentityProvider: createDeviceIdentityProvider(),
-    });
+    }));
 
     const restore = controller.initialize();
     await flush();
@@ -212,7 +225,7 @@ describe("AuthController", () => {
     const storage = new InMemoryAuthSessionStorage();
     await storage.save(validStoredSession());
     let resolveRestore: ((value: typeof session) => void) | undefined;
-    const controller = createAuthController({
+    const controller = trackController(createAuthController({
       authClient: createAuthClientMock({
         refresh: vi.fn(
           () =>
@@ -228,7 +241,7 @@ describe("AuthController", () => {
       }),
       authSessionStorage: storage,
       deviceIdentityProvider: createDeviceIdentityProvider(),
-    });
+    }));
 
     const restore = controller.initialize();
     await flush();
@@ -257,16 +270,17 @@ describe("AuthController", () => {
         refreshToken: "revalidated-refresh-token",
       })),
     });
-    const controller = createAuthController({
+    const controller = trackController(createAuthController({
       authClient: client,
       authSessionStorage: storage,
       deviceIdentityProvider: createDeviceIdentityProvider(),
+      webLocks: new TestWebLocks(),
       isOnline: () => online,
       addOnlineListener(listener) {
         onlineListeners.add(listener);
         return () => onlineListeners.delete(listener);
       },
-    });
+    }));
 
     await controller.initialize();
     expect(controller.getState().status).toBe("AUTHENTICATED_OFFLINE");
@@ -302,11 +316,12 @@ describe("AuthController", () => {
           }),
       ),
     });
-    const controller = createAuthController({
+    const controller = trackController(createAuthController({
       authClient: client,
       authSessionStorage: storage,
       deviceIdentityProvider: createDeviceIdentityProvider(),
-    });
+      webLocks: new TestWebLocks(),
+    }));
 
     await controller.login({ email: user.email, password: "password-123" });
     const refresh = controller.refresh();
@@ -331,7 +346,7 @@ describe("AuthController", () => {
 
   it("keeps local session offline on temporary refresh errors and clears it when server rejects", async () => {
     const storage = new InMemoryAuthSessionStorage();
-    const networkController = createAuthController({
+    const networkController = trackController(createAuthController({
       authClient: createAuthClientMock({
         refresh: vi.fn(async () => {
           throw new AuthClientError("NETWORK_ERROR", "Offline");
@@ -339,14 +354,14 @@ describe("AuthController", () => {
       }),
       authSessionStorage: storage,
       deviceIdentityProvider: createDeviceIdentityProvider(),
-    });
+    }));
 
     await networkController.login({ email: user.email, password: "password-123" });
     await expect(networkController.refresh()).rejects.toMatchObject({ code: "NETWORK_ERROR" });
     expect(networkController.getState().status).toBe("AUTHENTICATED_OFFLINE");
     expect(storage.snapshot()).not.toBeNull();
 
-    const invalidController = createAuthController({
+    const invalidController = trackController(createAuthController({
       authClient: createAuthClientMock({
         refresh: vi.fn(async () => {
           throw new AuthClientError("TOKEN_INVALID", "Invalid");
@@ -354,12 +369,214 @@ describe("AuthController", () => {
       }),
       authSessionStorage: storage,
       deviceIdentityProvider: createDeviceIdentityProvider(),
-    });
+    }));
 
     await invalidController.login({ email: user.email, password: "password-123" });
     await expect(invalidController.refresh()).rejects.toMatchObject({ code: "TOKEN_INVALID" });
     expect(invalidController.getState().status).toBe("UNAUTHENTICATED");
     expect(storage.snapshot()).toBeNull();
+  });
+
+  it("serializes simultaneous refresh across controllers and adopts the renewed session", async () => {
+    const storage = new InMemoryAuthSessionStorage();
+    await storage.save(validStoredSession());
+    const channelFactory = TestBroadcastChannel.factory();
+    const webLocks = new TestWebLocks();
+    const refresh = vi.fn(async () => renewedSession());
+    const first = createSharedController({
+      storage,
+      channelFactory,
+      webLocks,
+      authClient: createAuthClientMock({ refresh }),
+      online: false,
+    });
+    const second = createSharedController({
+      storage,
+      channelFactory,
+      webLocks,
+      authClient: createAuthClientMock({ refresh }),
+      online: false,
+    });
+
+    await first.initialize();
+    await second.initialize();
+    const [firstRefresh, secondRefresh] = await Promise.all([
+      first.refresh(),
+      second.refresh(),
+    ]);
+    await flush();
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(firstRefresh.refreshToken).toBe("renewed-refresh-token");
+    expect(secondRefresh.refreshToken).toBe("renewed-refresh-token");
+    expect(first.getAccessToken()).toBe("renewed-access-token");
+    expect(second.getAccessToken()).toBe("renewed-access-token");
+    expect(storage.snapshot()?.refreshToken).toBe("renewed-refresh-token");
+  });
+
+  it("serializes simultaneous restore across controllers", async () => {
+    const storage = new InMemoryAuthSessionStorage();
+    await storage.save(validStoredSession());
+    const channelFactory = TestBroadcastChannel.factory();
+    const webLocks = new TestWebLocks();
+    const refresh = vi.fn(async () => renewedSession({
+      accessToken: "restored-access-token",
+      refreshToken: "restored-refresh-token",
+    }));
+    const first = createSharedController({
+      storage,
+      channelFactory,
+      webLocks,
+      authClient: createAuthClientMock({ refresh }),
+    });
+    const second = createSharedController({
+      storage,
+      channelFactory,
+      webLocks,
+      authClient: createAuthClientMock({ refresh }),
+    });
+
+    await Promise.all([first.initialize(), second.initialize()]);
+    await flush();
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(first.getAccessToken()).toBe("restored-access-token");
+    expect(second.getAccessToken()).toBe("restored-access-token");
+    expect(storage.snapshot()?.refreshToken).toBe("restored-refresh-token");
+  });
+
+  it("propagates manual logout to another controller with the same session", async () => {
+    const storage = new InMemoryAuthSessionStorage();
+    await storage.save(validStoredSession());
+    const channelFactory = TestBroadcastChannel.factory();
+    const first = createSharedController({ storage, channelFactory, online: false });
+    const second = createSharedController({ storage, channelFactory, online: false });
+
+    await first.initialize();
+    await second.initialize();
+    await first.logout();
+    await flush();
+
+    expect(first.getState().status).toBe("UNAUTHENTICATED");
+    expect(second.getState().status).toBe("UNAUTHENTICATED");
+    expect(storage.snapshot()).toBeNull();
+  });
+
+  it("does not let a late rejected refresh delete a newer session", async () => {
+    const storage = new InMemoryAuthSessionStorage();
+    await storage.save(validStoredSession());
+    let rejectRefresh: ((error: unknown) => void) | undefined;
+    const controller = createSharedController({
+      storage,
+      online: false,
+      authClient: createAuthClientMock({
+        refresh: vi.fn(
+          () =>
+            new Promise<typeof session>((_resolve, reject) => {
+              rejectRefresh = reject;
+            }),
+        ),
+      }),
+    });
+
+    await controller.initialize();
+    const refreshPromise = controller.refresh().catch(() => null);
+    await flush();
+    await storage.save({
+      ...validStoredSession(),
+      refreshToken: "newer-refresh-token",
+      sessionId: "55555555-5555-4555-8555-555555555555",
+      storedAt: "2026-07-30T12:05:00.000Z",
+    });
+
+    rejectRefresh?.(new AuthClientError("TOKEN_INVALID", "Invalid"));
+    await refreshPromise;
+
+    expect(storage.snapshot()?.refreshToken).toBe("newer-refresh-token");
+  });
+
+  it("uses the IndexedDB lease fallback when Web Locks is unavailable", async () => {
+    const storage = new InMemoryAuthSessionStorage();
+    await storage.save(validStoredSession());
+    const channelFactory = TestBroadcastChannel.factory();
+    const refresh = vi.fn(async () => renewedSession({
+      accessToken: "fallback-access-token",
+      refreshToken: "fallback-refresh-token",
+    }));
+    const first = createSharedController({
+      storage,
+      channelFactory,
+      webLocks: null,
+      authClient: createAuthClientMock({ refresh }),
+      online: false,
+    });
+    const second = createSharedController({
+      storage,
+      channelFactory,
+      webLocks: null,
+      authClient: createAuthClientMock({ refresh }),
+      online: false,
+    });
+
+    await first.initialize();
+    await second.initialize();
+    await Promise.all([first.refresh(), second.refresh()]);
+    await flush();
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(first.getAccessToken()).toBe("fallback-access-token");
+    expect(second.getAccessToken()).toBe("fallback-access-token");
+    expect(storage.snapshot()?.refreshToken).toBe("fallback-refresh-token");
+  });
+
+  it("keeps shared sessions offline on temporary coordinated refresh errors", async () => {
+    const storage = new InMemoryAuthSessionStorage();
+    await storage.save(validStoredSession());
+    const controller = createSharedController({
+      storage,
+      online: false,
+      authClient: createAuthClientMock({
+        refresh: vi.fn(async () => {
+          throw new AuthClientError("NETWORK_ERROR", "Offline");
+        }),
+      }),
+    });
+
+    await controller.initialize();
+    await expect(controller.refresh()).rejects.toMatchObject({ code: "NETWORK_ERROR" });
+
+    expect(controller.getState().status).toBe("AUTHENTICATED_OFFLINE");
+    expect(storage.snapshot()).not.toBeNull();
+  });
+
+  it("disposes cross-tab channels and global listeners", async () => {
+    const storage = new InMemoryAuthSessionStorage();
+    await storage.save(validStoredSession());
+    const onlineListeners = new Set<() => void>();
+    const channelFactory = TestBroadcastChannel.factory();
+    const controller = createAuthController({
+      authClient: createAuthClientMock(),
+      authSessionStorage: storage,
+      localAuthIdentityStorage: new InMemoryLocalAuthIdentityStorage(),
+      deviceIdentityProvider: createDeviceIdentityProvider(),
+      broadcastChannelFactory: channelFactory,
+      webLocks: new TestWebLocks(),
+      isOnline: () => false,
+      addOnlineListener(listener) {
+        onlineListeners.add(listener);
+        return () => onlineListeners.delete(listener);
+      },
+    });
+
+    expect(TestBroadcastChannel.openCount()).toBe(1);
+    expect(TestBroadcastChannel.listenerCount()).toBe(1);
+    expect(onlineListeners.size).toBe(1);
+
+    controller.dispose();
+
+    expect(TestBroadcastChannel.openCount()).toBe(0);
+    expect(TestBroadcastChannel.listenerCount()).toBe(0);
+    expect(onlineListeners.size).toBe(0);
   });
 });
 
@@ -411,6 +628,124 @@ function createAuthenticatedSyncMock() {
 }
 
 async function flush() {
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let index = 0; index < 10; index += 1) {
+    await Promise.resolve();
+  }
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function renewedSession(overrides: Partial<typeof session> = {}) {
+  return {
+    ...session,
+    accessToken: "renewed-access-token",
+    refreshToken: "renewed-refresh-token",
+    sessionId: "55555555-5555-4555-8555-555555555555",
+    ...overrides,
+  };
+}
+
+function createSharedController({
+  storage,
+  authClient = createAuthClientMock(),
+  channelFactory = TestBroadcastChannel.factory(),
+  webLocks = new TestWebLocks(),
+  online = true,
+}: {
+  storage: InMemoryAuthSessionStorage;
+  authClient?: AuthClient;
+  channelFactory?: (name: string) => TestBroadcastChannel;
+  webLocks?: TestWebLocks | null;
+  online?: boolean;
+}) {
+  return trackController(createAuthController({
+    authClient,
+    authSessionStorage: storage,
+    localAuthIdentityStorage: new InMemoryLocalAuthIdentityStorage(),
+    deviceIdentityProvider: createDeviceIdentityProvider(),
+    broadcastChannelFactory: channelFactory,
+    webLocks,
+    isOnline: () => online,
+  }));
+}
+
+function trackController(controller: AuthController) {
+  activeControllers.add(controller);
+  return controller;
+}
+
+class TestWebLocks {
+  private queues = new Map<string, Promise<unknown>>();
+
+  request<T>(
+    name: string,
+    _options: { mode: "exclusive" },
+    callback: () => T | Promise<T>,
+  ): Promise<T> {
+    const previous = this.queues.get(name) ?? Promise.resolve();
+    const next = previous.catch(() => undefined).then(callback);
+    this.queues.set(name, next.catch(() => undefined));
+    return next;
+  }
+}
+
+class TestBroadcastChannel {
+  private static channels = new Map<string, Set<TestBroadcastChannel>>();
+  private listener: ((event: { data: unknown }) => void) | null = null;
+
+  static factory() {
+    return (name: string) => new TestBroadcastChannel(name);
+  }
+
+  static reset() {
+    this.channels.clear();
+  }
+
+  static openCount() {
+    return Array.from(this.channels.values()).reduce(
+      (count, channels) => count + channels.size,
+      0,
+    );
+  }
+
+  static listenerCount() {
+    return Array.from(this.channels.values()).reduce(
+      (count, channels) =>
+        count +
+        Array.from(channels).filter((channel) => channel.listener !== null).length,
+      0,
+    );
+  }
+
+  constructor(private readonly name: string) {
+    const channels = TestBroadcastChannel.channels.get(name) ?? new Set();
+    channels.add(this);
+    TestBroadcastChannel.channels.set(name, channels);
+  }
+
+  postMessage(message: unknown) {
+    for (const channel of TestBroadcastChannel.channels.get(this.name) ?? []) {
+      if (channel === this) {
+        continue;
+      }
+
+      queueMicrotask(() => {
+        channel.listener?.({ data: message });
+      });
+    }
+  }
+
+  addEventListener(_type: "message", listener: (event: { data: unknown }) => void) {
+    this.listener = listener;
+  }
+
+  removeEventListener(_type: "message", listener: (event: { data: unknown }) => void) {
+    if (this.listener === listener) {
+      this.listener = null;
+    }
+  }
+
+  close() {
+    TestBroadcastChannel.channels.get(this.name)?.delete(this);
+    this.listener = null;
+  }
 }

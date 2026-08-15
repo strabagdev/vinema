@@ -29,6 +29,15 @@ export class InMemoryAuthSessionStorage implements AuthSessionStorage {
     this.session = null;
   }
 
+  async clearIfCurrent(refreshToken: string): Promise<boolean> {
+    if (this.session?.refreshToken !== refreshToken) {
+      return false;
+    }
+
+    this.session = null;
+    return true;
+  }
+
   snapshot(): StoredAuthSession | null {
     return this.session ? cloneStoredAuthSession(this.session) : null;
   }
