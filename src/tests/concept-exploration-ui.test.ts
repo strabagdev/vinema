@@ -7,6 +7,7 @@ import { ConceptKnowledgeExplorerClient } from "@/app/concepts/explore/concept-k
 import type { Context } from "@/domain/context/context";
 import type { Node } from "@/domain/node/node";
 import type { NodeContextRelation } from "@/domain/context/node-context-relation";
+import { deriveMemoryEvolutionSignals } from "@/features/cognition/memory-evolution";
 import { emitSyncDataChanged } from "@/features/sync/sync-data-events";
 
 const mocks = vi.hoisted(() => ({
@@ -72,8 +73,12 @@ vi.mock("@/infrastructure/repositories", () => ({
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
   .IS_REACT_ACT_ENVIRONMENT = true;
 
+const TEST_NOW = new Date("2026-08-01T12:00:00.000Z");
+
 describe("ConceptExplorationClient", () => {
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(TEST_NOW);
     mocks.contexts.clear();
     mocks.nodes.clear();
     mocks.relations.clear();
@@ -85,6 +90,8 @@ describe("ConceptExplorationClient", () => {
 
   afterEach(() => {
     document.body.replaceChildren();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it("loads related memories and connected concepts without fabricated titles", async () => {
@@ -482,6 +489,48 @@ describe("ConceptExplorationClient", () => {
         link.getAttribute("href")?.startsWith("/memory/detail?nodeId=evolution-recent"),
       ),
     ).toBeTruthy();
+  });
+
+  it("classifies evolution fixture dates across historical, previous and recent windows", () => {
+    const contexts = [context({ id: "railway", name: "Railway" })];
+    const nodes = [
+      node({
+        id: "historical-boundary",
+        updatedAt: "2026-06-02T11:59:59.999Z",
+      }),
+      node({
+        id: "previous-boundary",
+        updatedAt: "2026-06-02T12:00:00.000Z",
+      }),
+      node({
+        id: "recent-boundary",
+        updatedAt: "2026-07-02T12:00:00.000Z",
+      }),
+      node({
+        id: "recent-later",
+        updatedAt: "2026-07-20T10:00:00.000Z",
+      }),
+    ];
+    const relations = nodes.map((memory) =>
+      relation({
+        id: `${memory.id}-railway`,
+        nodeId: memory.id,
+        contextId: "railway",
+      }),
+    );
+
+    const growing = deriveMemoryEvolutionSignals({
+      contexts,
+      nodes,
+      relations,
+      now: TEST_NOW,
+    }).find((signal) => signal.kind === "GROWING_CONCEPT");
+
+    expect(growing?.metrics).toMatchObject({
+      totalMemories: 4,
+      previousMemories: 1,
+      recentMemories: 2,
+    });
   });
 
   it("keeps the concept map as the only connection explorer", async () => {
