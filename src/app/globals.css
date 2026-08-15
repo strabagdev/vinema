@@ -374,6 +374,41 @@ body {
   text-underline-offset: 0.18em;
 }
 
+.vinema-memory-shell {
+  --vinema-memory-header-offset: 3.5rem;
+}
+
+.vinema-memory-shell--embedded {
+  --vinema-memory-header-offset: 0rem;
+}
+
+.vinema-memory-shell--embedded .vinema-memory-search-region {
+  position: relative;
+  top: auto;
+  flex: none;
+}
+
+.vinema-memory-search-region {
+  position: sticky;
+  top: var(--vinema-memory-header-offset);
+  z-index: 20;
+  width: 100%;
+  margin: 0;
+  padding: 0.625rem 0 0.5rem;
+  border-bottom: 1px solid var(--vinema-border-subtle);
+  background: var(--vinema-surface-panel);
+}
+
+.vinema-memory-search-panel {
+  padding-inline: 0.625rem;
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .vinema-memory-search-region {
+    background: var(--vinema-surface-panel);
+  }
+}
+
 @keyframes vinema-panel-enter {
   from {
     opacity: 0;
@@ -387,6 +422,14 @@ body {
 }
 
 @media (max-width: 640px) {
+  .vinema-memory-shell {
+    --vinema-memory-header-offset: 3.5rem;
+  }
+
+  .vinema-memory-search-region {
+    padding-bottom: 0.25rem;
+  }
+
   .vinema-canvas-layout,
   .vinema-canvas {
     --vinema-canvas-icon-width: 3rem;
@@ -415,6 +458,10 @@ body {
 }
 
 @media (min-width: 641px) and (max-width: 1024px) {
+  .vinema-memory-shell {
+    --vinema-memory-header-offset: 3.5rem;
+  }
+
   .vinema-canvas-layout,
   .vinema-canvas {
     --vinema-canvas-edge-gutter: 2rem;

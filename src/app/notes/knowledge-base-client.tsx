@@ -3,7 +3,13 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Search, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Node } from "@/domain/node/node";
@@ -85,7 +91,7 @@ export function KnowledgeBaseClient({
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [error, setError] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const embeddedScrollRef = useRef<HTMLElement | null>(null);
+  const embeddedScrollRef = useRef<HTMLDivElement | null>(null);
 
   const activeQuery = query.trim();
   const searchResultsByNodeId = useMemo(
@@ -303,73 +309,53 @@ export function KnowledgeBaseClient({
     });
   }
 
-  return (
-    <section
-      ref={embedded ? embeddedScrollRef : undefined}
-      className={
-        embedded
-          ? "vinema-scrollbar mx-auto flex h-full min-h-0 w-full max-w-5xl flex-1 flex-col gap-6 overflow-y-auto px-4 py-4 sm:px-6"
-          : "mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8"
-      }
-      onScroll={
-        embedded
-          ? (event) =>
-              onEmbeddedStateChange?.({
-                query: embeddedQuery,
-                scrollTop: event.currentTarget.scrollTop,
-              })
-          : undefined
-      }
+  const searchForm = (
+    <form
+      onSubmit={handleSubmit}
+      className="flex flex-col gap-2 sm:flex-row sm:items-center"
+      data-memory-search-form=""
     >
-      {embedded ? null : (
-        <div className="space-y-2">
-          <h1 className="text-3xl font-semibold tracking-normal text-zinc-950">
-            Memoria
-          </h1>
-          <p className="max-w-2xl text-sm leading-6 text-zinc-600">
-            Tus capturas organizadas por contexto.
-          </p>
-        </div>
-      )}
-
-      <form
-        onSubmit={handleSubmit}
-        className="flex flex-col gap-3 rounded-lg border border-zinc-200 bg-white p-4 sm:flex-row"
-      >
-        <label className="sr-only" htmlFor="knowledge-search">
-          Buscar en la Memoria
-        </label>
-        <div className="relative min-w-0 flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-          <Input
-            id="knowledge-search"
-            ref={searchInputRef}
-            value={draftQuery}
-            onChange={(event) => setDraftQuery(event.target.value)}
-            placeholder="Buscar en la Memoria"
-            className="h-11 pl-9"
-          />
-        </div>
-        {activeQuery ? (
-          <Button type="button" variant="ghost" onClick={clearSearch}>
-            <X className="h-4 w-4" />
-            Limpiar
-          </Button>
-        ) : null}
-        <Button type="submit">
-          <Search className="h-4 w-4" />
-          Buscar
-        </Button>
-      </form>
-
-      <div className="min-h-5 text-sm text-zinc-500" aria-live="polite">
-        {loadState === "loading"
-          ? "Cargando capturas..."
-          : activeQuery
-            ? `${resultCount} resultados para "${activeQuery}".`
-            : `${resultCount} capturas activas.`}
+      <label className="sr-only" htmlFor="knowledge-search">
+        Buscar en la Memoria
+      </label>
+      <div className="relative min-w-0 flex-1">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+        <Input
+          id="knowledge-search"
+          ref={searchInputRef}
+          value={draftQuery}
+          onChange={(event) => setDraftQuery(event.target.value)}
+          placeholder="Buscar en la Memoria"
+          className="h-9 pl-9"
+        />
       </div>
-
+      {activeQuery ? (
+        <Button type="button" variant="ghost" size="sm" onClick={clearSearch}>
+          <X className="h-4 w-4" />
+          Limpiar
+        </Button>
+      ) : null}
+      <Button type="submit" size="sm">
+        <Search className="h-4 w-4" />
+        Buscar
+      </Button>
+    </form>
+  );
+  const resultCounter = (
+    <div
+      className="min-h-4 px-1 text-xs leading-5 text-zinc-500"
+      aria-live="polite"
+      data-memory-result-counter=""
+    >
+      {loadState === "loading"
+        ? "Cargando capturas..."
+        : activeQuery
+          ? `${resultCount} resultados para "${activeQuery}".`
+          : `${resultCount} capturas activas.`}
+    </div>
+  );
+  const resultsContent = (
+    <>
       {error ? (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           <p>{error}</p>
@@ -394,8 +380,8 @@ export function KnowledgeBaseClient({
       ) : loadState === "ready" && !activeQuery && captures.length === 0 ? (
         <EmptyBaseState />
       ) : loadState === "ready" ? (
-        <div className="space-y-4">
-          <div className="space-y-3">
+        <>
+          <div className="space-y-3" data-memory-capture-list="">
             {visibleThreadEntries.map((entry) =>
               entry.kind === "thread" ? (
                 <MemoryThreadItem
@@ -420,7 +406,7 @@ export function KnowledgeBaseClient({
             )}
           </div>
 
-          <div className="flex flex-col items-center gap-3">
+          <div className="mt-4 flex flex-col items-center gap-3">
             {hasMore ? (
               <Button
                 type="button"
@@ -442,8 +428,59 @@ export function KnowledgeBaseClient({
               </p>
             ) : null}
           </div>
-        </div>
+        </>
       ) : null}
+    </>
+  );
+
+  return (
+    <section
+      className={
+        embedded
+          ? "vinema-memory-shell vinema-memory-shell--embedded mx-auto flex h-full min-h-0 w-full max-w-5xl flex-1 flex-col gap-0 px-4 py-4 sm:px-6"
+          : "vinema-memory-shell mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8"
+      }
+      data-knowledge-base-client=""
+    >
+      {embedded ? null : (
+        <div className="space-y-2">
+          <h1 className="text-3xl font-semibold tracking-normal text-zinc-950">
+            Memoria
+          </h1>
+          <p className="max-w-2xl text-sm leading-6 text-zinc-600">
+            Tus capturas organizadas por contexto.
+          </p>
+        </div>
+      )}
+
+      <div
+        className="vinema-memory-search-region"
+        data-memory-search-region=""
+      >
+        <div className="vinema-memory-search-panel space-y-1">
+          {searchForm}
+          {resultCounter}
+        </div>
+      </div>
+
+      {embedded ? (
+        <div
+          ref={embeddedScrollRef}
+          className="vinema-memory-results-scroll vinema-scrollbar min-h-0 flex-1 overflow-y-auto pt-3"
+          data-memory-results-scroll=""
+          data-memory-scroll-container=""
+          onScroll={(event) =>
+            onEmbeddedStateChange?.({
+              query: embeddedQuery,
+              scrollTop: event.currentTarget.scrollTop,
+            })
+          }
+        >
+          {resultsContent}
+        </div>
+      ) : (
+        resultsContent
+      )}
     </section>
   );
 }

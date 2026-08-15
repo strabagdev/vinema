@@ -1,6 +1,7 @@
 import { act, createElement } from "react";
 import type { ComponentType, ReactElement } from "react";
 import { createRoot } from "react-dom/client";
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { KnowledgeBaseClient } from "@/app/notes/knowledge-base-client";
 import type { Context } from "@/domain/context/context";
@@ -123,6 +124,8 @@ describe("Knowledge Base", () => {
     mocks.nodes.clear();
     mocks.relations.clear();
     mocks.searchParams = new URLSearchParams();
+    mocks.vinemaContext.status = "ready";
+    mocks.vinemaContext.error = null;
   });
 
   afterEach(() => {
@@ -181,6 +184,209 @@ describe("Knowledge Base", () => {
     expect(links).toHaveLength(KNOWLEDGE_BASE_BATCH_SIZE + 1);
     expect(new Set(links).size).toBe(KNOWLEDGE_BASE_BATCH_SIZE + 1);
     expect(screen.textContent).toContain("Llegaste al final de la Memoria.");
+  });
+
+  it("keeps the search controls sticky above the normal memory list", async () => {
+    setMockNodes([
+      createNode({ id: "sticky-a", content: "Captura A" }),
+      createNode({ id: "sticky-b", content: "Captura B" }),
+    ]);
+
+    const screen = await renderKnowledgeBase();
+    const shell = screen.querySelector("[data-knowledge-base-client]");
+    const searchRegion = screen.querySelector("[data-memory-search-region]");
+    const searchPanel = screen.querySelector(".vinema-memory-search-panel");
+    const form = screen.querySelector("[data-memory-search-form]");
+    const counter = screen.querySelector("[data-memory-result-counter]");
+
+    expect(shell?.className).toContain("vinema-memory-shell");
+    expect(shell?.className).not.toContain("overflow-y-auto");
+    expect(shell?.className).not.toContain("vinema-scrollbar");
+    expect(searchRegion?.className).toContain("vinema-memory-search-region");
+    expect(searchRegion?.className).not.toContain("space-y-1");
+    expect(searchPanel?.className).toContain("vinema-memory-search-panel");
+    expect(searchPanel?.className).toContain("space-y-1");
+    expect(form?.className).toContain("gap-2");
+    expect(form?.className).not.toContain("bg-white");
+    expect(counter?.className).toContain("text-xs");
+    expect(searchRegion?.contains(form)).toBe(true);
+    expect(searchRegion?.contains(counter)).toBe(true);
+    expect(counter?.textContent).toContain("2 capturas activas.");
+  });
+
+  it("renders memory captures as a normal vertical list without changing DOM order or navigation", async () => {
+    setMockNodes([
+      createNode({
+        id: "list-old",
+        content: "Captura antigua",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }),
+      createNode({
+        id: "list-middle",
+        content: "Captura intermedia",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+      }),
+      createNode({
+        id: "list-new",
+        content: "Captura reciente",
+        updatedAt: "2026-01-03T00:00:00.000Z",
+      }),
+      createNode({
+        id: "list-latest",
+        content: "Captura final",
+        updatedAt: "2026-01-04T00:00:00.000Z",
+      }),
+    ]);
+
+    const screen = await renderKnowledgeBase();
+    const captureList = screen.querySelector("[data-memory-capture-list]");
+    const cards = Array.from(captureList?.children ?? []);
+    const links = Array.from(screen.querySelectorAll("a[href^='/memory/detail']"));
+
+    expect(captureList?.className).toContain("space-y-3");
+    expect(screen.querySelector("[data-memory-stack-list]")).toBeNull();
+    expect(screen.querySelector("[data-memory-stack-page]")).toBeNull();
+    expect(cards).toHaveLength(4);
+    expect(cards.every((card) => card.tagName === "ARTICLE")).toBe(true);
+    expect(links.map((link) => link.textContent)).toEqual([
+      expect.stringContaining("Captura final"),
+      expect.stringContaining("Captura reciente"),
+      expect.stringContaining("Captura intermedia"),
+      expect.stringContaining("Captura antigua"),
+    ]);
+    expect(links[0]?.getAttribute("href")).toContain("nodeId=list-latest");
+  });
+
+  it("keeps loading and empty memory states outside the normal capture list", async () => {
+    mocks.vinemaContext.status = "loading";
+    const loadingScreen = await renderKnowledgeBase();
+
+    expect(loadingScreen.textContent).toContain("Cargando Memoria");
+    expect(loadingScreen.querySelector("[data-memory-capture-list]")).toBeNull();
+    document.body.replaceChildren();
+
+    mocks.vinemaContext.status = "ready";
+    const emptyScreen = await renderKnowledgeBase();
+
+    expect(emptyScreen.textContent).toContain("Todavia no has capturado contenido.");
+    expect(emptyScreen.querySelector("[data-memory-capture-list]")).toBeNull();
+  });
+
+  it("renders the embedded memory view as a normal list inside its own scroll container", async () => {
+    setMockNodes([
+      createNode({
+        id: "embedded-old",
+        content: "Embebida antigua",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }),
+      createNode({
+        id: "embedded-middle",
+        content: "Embebida intermedia",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+      }),
+      createNode({
+        id: "embedded-new",
+        content: "Embebida reciente",
+        updatedAt: "2026-01-03T00:00:00.000Z",
+      }),
+    ]);
+    const embeddedScreen = await renderKnowledgeBase(
+      createElement(KnowledgeBaseClient as ComponentType<{ embedded?: boolean }>, {
+        embedded: true,
+      }),
+    );
+    const shell = embeddedScreen.querySelector("[data-knowledge-base-client]");
+    const searchRegion = embeddedScreen.querySelector("[data-memory-search-region]");
+    const resultsScroll = embeddedScreen.querySelector("[data-memory-results-scroll]");
+    const captureList = embeddedScreen.querySelector("[data-memory-capture-list]");
+    const cards = Array.from(captureList?.children ?? []);
+
+    expect(shell?.hasAttribute("data-memory-scroll-container")).toBe(false);
+    expect(shell?.className).toContain("vinema-memory-shell");
+    expect(shell?.className).toContain("vinema-memory-shell--embedded");
+    expect(shell?.className).toContain("flex-col");
+    expect(shell?.className).toContain("min-h-0");
+    expect(shell?.className).not.toContain("overflow-y-auto");
+    expect(shell?.className).not.toContain("vinema-scrollbar");
+    expect(searchRegion?.className).toContain("vinema-memory-search-region");
+    expect(searchRegion?.parentElement).toBe(shell);
+    expect(resultsScroll?.getAttribute("data-memory-scroll-container")).toBe("");
+    expect(resultsScroll?.className).toContain("vinema-memory-results-scroll");
+    expect(resultsScroll?.className).toContain("min-h-0");
+    expect(resultsScroll?.className).toContain("flex-1");
+    expect(resultsScroll?.className).toContain("overflow-y-auto");
+    expect(resultsScroll?.className).toContain("vinema-scrollbar");
+    expect(resultsScroll?.parentElement).toBe(shell);
+    expect(captureList?.className).toContain("space-y-3");
+    expect(captureList?.parentElement).toBe(resultsScroll);
+    expect(resultsScroll?.contains(searchRegion)).toBe(false);
+    expect(embeddedScreen.querySelector("[data-memory-stack-list]")).toBeNull();
+    expect(embeddedScreen.querySelector("[data-memory-stack-page]")).toBeNull();
+    expect(cards).toHaveLength(3);
+    expect(cards.every((card) => card.tagName === "ARTICLE")).toBe(true);
+  });
+
+  it("rebuilds memory list entries from the current search result set", async () => {
+    mocks.searchParams = new URLSearchParams("q=mitcom");
+    setMockNodes([
+      createNode({ id: "match", content: "Mitcom activo" }),
+      createNode({ id: "other", content: "Contenido externo" }),
+    ]);
+
+    const screen = await renderKnowledgeBase();
+    const cards = Array.from(
+      screen.querySelectorAll("[data-memory-capture-list] > article"),
+    );
+
+    expect(cards).toHaveLength(1);
+    expect(cards[0]?.textContent).toContain("Mitcom activo");
+    expect(cards[0]?.textContent).not.toContain("Contenido externo");
+  });
+
+  it("keeps only the memory search header sticky and removes stack carousel CSS", () => {
+    const globals = readFileSync("src/app/globals.css", "utf8");
+
+    expect(globals).toContain(".vinema-memory-shell");
+    expect(globals).toContain(".vinema-memory-shell--embedded");
+    expect(globals).toContain("--vinema-memory-header-offset: 3.5rem;");
+    expect(globals).toContain("--vinema-memory-header-offset: 0rem");
+    expect(globals).toContain(".vinema-memory-shell--embedded .vinema-memory-search-region");
+    expect(globals).toContain("position: relative;");
+    expect(globals).toContain("top: auto;");
+    expect(globals).toContain("flex: none;");
+    expect(globals).toContain(".vinema-memory-search-region");
+    expect(globals).toContain("position: sticky;");
+    expect(globals).toContain("top: var(--vinema-memory-header-offset);");
+    expect(globals).toContain("z-index: 20;");
+    expect(globals).toContain("width: 100%;");
+    expect(globals).toContain("margin: 0;");
+    expect(globals).toContain("padding: 0.625rem 0 0.5rem;");
+    expect(globals).toContain("border-bottom: 1px solid var(--vinema-border-subtle);");
+    expect(globals).toContain("background: var(--vinema-surface-panel);");
+    expect(globals).toContain(".vinema-memory-search-panel");
+    expect(globals).toContain("padding-inline: 0.625rem;");
+    expect(globals).toContain("@media (min-width: 641px) and (max-width: 1024px)");
+    expect(globals).not.toContain("vinema-memory-stack");
+    expect(globals).not.toContain("--memory-stack");
+    expect(globals).not.toContain("data-memory-stack");
+    expect(globals).not.toContain("vinema-memory-card");
+    expect(globals).not.toContain("scroll-snap");
+    expect(globals).not.toContain("padding-bottom: var(--vinema-memory-stack");
+    expect(globals).not.toContain("--vinema-memory-header-offset: calc(3.5rem");
+    expect(globals).not.toContain("border-radius: 0.75rem;");
+  });
+
+  it("removes stack carousel code from the memory client", () => {
+    const source = readFileSync("src/app/notes/knowledge-base-client.tsx", "utf8");
+
+    expect(source).toContain('data-memory-capture-list=""');
+    expect(source).not.toContain("MemoryStackPage");
+    expect(source).not.toContain("memoryStack");
+    expect(source).not.toContain("data-memory-stack");
+    expect(source).not.toContain("--memory-stack");
+    expect(source).not.toContain("IntersectionObserver");
+    expect(source).not.toContain("activeStackIndex");
+    expect(source).not.toContain("scroll-snap");
   });
 
   it("renders a single memory surface and groups captures with the same emergent identity", async () => {
@@ -537,12 +743,22 @@ describe("Knowledge Base", () => {
     const firstContent = Array.from(surface.children).find(
       (child) => !child.hasAttribute("aria-live"),
     );
+    const searchRegion = screen.querySelector("[data-memory-search-region]");
+    const resultsScroll = screen.querySelector("[data-memory-results-scroll]");
 
     expect(memoryButton).toBeTruthy();
     expect(screen.querySelector("h1")).toBeNull();
     expect(screen.textContent).not.toContain("Tus capturas organizadas por contexto.");
-    expect(firstContent?.tagName).toBe("FORM");
+    expect(firstContent).toBe(searchRegion);
+    expect(searchRegion?.querySelector("form")?.textContent).toContain("Buscar");
     expect(firstContent?.textContent).toContain("Buscar");
+    expect(surface.hasAttribute("data-memory-scroll-container")).toBe(false);
+    expect(resultsScroll?.getAttribute("data-memory-scroll-container")).toBe("");
+    expect(resultsScroll?.parentElement).toBe(surface);
+    expect(resultsScroll?.contains(searchRegion)).toBe(false);
+    expect(screen.querySelector("[data-memory-capture-list]")).toBeTruthy();
+    expect(screen.querySelector("[data-memory-stack-list]")).toBeNull();
+    expect(screen.querySelector("[data-memory-stack-page]")).toBeNull();
     expect(screen.querySelector("a[href^='/memory/detail']")).toBeNull();
 
     await click(memoryButton as HTMLButtonElement);
