@@ -419,6 +419,36 @@ describe("sync state engine", () => {
     );
   });
 
+  it("bridge ignores already-running skips so health is not degraded", () => {
+    const events = collectBridgeEvents([
+      automaticState({
+        started: true,
+        phase: "IDLE",
+        lastRunStartedAt: now,
+        lastRunFinishedAt: later,
+        lastError: null,
+        lastResult: {
+          status: "ALREADY_RUNNING",
+          startedAt: now,
+          finishedAt: later,
+        },
+      }),
+    ]);
+    const engine = createSyncStateEngine({
+      ...initialSyncState,
+      lifecycle: "STARTED",
+      phase: "SUCCESS",
+      connectivity: "ONLINE",
+      lastSuccessfulSyncAt: now,
+    });
+
+    engine.dispatchMany(events);
+
+    expect(events.some((event) => event.type === "SYNC_FAILED")).toBe(false);
+    expect(engine.getState().lastError).toBeNull();
+    expect(selectSyncHealth(engine.getState())).toBe("HEALTHY");
+  });
+
   it("bridge can be disposed and integrates with AutomaticSyncOrchestrator", async () => {
     const engine = createSyncStateEngine();
     const orchestrator = createAutomaticSyncOrchestrator({

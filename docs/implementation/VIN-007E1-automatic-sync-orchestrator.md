@@ -63,7 +63,13 @@ Si `syncNow()` se llama mientras hay una ejecucion activa, devuelve:
 
 `ALREADY_RUNNING`
 
-No se acumula una cola de ejecuciones.
+Ese resultado es un skip de concurrencia, no un fallo. No debe degradar la
+salud visible de sincronizacion ni escribirse como `sync_cycle_failed`.
+
+Las solicitudes concurrentes se coalescen: si llega una o mas solicitudes
+mientras el ciclo actual esta activo, el orquestador marca una solicitud
+pendiente y ejecuta como maximo un ciclo adicional al terminar el ciclo en
+curso. No se acumula una cola de ejecuciones.
 
 ## Scheduler
 
@@ -103,7 +109,9 @@ La cancelacion de una ejecucion activa es responsabilidad de `cancelCurrentRun()
 
 `syncNow()` ejecuta un ciclo inmediato sin requerir `start()`.
 
-Si el orquestador ya esta ejecutando un ciclo, devuelve `ALREADY_RUNNING`.
+Si el orquestador ya esta ejecutando un ciclo, devuelve `ALREADY_RUNNING`,
+registra `sync_cycle_skipped` con `code = ALREADY_RUNNING` y coalescea una
+ejecucion posterior.
 
 Si el orquestador esta iniciado, al finalizar un `syncNow()` se programa el siguiente ciclo automatico.
 
@@ -174,13 +182,17 @@ El logger registra eventos estructurados:
 - `push_finished`
 - `pull_started`
 - `pull_finished`
-- `sync_cycle_succeeded`
+- `sync_cycle_completed`
 - `sync_cycle_failed`
 - `sync_cycle_cancelled`
-- `sync_cycle_skipped_already_running`
+- `sync_cycle_skipped`
+- `sync_follow_up_started`
 - `next_sync_scheduled`
 
 No se registran tokens, contenidos de capturas, payloads completos ni secretos.
+
+`sync_cycle_failed` queda reservado para fallos reales. Los skips por
+concurrencia usan nivel `debug` y no escriben `lastError`.
 
 ## Tests
 

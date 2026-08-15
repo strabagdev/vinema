@@ -112,6 +112,7 @@ describe("automatic sync orchestrator", () => {
 
     setup.orchestrator.start();
     await setup.scheduler.fireNext();
+    await waitForPhase(setup.orchestrator.getState, "WAITING");
     expect(setup.scheduler.handles.at(-1)?.delayMs).toBe(10_000);
   });
 
@@ -207,8 +208,16 @@ describe("automatic sync orchestrator", () => {
 
   it("syncNow works without start and returns ALREADY_RUNNING during an active run", async () => {
     const deferredPush = createDeferred<PushCoordinatorResult>();
+    let firstPush = true;
     const setup = createSetup({
-      pushRun: () => deferredPush.promise,
+      pushRun: () => {
+        if (firstPush) {
+          firstPush = false;
+          return deferredPush.promise;
+        }
+
+        return pushSuccess;
+      },
     });
 
     const firstRun = setup.orchestrator.syncNow();
@@ -218,22 +227,138 @@ describe("automatic sync orchestrator", () => {
 
     expect(skipped.status).toBe("ALREADY_RUNNING");
     expect(result.status).toBe("SUCCESS");
-    expect(setup.push.run).toHaveBeenCalledTimes(1);
+    expect(setup.push.run).toHaveBeenCalledTimes(2);
+    expect(setup.logs).toContainEqual(
+      expect.objectContaining({
+        level: "debug",
+        message: "sync_cycle_skipped",
+        context: expect.objectContaining({
+          code: "ALREADY_RUNNING",
+          stage: "PUSH",
+        }),
+      }),
+    );
+    expect(setup.logs).not.toContainEqual(
+      expect.objectContaining({ message: "sync_cycle_failed" }),
+    );
   });
 
-  it("timer firing while a manual run is active skips instead of queueing another run", async () => {
+  it("timer firing while a manual run is active coalesces one follow-up run", async () => {
     const deferredPush = createDeferred<PushCoordinatorResult>();
+    let firstPush = true;
     const setup = createSetup({
-      pushRun: () => deferredPush.promise,
+      pushRun: () => {
+        if (firstPush) {
+          firstPush = false;
+          return deferredPush.promise;
+        }
+
+        return pushSuccess;
+      },
     });
     setup.orchestrator.start();
     await setup.scheduler.fireNext();
     const skipped = await setup.orchestrator.syncNow();
     deferredPush.resolve(pushSuccess);
-    await flushPromises();
+    await waitForPhase(setup.orchestrator.getState, "WAITING");
 
     expect(skipped.status).toBe("ALREADY_RUNNING");
-    expect(setup.push.run).toHaveBeenCalledTimes(1);
+    expect(setup.push.run).toHaveBeenCalledTimes(2);
+    expect(setup.pull.run).toHaveBeenCalledTimes(2);
+  });
+
+  it("coalesces many concurrent triggers into a single follow-up cycle", async () => {
+    const deferredPush = createDeferred<PushCoordinatorResult>();
+    let firstPush = true;
+    const setup = createSetup({
+      pushRun: () => {
+        if (firstPush) {
+          firstPush = false;
+          return deferredPush.promise;
+        }
+
+        return pushSuccess;
+      },
+    });
+
+    const firstRun = setup.orchestrator.syncNow();
+    const skipped = await Promise.all(
+      Array.from({ length: 10 }, () => setup.orchestrator.syncNow()),
+    );
+    deferredPush.resolve(pushSuccess);
+    const result = await firstRun;
+
+    expect(skipped.every((item) => item.status === "ALREADY_RUNNING")).toBe(true);
+    expect(result.status).toBe("SUCCESS");
+    expect(setup.push.run).toHaveBeenCalledTimes(2);
+    expect(setup.pull.run).toHaveBeenCalledTimes(2);
+    expect(
+      setup.logs.filter((entry) => entry.message === "sync_follow_up_started"),
+    ).toHaveLength(1);
+  });
+
+  it("runs a follow-up cycle so a real request is not lost while another cycle is active", async () => {
+    const deferredPush = createDeferred<PushCoordinatorResult>();
+    let firstPush = true;
+    const setup = createSetup({
+      pushRun: () => {
+        if (firstPush) {
+          firstPush = false;
+          return deferredPush.promise;
+        }
+
+        return { ...pushSuccess, pushed: 2, removedFromOutbox: 2 };
+      },
+    });
+
+    const firstRun = setup.orchestrator.syncNow();
+    await setup.orchestrator.syncNow();
+    deferredPush.resolve(pushSuccess);
+    const result = await firstRun;
+
+    expect(result.pushResult).toMatchObject({
+      status: "SUCCESS",
+      pushed: 2,
+      removedFromOutbox: 2,
+    });
+    expect(setup.order).toEqual(["push", "pull", "push", "pull"]);
+  });
+
+  it("treats coordinator already-running skips as skipped, not failed", async () => {
+    const setup = createSetup({
+      pushResults: [
+        {
+          ...pushSuccess,
+          status: "SKIPPED_ALREADY_RUNNING",
+          pushed: 0,
+          removedFromOutbox: 0,
+        },
+      ],
+    });
+
+    const result = await setup.orchestrator.syncNow();
+
+    expect(result.status).toBe("ALREADY_RUNNING");
+    expect(setup.pull.run).not.toHaveBeenCalled();
+    expect(setup.orchestrator.getState()).toMatchObject({
+      running: false,
+      phase: "IDLE",
+      lastError: null,
+      lastResult: { status: "ALREADY_RUNNING" },
+    });
+    expect(setup.logs).toContainEqual(
+      expect.objectContaining({
+        level: "debug",
+        message: "sync_cycle_skipped",
+        context: expect.objectContaining({
+          code: "ALREADY_RUNNING",
+          stage: "PUSH",
+        }),
+      }),
+    );
+    expect(setup.logs).not.toContainEqual(
+      expect.objectContaining({ message: "sync_cycle_failed" }),
+    );
   });
 
   it("stop is idempotent, cancels future timers and does not cancel an active run", async () => {
@@ -381,7 +506,7 @@ describe("automatic sync orchestrator", () => {
         "push_finished",
         "pull_started",
         "pull_finished",
-        "sync_cycle_succeeded",
+        "sync_cycle_completed",
       ]),
     );
     expect(JSON.stringify(setup.logs)).not.toContain("Captura");

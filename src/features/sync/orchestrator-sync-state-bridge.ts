@@ -202,6 +202,16 @@ function resultEvents(state: AutomaticSyncState, at: string): SyncEvent[] {
     ];
   }
 
+  if (result.status === "ALREADY_RUNNING") {
+    return [
+      {
+        type: "SYNC_SKIPPED",
+        at: result.finishedAt,
+        code: "ALREADY_RUNNING",
+      },
+    ];
+  }
+
   return [];
 }
 

@@ -118,6 +118,7 @@ export function createAutomaticSyncOrchestrator({
   let timer: SyncSchedulerHandle | null = null;
   let activeRun: Promise<SyncCycleResult> | null = null;
   let activeStage: ActiveStage = null;
+  let syncRequestedWhileRunning = false;
 
   function start() {
     if (state.started) {
@@ -149,6 +150,7 @@ export function createAutomaticSyncOrchestrator({
     }
 
     clearTimer();
+    syncRequestedWhileRunning = false;
     updateState({
       started: false,
       nextRunAt: null,
@@ -161,24 +163,29 @@ export function createAutomaticSyncOrchestrator({
   async function syncNow() {
     if (activeRun) {
       const now = clock();
+      syncRequestedWhileRunning = true;
       const result: SyncCycleResult = {
         status: "ALREADY_RUNNING",
         startedAt: now,
         finishedAt: now,
       };
-      log("warn", "sync_cycle_skipped_already_running");
+      log("debug", "sync_cycle_skipped", {
+        code: "ALREADY_RUNNING",
+        stage: activeStage ?? "ORCHESTRATOR",
+        pending: syncRequestedWhileRunning,
+      });
       return result;
     }
 
     clearTimer();
-    activeRun = runCycle();
+    activeRun = runCoalescedCycles();
 
     try {
       return await activeRun;
     } finally {
       activeRun = null;
       activeStage = null;
-      if (state.started) {
+      if (state.started && !activeRun) {
         scheduleNext(normalizedConfig.syncIntervalMs);
       }
     }
@@ -267,6 +274,10 @@ export function createAutomaticSyncOrchestrator({
         conflicts: pushResult.conflicts,
       });
 
+      if (pushResult.status === "SKIPPED_ALREADY_RUNNING") {
+        return finishAlreadyRunning("PUSH", startedAt, { pushResult });
+      }
+
       if (pushResult.status === "CANCELLED") {
         return finishCancelled("PUSH", startedAt, { pushResult });
       }
@@ -289,6 +300,13 @@ export function createAutomaticSyncOrchestrator({
         applied: pullResult.applied,
         conflicts: pullResult.conflicts,
       });
+
+      if (pullResult.status === "SKIPPED_ALREADY_RUNNING") {
+        return finishAlreadyRunning("PULL", startedAt, {
+          pushResult,
+          pullResult,
+        });
+      }
 
       if (pullResult.status === "CANCELLED") {
         return finishCancelled("PULL", startedAt, { pushResult, pullResult });
@@ -322,7 +340,7 @@ export function createAutomaticSyncOrchestrator({
         timestamp: finishedAt,
         status: "ONLINE",
       });
-      log("info", "sync_cycle_succeeded", {
+      log("info", "sync_cycle_completed", {
         startedAt,
         finishedAt,
         durationMs: durationMs(startedAt, finishedAt),
@@ -359,6 +377,47 @@ export function createAutomaticSyncOrchestrator({
     } finally {
       activeStage = null;
     }
+  }
+
+  async function runCoalescedCycles(): Promise<SyncCycleResult> {
+    let result = await runCycle();
+
+    while (syncRequestedWhileRunning) {
+      syncRequestedWhileRunning = false;
+      log("debug", "sync_follow_up_started", {
+        previousStatus: result.status,
+      });
+      result = await runCycle();
+    }
+
+    return result;
+  }
+
+  function finishAlreadyRunning(
+    stage: "PUSH" | "PULL",
+    startedAt: string,
+    partial: Pick<SyncCycleResult, "pushResult" | "pullResult">,
+  ) {
+    const finishedAt = clock();
+    const result: SyncCycleResult = {
+      status: "ALREADY_RUNNING",
+      startedAt,
+      finishedAt,
+      ...partial,
+    };
+    updateState({
+      running: false,
+      phase: "IDLE",
+      lastRunFinishedAt: finishedAt,
+      lastError: null,
+      lastResult: result,
+    });
+    log("debug", "sync_cycle_skipped", {
+      code: "ALREADY_RUNNING",
+      stage,
+      durationMs: durationMs(startedAt, finishedAt),
+    });
+    return result;
   }
 
   function finishCancelled(

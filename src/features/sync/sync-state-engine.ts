@@ -60,6 +60,7 @@ export type SyncEvent =
   | { type: "ORCHESTRATOR_STOPPED"; at: string }
   | { type: "SYNC_SCHEDULED"; nextRunAt: string }
   | { type: "SYNC_STARTED"; at: string }
+  | { type: "SYNC_SKIPPED"; at: string; code?: string }
   | { type: "PUSH_STARTED"; at: string }
   | {
       type: "PUSH_FINISHED";
@@ -167,6 +168,13 @@ export function reduceSyncState(
         phase: "PUSHING",
         lastRunStartedAt: event.at,
         nextRunAt: null,
+        lastError: null,
+      };
+    case "SYNC_SKIPPED":
+      return {
+        ...state,
+        phase: state.lifecycle === "STARTED" ? "WAITING" : "IDLE",
+        lastRunFinishedAt: event.at,
         lastError: null,
       };
     case "PUSH_STARTED":
