@@ -30,9 +30,27 @@ export class InMemoryNodeRepository implements NodeRepository {
     return normalizedNode;
   }
 
+  async archive(captureId: string, archivedAt: string): Promise<Node> {
+    const existing = this.nodes.get(captureId);
+
+    if (!existing || existing.deletedAt !== null) {
+      throw new Error("No se encontro la captura.");
+    }
+
+    const archivedNode: Node = {
+      ...existing,
+      status: "ARCHIVED",
+      archivedAt,
+      updatedAt: archivedAt,
+      version: existing.version + 1,
+    };
+    this.nodes.set(archivedNode.id, archivedNode);
+    return archivedNode;
+  }
+
   async findById(id: string): Promise<Node | null> {
     const node = this.nodes.get(id);
-    return node && node.deletedAt === null ? node : null;
+    return node && node.deletedAt === null && !node.archivedAt ? node : null;
   }
 
   async listActive(): Promise<Node[]> {
@@ -40,6 +58,7 @@ export class InMemoryNodeRepository implements NodeRepository {
       .filter(
         (node) =>
           node.deletedAt === null &&
+          !node.archivedAt &&
           node.organizationStatus === "ORGANIZED",
       )
       .sort(byNewestUpdatedAt);
@@ -50,17 +69,22 @@ export class InMemoryNodeRepository implements NodeRepository {
       .filter(
         (node) =>
           node.deletedAt === null &&
+          !node.archivedAt &&
           node.organizationStatus === "INBOX",
       )
       .sort(byNewestUpdatedAt);
   }
 
-  async listByWorkspace(workspaceId: string): Promise<Node[]> {
+  async listByWorkspace(
+    workspaceId: string,
+    options: { includeArchived?: boolean } = {},
+  ): Promise<Node[]> {
     return Array.from(this.nodes.values())
       .filter(
         (node) =>
           node.workspaceId === workspaceId &&
-          node.deletedAt === null,
+          node.deletedAt === null &&
+          (options.includeArchived || !node.archivedAt),
       )
       .sort(byNewestUpdatedAt);
   }

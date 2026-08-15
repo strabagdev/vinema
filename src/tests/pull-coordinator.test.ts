@@ -19,6 +19,7 @@ import {
   getVinemaDb,
   resetVinemaDbConnectionForTests,
 } from "@/infrastructure/storage/vinema-db";
+import { IndexedDbNodeRepository } from "@/infrastructure/node/indexed-db-node-repository";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const deviceId = "22222222-2222-4222-8222-222222222222";
@@ -389,6 +390,49 @@ describe("pull coordinator", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("applies remote capture archives idempotently without exposing them in normal lists", async () => {
+    await seedCapture({ version: 1 });
+    const archivedAt = "2026-07-30T13:00:00.000Z";
+    const setup = createSetup({
+      responses: [
+        pullResponse({
+          changes: [
+            captureChange({
+              sequence: "2",
+              version: 2,
+              archivedAt,
+            }),
+          ],
+          nextCursor: "2",
+        }),
+        pullResponse({
+          changes: [
+            captureChange({
+              sequence: "2",
+              version: 2,
+              archivedAt,
+            }),
+          ],
+          nextCursor: "2",
+        }),
+      ],
+    });
+
+    const first = await setup.coordinator.run();
+    const second = await setup.coordinator.run();
+
+    expect(first.applied).toBe(1);
+    expect(second.idempotent).toBe(1);
+    await expect(
+      new IndexedDbNodeRepository().listByWorkspace(workspaceId),
+    ).resolves.toEqual([]);
+    await expect(
+      new IndexedDbNodeRepository().listByWorkspace(workspaceId, {
+        includeArchived: true,
+      }),
+    ).resolves.toMatchObject([{ id: captureId, archivedAt, version: 2 }]);
+  });
+
   it("cancels in-flight pull using AbortSignal", async () => {
     const seenSignal: { current: AbortSignal | null } = { current: null };
     const setup = createSetup({
@@ -508,18 +552,19 @@ function captureChange(input: {
   sequence: string;
   version?: number;
   content?: string;
+  archivedAt?: string | null;
 }) {
   return {
     sequence: input.sequence,
     entityType: "capture" as const,
-    operation: "upsert" as const,
+    operation: input.archivedAt ? "archive" as const : "upsert" as const,
     entity: {
       id: captureId,
       workspaceId,
       content: input.content ?? "Remote capture",
       createdAt: now,
       updatedAt: now,
-      archivedAt: null,
+      archivedAt: input.archivedAt ?? null,
       version: input.version ?? 1,
     },
   };

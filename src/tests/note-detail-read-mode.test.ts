@@ -360,6 +360,63 @@ describe("NoteDetailView read mode", () => {
     expect(onBack).toHaveBeenCalledOnce();
   });
 
+  it("requires exact confirmation before forgetting from detail", async () => {
+    const onClose = vi.fn();
+    const onArchive = vi.fn(async () => {
+      onClose();
+    });
+    const screen = await renderNoteDetail({ onArchive });
+    const urlBefore = window.location.href;
+
+    await openDropdown(getButtonByLabel(screen, "Abrir acciones de captura"));
+    await pressPointerClick(getMenuItem(document.body, "Olvidar"));
+
+    const confirmButton = getButton(document.body, "Olvidar captura");
+    expect(getMenu()).toBeNull();
+    expect(document.body.textContent).toContain("Olvidar captura");
+    expect(window.location.href).toBe(urlBefore);
+    expect(confirmButton?.disabled).toBe(true);
+
+    const input = document.body.querySelector<HTMLInputElement>(
+      "#forget-capture-confirmation",
+    );
+    if (!input || !confirmButton) {
+      throw new Error("Expected forget dialog controls to exist.");
+    }
+
+    await changeInput(input, "olvidar");
+    expect(confirmButton.disabled).toBe(true);
+
+    await changeInput(input, "olvidar para siempre");
+    expect(confirmButton.disabled).toBe(false);
+    await click(confirmButton);
+
+    expect(onArchive).toHaveBeenCalledOnce();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("opens and closes the detail action menu", async () => {
+    const screen = await renderNoteDetail();
+    const trigger = getButtonByLabel(screen, "Abrir acciones de captura");
+
+    expect(trigger?.getAttribute("aria-haspopup")).toBe("menu");
+    expect(trigger?.getAttribute("aria-expanded")).toBe("false");
+
+    await click(trigger);
+    expect(trigger?.getAttribute("aria-expanded")).toBe("true");
+    expect(getMenu()).toBeTruthy();
+    expect(getMenuItem(document.body, "Olvidar")).toBeTruthy();
+
+    await keyDown(document.body, "Escape");
+    expect(getMenu()).toBeNull();
+    expect(trigger?.getAttribute("aria-expanded")).toBe("false");
+
+    await click(trigger);
+    expect(getMenu()).toBeTruthy();
+    await pointerDown(document.body);
+    expect(getMenu()).toBeNull();
+  });
+
   it("enters edit mode only after pressing Editar", async () => {
     const screen = await renderNoteDetail();
 
@@ -851,6 +908,7 @@ async function renderNoteDetail({
   onBack = vi.fn(),
   onResolveCaptureSelection,
   onApplyCaptureSelection,
+  onArchive,
   feedbackService,
   canvasPreferencesStorage = new MemoryStorageAdapter(),
   embedded = false,
@@ -865,6 +923,7 @@ async function renderNoteDetail({
   onBack?: () => void;
   onResolveCaptureSelection?: Parameters<typeof NoteDetailView>[0]["onResolveCaptureSelection"];
   onApplyCaptureSelection?: Parameters<typeof NoteDetailView>[0]["onApplyCaptureSelection"];
+  onArchive?: Parameters<typeof NoteDetailView>[0]["onArchive"];
   feedbackService?: VisualFeedbackService;
   canvasPreferencesStorage?: StorageAdapter;
   embedded?: boolean;
@@ -883,6 +942,7 @@ async function renderNoteDetail({
       onBack,
       onResolveCaptureSelection,
       onApplyCaptureSelection,
+      onArchive,
       embedded,
       canvasPreferencesStorage,
     });
@@ -946,6 +1006,37 @@ function getButton(container: HTMLElement, name: string) {
   ) as HTMLButtonElement | undefined;
 }
 
+function getButtonByLabel(container: HTMLElement, label: string) {
+  const candidates = [
+    ...Array.from(container.querySelectorAll("button")),
+    ...Array.from(document.body.querySelectorAll("button")).filter(
+      (button) => !container.contains(button),
+    ),
+  ];
+
+  return candidates.find(
+    (button) => button.getAttribute("aria-label") === label,
+  ) as HTMLButtonElement | undefined;
+}
+
+function getMenu() {
+  return document.body.querySelector<HTMLElement>("[role='menu']");
+}
+
+function getMenuItem(container: HTMLElement, text: string) {
+  const element = Array.from(
+    container.querySelectorAll<HTMLElement>("[role='menuitem']"),
+  ).find(
+    (item) => item.textContent?.trim() === text,
+  );
+
+  if (!element) {
+    throw new Error(`Element not found: ${text}`);
+  }
+
+  return element;
+}
+
 function getLink(container: HTMLElement, name: string) {
   return Array.from(container.querySelectorAll("a")).find(
     (link) => link.textContent?.trim() === name,
@@ -982,6 +1073,39 @@ async function click(element: HTMLElement | undefined) {
   });
 }
 
+async function pressPointerClick(element: HTMLElement) {
+  await act(async () => {
+    element.dispatchEvent(createPointerEvent("pointerdown"));
+    element.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    element.dispatchEvent(createPointerEvent("pointerup"));
+    element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0 }));
+    element.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
+    await flushPromises();
+  });
+}
+
+async function openDropdown(element: HTMLElement | undefined) {
+  if (!element) {
+    throw new Error("Expected element to exist.");
+  }
+
+  await act(async () => {
+    element.dispatchEvent(createPointerEvent("pointerdown"));
+    element.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0 }));
+    element.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
+    await flushPromises();
+  });
+}
+
+function createPointerEvent(type: string) {
+  if (typeof PointerEvent === "function") {
+    return new PointerEvent(type, { bubbles: true, button: 0 });
+  }
+
+  return new MouseEvent(type, { bubbles: true, button: 0 });
+}
+
 async function keyDown(
   element: HTMLElement,
   key: string,
@@ -991,6 +1115,13 @@ async function keyDown(
     element.dispatchEvent(
       new KeyboardEvent("keydown", { bubbles: true, key, ...options }),
     );
+  });
+}
+
+async function pointerDown(element: HTMLElement) {
+  await act(async () => {
+    element.dispatchEvent(createPointerEvent("pointerdown"));
+    await flushPromises();
   });
 }
 
@@ -1021,6 +1152,22 @@ async function changeTextarea(
   await act(async () => {
     setNativeValue(element, value);
     element.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+async function changeInput(
+  element: HTMLInputElement | null,
+  value: string,
+) {
+  if (!element) {
+    throw new Error("Expected input to exist.");
+  }
+
+  await act(async () => {
+    setNativeValue(element, value);
+    element.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+    await flushPromises();
   });
 }
 

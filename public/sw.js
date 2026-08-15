@@ -1,10 +1,9 @@
-const CACHE_NAME = "vinema-shell-v3";
+const CACHE_NAME = "vinema-shell-v4";
 const SHELL_ASSETS = [
   "/",
   "/login",
   "/register",
   "/notes",
-  "/notes/archive",
   "/notes/detail",
   "/contexts/areas",
   "/contexts/projects",

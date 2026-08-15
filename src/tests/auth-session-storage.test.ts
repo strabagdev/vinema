@@ -191,4 +191,10 @@ describe("auth session storage", () => {
     expect(source).not.toContain("refreshToken");
     expect(source).not.toContain("accessToken");
   });
+
+  it("service worker does not precache removed legacy archive routes", () => {
+    const source = readFileSync("public/sw.js", "utf8");
+
+    expect(source).not.toContain("/notes/archive");
+  });
 });

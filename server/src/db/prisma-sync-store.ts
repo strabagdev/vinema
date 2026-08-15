@@ -287,6 +287,20 @@ async function applyEntityMutation(
 ) {
   if (mutation.entityType === "capture") {
     const version = mutation.baseVersion === null ? 1 : mutation.baseVersion + 1;
+
+    if (mutation.operation === "archive") {
+      const capture = await tx.capture.update({
+        where: { id: mutation.entityId },
+        data: {
+          updatedAt: mutation.payload.updatedAt,
+          archivedAt: mutation.payload.archivedAt,
+          version,
+        },
+      });
+
+      return { version: capture.version, archived: true };
+    }
+
     const capture = await tx.capture.upsert({
       where: { id: mutation.entityId },
       create: {

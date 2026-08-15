@@ -150,7 +150,7 @@ describe("Knowledge Suggestions v1", () => {
       node({ id: "active-b", updatedAt: "2026-06-01T10:00:00.000Z" }),
       node({
         id: "archived-node",
-        status: "ARCHIVED",
+        archivedAt: "2026-07-21T00:00:00.000Z",
         updatedAt: "2026-07-20T10:00:00.000Z",
       }),
     ];
@@ -342,12 +342,14 @@ function node({
   status = "ACTIVE",
   updatedAt,
   deletedAt = null,
+  archivedAt = null,
 }: {
   id: string;
   content?: string;
   status?: Node["status"];
   updatedAt: string;
   deletedAt?: string | null;
+  archivedAt?: string | null;
 }): Node {
   return {
     id,
@@ -360,6 +362,7 @@ function node({
     version: 1,
     createdAt: updatedAt,
     contentUpdatedAt: updatedAt,
+    archivedAt,
     updatedAt,
     deletedAt,
     createdByDeviceId: "device-1",

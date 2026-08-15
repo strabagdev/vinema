@@ -55,7 +55,16 @@ export function deriveKnowledgeSuggestions({
     return [];
   }
 
-  const model = createKnowledgeModel({ contexts, nodes, relations });
+  const activeNodes = nodes.filter((node) => node.deletedAt === null && !node.archivedAt);
+  const activeNodeIds = new Set(activeNodes.map((node) => node.id));
+  const activeRelations = relations.filter((relation) =>
+    activeNodeIds.has(relation.nodeId),
+  );
+  const model = createKnowledgeModel({
+    contexts,
+    nodes: activeNodes,
+    relations: activeRelations,
+  });
   const presentConceptIds = resolvePresentConceptIds(inputConceptIds, model);
 
   if (presentConceptIds.size === 0) {
@@ -67,28 +76,28 @@ export function deriveKnowledgeSuggestions({
       deriveConceptRelationships({
         sourceConceptId,
         contexts,
-        relations,
-        nodes,
+        relations: activeRelations,
+        nodes: activeNodes,
         now,
         limit: RELATED_NOW_LIMIT_PER_SOURCE,
       }),
     );
   const behavioralPatterns = deriveBehavioralPatterns({
     contexts,
-    relations,
-    nodes,
+    relations: activeRelations,
+    nodes: activeNodes,
     now,
   });
   const semanticStatements = deriveSemanticStatements({
     contexts,
-    relations,
-    nodes,
+    relations: activeRelations,
+    nodes: activeNodes,
     now,
   });
   const evolutionSignals = deriveMemoryEvolutionSignals({
     contexts,
-    relations,
-    nodes,
+    relations: activeRelations,
+    nodes: activeNodes,
     now,
   });
 
@@ -433,7 +442,7 @@ function createKnowledgeModel({
   const conceptIdByIdentityLabel = new Map<string, string>();
   const activeNodesById = new Map(
     nodes
-      .filter((node) => node.deletedAt === null)
+      .filter((node) => node.deletedAt === null && !node.archivedAt)
       .map((node) => [node.id, node]),
   );
   const relatedContextIds = new Set(

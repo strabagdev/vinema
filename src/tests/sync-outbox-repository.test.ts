@@ -63,6 +63,25 @@ describe("sync outbox repository", () => {
     await expect(repository.getById(mutation.mutationId)).resolves.toEqual(record);
   });
 
+  it("validates and enqueues capture archive mutations", async () => {
+    const repository = new IndexedDbSyncOutboxRepository(() => now);
+    const mutation: SyncMutation = {
+      mutationId: "55555555-5555-4555-8555-555555555555",
+      entityType: "capture",
+      operation: "archive",
+      entityId: "66666666-6666-4666-8666-666666666666",
+      baseVersion: 3,
+      payload: {
+        updatedAt: later,
+        archivedAt: later,
+      },
+    };
+
+    const record = await repository.enqueue({ workspaceId, deviceId, mutation });
+
+    expect(record.mutation).toEqual(mutation);
+  });
+
   it("persists queued mutations after closing and reopening IndexedDB", async () => {
     const mutation = makeMutation({ mutationId: "55555555-5555-4555-8555-555555555555" });
     await new IndexedDbSyncOutboxRepository(() => now).enqueue({

@@ -349,6 +349,56 @@ describe("Vinema sync API", () => {
     expect(store.captures.get(mutation.entityId)?.version).toBe(1);
   });
 
+  it("archives captures through push, keeps them for pull and is idempotent for repeated archive mutations", async () => {
+    const store = new InMemorySyncStore([workspaceId]);
+    const captureId = "55555555-5555-4555-8555-555555555555";
+    await processPush(store, {
+      workspaceId,
+      deviceId,
+      mutations: [
+        captureMutation({
+          mutationId: "44444444-4444-4444-8444-444444444444",
+          entityId: captureId,
+          baseVersion: null,
+        }),
+      ],
+    });
+    const archive = captureArchiveMutation({
+      mutationId: "66666666-6666-4666-8666-666666666666",
+      entityId: captureId,
+      baseVersion: 1,
+    });
+
+    const first = await processPush(store, {
+      workspaceId,
+      deviceId,
+      mutations: [archive],
+    });
+    const repeated = await processPush(store, {
+      workspaceId,
+      deviceId,
+      mutations: [archive],
+    });
+
+    expect(first.accepted[0]).toMatchObject({
+      entityType: "capture",
+      entityId: captureId,
+      version: 2,
+    });
+    expect(repeated.accepted[0]).toEqual(first.accepted[0]);
+    expect(store.captures.get(captureId)).toMatchObject({
+      content: "Texto de captura",
+      archivedAt: now,
+      version: 2,
+    });
+    expect(store.changes.at(-1)).toMatchObject({
+      entityType: "capture",
+      entityId: captureId,
+      operation: "archive",
+    });
+    expect(store.changes).toHaveLength(2);
+  });
+
   it("creates concepts, relations, archives without physical deletion and rejects cross-workspace relations", async () => {
     const store = new InMemorySyncStore([workspaceId, otherWorkspaceId]);
     const captureId = "55555555-5555-4555-8555-555555555555";
@@ -740,6 +790,30 @@ function captureMutation({
       content,
       createdAt,
       updatedAt: now,
+      archivedAt,
+    },
+  };
+}
+
+function captureArchiveMutation({
+  mutationId,
+  entityId,
+  baseVersion,
+  archivedAt = now,
+}: {
+  mutationId: string;
+  entityId: string;
+  baseVersion: number | null;
+  archivedAt?: string;
+}) {
+  return {
+    mutationId,
+    entityType: "capture" as const,
+    operation: "archive" as const,
+    entityId,
+    baseVersion,
+    payload: {
+      updatedAt: archivedAt,
       archivedAt,
     },
   };

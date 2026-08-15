@@ -166,7 +166,8 @@ export function diagnoseConceptSuggestionDetails({
   selectedContextIds?: string[];
 }): ConceptSuggestionDiagnosis {
   const queryTokens = uniqueTokens(tokenizeAssociationText(text));
-  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  const activeNodes = nodes.filter((node) => node.deletedAt === null && !node.archivedAt);
+  const nodesById = new Map(activeNodes.map((node) => [node.id, node]));
   const identityCandidates = collectIdentityCandidates(text);
   const identityIndex = buildConceptIdentityIndex(contexts);
   const identityMatches = resolveIdentityMatches(identityCandidates, identityIndex);
@@ -174,6 +175,9 @@ export function diagnoseConceptSuggestionDetails({
 
   for (const relation of relations) {
     if (relation.relationType === "CAPTURE_ASSOCIATION") {
+      continue;
+    }
+    if (!nodesById.has(relation.nodeId)) {
       continue;
     }
 

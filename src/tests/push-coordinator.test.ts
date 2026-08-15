@@ -68,6 +68,24 @@ describe("push coordinator", () => {
     ]);
   });
 
+  it("pushes capture archive mutations through the existing push channel", async () => {
+    const mutation = makeArchiveMutation("33333333-3333-4333-8333-333333333333");
+    const setup = createSetup({
+      records: [makeRecord(mutation)],
+      responses: [acceptedResponse(mutation)],
+    });
+
+    const result = await setup.coordinator.run();
+
+    expect(result.status).toBe("SUCCESS");
+    expect(setup.client.push).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mutations: [mutation],
+      }),
+    );
+    expect(setup.outbox.records).toHaveLength(0);
+  });
+
   it("does not push pending mutations for an entity with an active conflict", async () => {
     const mutation = makeMutation("33333333-3333-4333-8333-333333333333");
     const conflict = makeRecord(mutation, {
@@ -653,6 +671,21 @@ function makeMutation(mutationId: string): SyncMutation {
       createdAt: now,
       updatedAt: now,
       archivedAt: null,
+    },
+  };
+}
+
+function makeArchiveMutation(mutationId: string): SyncMutation {
+  const entityId = mutationId.replace("4", "5") as `${string}-${string}-${string}-${string}-${string}`;
+  return {
+    mutationId,
+    entityType: "capture",
+    operation: "archive",
+    entityId,
+    baseVersion: 1,
+    payload: {
+      updatedAt: now,
+      archivedAt: now,
     },
   };
 }

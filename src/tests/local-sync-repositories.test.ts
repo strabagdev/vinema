@@ -14,6 +14,7 @@ import {
 } from "@/features/context/node-context-relations";
 import { updateContext } from "@/features/context/update-context";
 import { convertIdeaToNote } from "@/features/node/convert-idea-to-note";
+import { archiveNode } from "@/features/node/archive-node";
 import { createNode } from "@/features/node/create-node";
 import { updateNode } from "@/features/node/update-node";
 import { IndexedDbSyncOutboxRepository } from "@/features/sync/sync-outbox-repository";
@@ -168,6 +169,56 @@ describe("local sync repositories", () => {
       mutation: { entityType: "capture", entityId: node.id, baseVersion: 1 },
     });
     await expect(outbox.listPending(workspace.id, 10)).resolves.toHaveLength(2);
+  });
+
+  it("archives captures locally and enqueues an archive mutation without deleting the record", async () => {
+    const archivedAt = "2026-07-29T10:00:00.000Z";
+    const repositories = createLocalSyncRepositories({
+      syncContext: { workspaceId: workspace.id, deviceId: device.id },
+      mutationIdFactory: mutationIdFactory([
+        "33333333-3333-4333-8333-333333333333",
+        "44444444-4444-4444-8444-444444444444",
+      ]),
+    });
+    const outbox = new IndexedDbSyncOutboxRepository();
+    const node = await createNode(repositories.nodeRepository, {
+      type: "NOTE",
+      content: "Captura a olvidar",
+      organizationStatus: "ORGANIZED",
+      workspace,
+      device,
+    });
+
+    const archived = await archiveNode(repositories.nodeRepository, {
+      id: node.id,
+      archivedAt,
+    });
+
+    expect(archived).toMatchObject({
+      id: node.id,
+      status: "ARCHIVED",
+      archivedAt,
+      version: 2,
+    });
+    await expect(repositories.nodeRepository.findById(node.id)).resolves.toBeNull();
+    await expect(
+      new IndexedDbNodeRepository().listByWorkspace(workspace.id),
+    ).resolves.toEqual([]);
+    await expect(
+      new IndexedDbNodeRepository().listByWorkspace(workspace.id, {
+        includeArchived: true,
+      }),
+    ).resolves.toMatchObject([{ id: node.id, archivedAt }]);
+    await expect(outbox.getById("44444444-4444-4444-8444-444444444444")).resolves.toMatchObject({
+      localVersion: 2,
+      mutation: {
+        entityType: "capture",
+        operation: "archive",
+        entityId: node.id,
+        baseVersion: 1,
+        payload: { archivedAt, updatedAt: archivedAt },
+      },
+    });
   });
 
   it("updates a conflicted capture locally without creating repeated outbox mutations", async () => {

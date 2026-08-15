@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { KnowledgeBaseClient } from "@/app/notes/knowledge-base-client";
+import { ApplicationWorkspaceDialog } from "@/components/app-shell/application-workspace-dialog";
 import type { Context } from "@/domain/context/context";
 import type { NodeContextRelation } from "@/domain/context/node-context-relation";
 import type { Node } from "@/domain/node/node";
@@ -20,9 +21,10 @@ const mocks = vi.hoisted(() => {
   const contexts = new Map<string, Context>();
   const nodes = new Map<string, Node>();
   const relations = new Map<string, NodeContextRelation>();
+  const archiveCalls: string[] = [];
   const vinemaContext = {
     status: "ready",
-    device: null,
+    device: { id: "device-1" },
     workspace: { id: "workspace-1", name: "Personal" },
     error: null,
   };
@@ -31,6 +33,7 @@ const mocks = vi.hoisted(() => {
     contexts,
     nodes,
     relations,
+    archiveCalls,
     vinemaContext,
     nodeRepository: {
     async create(node: Node): Promise<Node> {
@@ -41,28 +44,52 @@ const mocks = vi.hoisted(() => {
       nodes.set(node.id, node);
       return node;
     },
+    async archive(captureId: string, archivedAt: string): Promise<Node> {
+      const existing = nodes.get(captureId);
+
+      if (!existing) {
+        throw new Error("No se encontro la captura.");
+      }
+
+      const archivedNode: Node = {
+        ...existing,
+        status: "ARCHIVED",
+        archivedAt,
+        updatedAt: archivedAt,
+        version: existing.version + 1,
+      };
+      archiveCalls.push(captureId);
+      nodes.set(captureId, archivedNode);
+      return archivedNode;
+    },
     async findById(id: string): Promise<Node | null> {
-      return nodes.get(id) ?? null;
+      const node = nodes.get(id);
+      return node && !node.archivedAt ? node : null;
     },
     async listActive(): Promise<Node[]> {
       return Array.from(nodes.values()).filter(
-        (node) => node.deletedAt === null,
+        (node) => node.deletedAt === null && !node.archivedAt,
       );
     },
     async listInbox(): Promise<Node[]> {
       return Array.from(nodes.values()).filter(
-        (node) => node.organizationStatus === "INBOX",
+        (node) => node.organizationStatus === "INBOX" && !node.archivedAt,
       );
     },
-    async listByWorkspace(workspaceId: string): Promise<Node[]> {
+    async listByWorkspace(
+      workspaceId: string,
+      options: { includeArchived?: boolean } = {},
+    ): Promise<Node[]> {
       return Array.from(nodes.values()).filter(
         (node) =>
           node.workspaceId === workspaceId &&
-          node.deletedAt === null,
+          node.deletedAt === null &&
+          (options.includeArchived || !node.archivedAt),
       );
     },
   },
     replace: vi.fn(),
+    push: vi.fn(),
     searchParams: new URLSearchParams(),
   };
 });
@@ -70,6 +97,7 @@ const mocks = vi.hoisted(() => {
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
     replace: mocks.replace,
+    push: mocks.push,
   }),
   useSearchParams: () => mocks.searchParams,
 }));
@@ -123,13 +151,17 @@ describe("Knowledge Base", () => {
     mocks.contexts.clear();
     mocks.nodes.clear();
     mocks.relations.clear();
+    mocks.archiveCalls.length = 0;
     mocks.searchParams = new URLSearchParams();
     mocks.vinemaContext.status = "ready";
     mocks.vinemaContext.error = null;
+    mocks.push.mockClear();
   });
 
   afterEach(() => {
     mocks.replace.mockClear();
+    mocks.push.mockClear();
+    document.body.style.pointerEvents = "";
     document.body.replaceChildren();
   });
 
@@ -155,6 +187,25 @@ describe("Knowledge Base", () => {
     expect(page.hasMore).toBe(false);
   });
 
+  it("excludes archived captures from memory pages and active capture totals", async () => {
+    const repository = new InMemoryNodeRepository([
+      createNode({ id: "active", content: "Pan activo" }),
+      createNode({
+        id: "forgotten",
+        content: "Pan olvidado",
+        archivedAt: "2026-01-04T00:00:00.000Z",
+      }),
+    ]);
+
+    const page = await listKnowledgeCapturePage(repository, {
+      workspaceId: "workspace-1",
+      limit: 10,
+    });
+
+    expect(page.items.map((item) => item.id)).toEqual(["active"]);
+    expect(page.total).toBe(1);
+  });
+
   it("loads captures by batches without duplicating and detects the end", async () => {
     setMockNodes(
       Array.from({ length: KNOWLEDGE_BASE_BATCH_SIZE + 1 }, (_, index) =>
@@ -171,15 +222,15 @@ describe("Knowledge Base", () => {
     expect(screen.textContent).toContain(
       `${KNOWLEDGE_BASE_BATCH_SIZE + 1} capturas activas.`,
     );
-    expect(screen.querySelectorAll("a[href^='/memory/detail']")).toHaveLength(
+    expect(getMemoryDetailSurfaces(screen)).toHaveLength(
       KNOWLEDGE_BASE_BATCH_SIZE,
     );
 
     await click(getButton(screen, "Cargar mas"));
 
-    const links = Array.from(
-      screen.querySelectorAll("a[href^='/memory/detail']"),
-    ).map((link) => link.getAttribute("href"));
+    const links = getMemoryDetailSurfaces(screen).map((link) =>
+      getMemorySurfaceHref(link),
+    );
 
     expect(links).toHaveLength(KNOWLEDGE_BASE_BATCH_SIZE + 1);
     expect(new Set(links).size).toBe(KNOWLEDGE_BASE_BATCH_SIZE + 1);
@@ -241,7 +292,7 @@ describe("Knowledge Base", () => {
     const screen = await renderKnowledgeBase();
     const captureList = screen.querySelector("[data-memory-capture-list]");
     const cards = Array.from(captureList?.children ?? []);
-    const links = Array.from(screen.querySelectorAll("a[href^='/memory/detail']"));
+    const links = getMemoryDetailSurfaces(screen);
 
     expect(captureList?.className).toContain("space-y-3");
     expect(screen.querySelector("[data-memory-stack-list]")).toBeNull();
@@ -254,7 +305,7 @@ describe("Knowledge Base", () => {
       expect.stringContaining("Captura intermedia"),
       expect.stringContaining("Captura antigua"),
     ]);
-    expect(links[0]?.getAttribute("href")).toContain("nodeId=list-latest");
+    expect(getMemorySurfaceHref(links[0])).toContain("nodeId=list-latest");
   });
 
   it("keeps loading and empty memory states outside the normal capture list", async () => {
@@ -490,7 +541,7 @@ describe("Knowledge Base", () => {
 
     const screen = await renderKnowledgeBase();
 
-    const links = Array.from(screen.querySelectorAll("a[href^='/memory/detail']"));
+    const links = getMemoryDetailSurfaces(screen);
     expect(links.map((link) => link.textContent)).toEqual([
       expect.stringContaining("Captura reciente"),
       expect.stringContaining("Captura antigua"),
@@ -654,6 +705,361 @@ describe("Knowledge Base", () => {
     expect(screen.textContent).toContain("Captura recibida por Pull");
   });
 
+  it("requires exact confirmation before forgetting a capture and removes it optimistically", async () => {
+    setMockNodes([
+      createNode({
+        id: "capture-forget",
+        content: "Captura para olvidar",
+      }),
+    ]);
+    const screen = await renderKnowledgeBase();
+    const urlBefore = window.location.href;
+
+    await openDropdown(getButtonByLabel(screen, "Abrir acciones de captura"));
+    const forgetItem = getMenuItem(document.body, "Olvidar");
+    expect(forgetItem.tagName).toBe("BUTTON");
+    expect(forgetItem.getAttribute("type")).toBe("button");
+    expect(forgetItem.getAttribute("href")).toBeNull();
+    expect(forgetItem.getAttribute("formAction")).toBeNull();
+    await pressPointerClick(forgetItem);
+
+    const confirmButton = getButton(document.body, "Olvidar captura");
+    expect(getMenu()).toBeNull();
+    expect(document.body.textContent).toContain("Olvidar captura");
+    expect(window.location.href).toBe(urlBefore);
+    expect(mocks.push).not.toHaveBeenCalled();
+    expect(mocks.replace).not.toHaveBeenCalled();
+    expect(confirmButton.disabled).toBe(true);
+
+    const input = document.body.querySelector<HTMLInputElement>(
+      "#forget-capture-confirmation",
+    );
+    if (!input) {
+      throw new Error("Forget confirmation input not found");
+    }
+
+    await changeInput(input, "olvidar");
+    expect(confirmButton.disabled).toBe(true);
+
+    await changeInput(input, "olvidar para siempre");
+    expect(confirmButton.disabled).toBe(false);
+    await click(confirmButton);
+
+    expect(mocks.archiveCalls).toEqual(["capture-forget"]);
+    expect(screen.textContent).toContain("0 capturas activas.");
+    expect(screen.textContent).not.toContain("Captura para olvidar");
+    expect(mocks.nodes.get("capture-forget")).toMatchObject({
+      status: "ARCHIVED",
+      archivedAt: expect.any(String),
+    });
+  });
+
+  it("opens the forget dialog from embedded memory without navigating", async () => {
+    const openMemory = vi.fn();
+    setMockNodes([
+      createNode({
+        id: "embedded-forget",
+        content: "Captura embedded para olvidar",
+      }),
+    ]);
+    const screen = await renderKnowledgeBase(
+      createElement(KnowledgeBaseClient as ComponentType<{
+        embedded?: boolean;
+        onOpenMemory?: (nodeId: string) => void;
+      }>, {
+        embedded: true,
+        onOpenMemory: openMemory,
+      }),
+    );
+    const urlBefore = window.location.href;
+
+    await openDropdown(getButtonByLabel(screen, "Abrir acciones de captura"));
+    await pressPointerClick(getMenuItem(document.body, "Olvidar"));
+
+    const confirmButton = getButton(document.body, "Olvidar captura");
+    expect(getMenu()).toBeNull();
+    expect(document.body.textContent).toContain("Olvidar captura");
+    expect(window.location.href).toBe(urlBefore);
+    expect(openMemory).not.toHaveBeenCalled();
+    expect(mocks.push).not.toHaveBeenCalled();
+    expect(mocks.replace).not.toHaveBeenCalled();
+
+    const input = document.body.querySelector<HTMLInputElement>(
+      "#forget-capture-confirmation",
+    );
+    if (!input) {
+      throw new Error("Forget confirmation input not found");
+    }
+
+    await changeInput(input, "olvidar para siempre");
+    await click(confirmButton);
+
+    expect(mocks.archiveCalls).toEqual(["embedded-forget"]);
+  });
+
+  it("opens and operates forget confirmation inside ApplicationWorkspaceDialog embedded memory", async () => {
+    const onWorkspaceOpenChange = vi.fn();
+    setMockNodes([
+      createNode({
+        id: "workspace-dialog-forget",
+        content: "Captura dentro del workspace",
+      }),
+    ]);
+    await renderKnowledgeBase(
+      createElement(
+        ApplicationWorkspaceDialog,
+        {
+          open: true,
+          title: "Memoria",
+          onOpenChange: onWorkspaceOpenChange,
+        } as unknown as Parameters<typeof ApplicationWorkspaceDialog>[0],
+        createElement(KnowledgeBaseClient as ComponentType<{
+            embedded?: boolean;
+            onOpenMemory?: (nodeId: string) => void;
+          }>, {
+            embedded: true,
+            onOpenMemory: vi.fn(),
+          }),
+      ),
+    );
+    const workspaceDialog = document.body.querySelector<HTMLElement>(
+      "[data-application-workspace-dialog]",
+    );
+    const urlBefore = window.location.href;
+
+    document.body.style.pointerEvents = "none";
+    if (workspaceDialog) {
+      workspaceDialog.style.pointerEvents = "auto";
+    }
+
+    await openDropdown(getButtonByLabel(document.body, "Abrir acciones de captura"));
+    const menu = getMenu();
+
+    expect(menu).toBeTruthy();
+    expect(menu?.closest("[data-application-workspace-dialog]")).toBe(
+      workspaceDialog,
+    );
+    expect(menu?.parentElement).not.toBe(document.body);
+
+    await pressPointerClick(getMenuItem(document.body, "Olvidar"));
+
+    const confirmation = workspaceDialog?.querySelector<HTMLElement>(
+      "[role='alertdialog']",
+    );
+    const confirmButton = getButton(document.body, "Olvidar captura");
+    const input = document.body.querySelector<HTMLInputElement>(
+      "#forget-capture-confirmation",
+    );
+
+    expect(workspaceDialog).toBeTruthy();
+    expect(confirmation).toBeTruthy();
+    expect(confirmation?.closest("[data-application-workspace-dialog]")).toBe(
+      workspaceDialog,
+    );
+    expect(document.body.querySelector("[data-forget-capture-inline-layer]")).toBeTruthy();
+    expect(getMenu()).toBeNull();
+    expect(document.body.textContent).toContain("Olvidar captura");
+    expect(document.activeElement).toBe(input);
+    expect(window.location.href).toBe(urlBefore);
+    expect(mocks.push).not.toHaveBeenCalled();
+    expect(mocks.replace).not.toHaveBeenCalled();
+    expect(onWorkspaceOpenChange).not.toHaveBeenCalled();
+
+    if (!input) {
+      throw new Error("Forget confirmation input not found");
+    }
+
+    await changeInput(input, "olvidar para siempre");
+    await click(confirmButton);
+
+    expect(mocks.archiveCalls).toEqual(["workspace-dialog-forget"]);
+    expect(onWorkspaceOpenChange).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain("0 capturas activas.");
+    document.body.style.pointerEvents = "";
+  });
+
+  it("opens the capture from the visible card surface with click, Enter and Space", async () => {
+    setMockNodes([
+      createNode({
+        id: "surface-open",
+        content: "Captura con superficie completa",
+      }),
+    ]);
+    const screen = await renderKnowledgeBase();
+    const cardLink = getCardLink(screen);
+    const href = "/memory/detail?nodeId=surface-open&returnTo=%2Fmemory";
+
+    expect(cardLink.getAttribute("role")).toBe("link");
+    expect(cardLink.getAttribute("tabindex")).toBe("0");
+    expect(cardLink.getAttribute("data-memory-card-href")).toBe(href);
+
+    await click(cardLink);
+    expect(mocks.push).toHaveBeenLastCalledWith(href);
+
+    await keyDown(cardLink, "Enter");
+    expect(mocks.push).toHaveBeenLastCalledWith(href);
+
+    await keyDown(cardLink, " ");
+    expect(mocks.push).toHaveBeenLastCalledWith(href);
+  });
+
+  it("opens and closes the memory action menu without opening the capture", async () => {
+    setMockNodes([
+      createNode({
+        id: "menu-memory",
+        content: "Captura con menu",
+      }),
+    ]);
+    const screen = await renderKnowledgeBase();
+    const trigger = getButtonByLabel(screen, "Abrir acciones de captura");
+
+    expect(trigger.getAttribute("aria-haspopup")).toBe("menu");
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+
+    await click(trigger);
+    expect(mocks.push).not.toHaveBeenCalled();
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(getMenu()).toBeTruthy();
+    expect(getMenuItem(document.body, "Olvidar")).toBeTruthy();
+
+    await keyDown(document.body, "Escape");
+    expect(getMenu()).toBeNull();
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+
+    await click(trigger);
+    expect(getMenu()).toBeTruthy();
+    await pointerDown(document.body);
+    expect(getMenu()).toBeNull();
+  });
+
+  it("lets embedded concept buttons handle clicks without opening the capture", async () => {
+    const openMemory = vi.fn();
+    const openConcept = vi.fn();
+    setMockNodes([
+      createNode({
+        id: "concept-card",
+        content: "Captura con concepto interno",
+      }),
+    ]);
+    setMockContexts([
+      createContext({ id: "concept-a", name: "Concepto A" }),
+    ]);
+    setMockRelations([
+      createRelation({ nodeId: "concept-card", contextId: "concept-a" }),
+    ]);
+
+    const screen = await renderKnowledgeBase(
+      createElement(KnowledgeBaseClient as ComponentType<{
+        embedded?: boolean;
+        onOpenMemory?: (nodeId: string) => void;
+        onOpenConcept?: (conceptId: string) => void;
+      }>, {
+        embedded: true,
+        onOpenMemory: openMemory,
+        onOpenConcept: openConcept,
+      }),
+    );
+
+    await click(getButton(screen, "Concepto A"));
+
+    expect(openConcept).toHaveBeenCalledWith("concept-a");
+    expect(openMemory).not.toHaveBeenCalled();
+  });
+
+  it("does not navigate after selecting text in a memory card", async () => {
+    setMockNodes([
+      createNode({
+        id: "selectable-card",
+        content: "Texto seleccionable de la tarjeta",
+      }),
+    ]);
+    const screen = await renderKnowledgeBase();
+    const cardLink = getCardLink(screen);
+    const textNode = findTextNode(cardLink, "Texto seleccionable");
+
+    if (!textNode) {
+      throw new Error("Expected selectable text node");
+    }
+
+    const range = document.createRange();
+    range.setStart(textNode, 0);
+    range.setEnd(textNode, Math.min(textNode.textContent?.length ?? 0, 6));
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+
+    await click(cardLink);
+
+    expect(mocks.push).not.toHaveBeenCalled();
+    selection?.removeAllRanges();
+  });
+
+  it("opens the forget dialog from the portal menu inside an overflow container", async () => {
+    setMockNodes([
+      createNode({
+        id: "overflow-menu",
+        content: "Captura en contenedor con overflow",
+      }),
+    ]);
+    const screen = await renderKnowledgeBase();
+    screen.style.overflow = "hidden";
+
+    await click(getButtonByLabel(screen, "Abrir acciones de captura"));
+    await pressPointerClick(getMenuItem(document.body, "Olvidar"));
+
+    expect(getMenu()).toBeNull();
+    expect(document.body.textContent).toContain("Olvidar captura");
+    expect(
+      document.body.querySelector("#forget-capture-confirmation"),
+    ).toBeTruthy();
+  });
+
+  it("does not nest capture action buttons inside memory links or buttons", async () => {
+    setMockNodes([
+      createNode({
+        id: "nested-check",
+        content: "Captura sin interactivos anidados",
+      }),
+    ]);
+    const screen = await renderKnowledgeBase();
+
+    expect(screen.querySelector("a button")).toBeNull();
+    expect(screen.querySelector("button button")).toBeNull();
+    expect(screen.querySelector("button a")).toBeNull();
+    expect(screen.querySelector("a a")).toBeNull();
+  });
+
+  it("does not emit validateDOMNesting or hydration errors with embedded concept buttons", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    setMockNodes([
+      createNode({
+        id: "hydration-card",
+        content: "Captura con boton interno",
+      }),
+    ]);
+    setMockContexts([
+      createContext({ id: "concept-hydration", name: "Hidratacion" }),
+    ]);
+    setMockRelations([
+      createRelation({ nodeId: "hydration-card", contextId: "concept-hydration" }),
+    ]);
+
+    await renderKnowledgeBase(
+      createElement(KnowledgeBaseClient as ComponentType<{
+        embedded?: boolean;
+        onOpenConcept?: (conceptId: string) => void;
+      }>, {
+        embedded: true,
+        onOpenConcept: vi.fn(),
+      }),
+    );
+
+    const messages = consoleError.mock.calls.map((call) => String(call[0]));
+    expect(messages.some((message) => message.includes("validateDOMNesting"))).toBe(false);
+    expect(messages.some((message) => message.toLowerCase().includes("hydration"))).toBe(false);
+    consoleError.mockRestore();
+  });
+
   it("does not refresh Knowledge Base for another workspace sync event", async () => {
     const screen = await renderKnowledgeBase();
 
@@ -698,7 +1104,7 @@ describe("Knowledge Base", () => {
 
     expect(screen.textContent).toContain('2 resultados para "Mitcom (A)".');
     expect(screen.querySelectorAll("mark")).toHaveLength(4);
-    expect(getFirstDetailLink(screen)?.getAttribute("href")).toBe(
+    expect(getMemorySurfaceHref(getFirstDetailLink(screen))).toBe(
       "/memory/detail?nodeId=legacy-status&returnTo=%2Fmemory%3Fq%3DMitcom%2520(A)",
     );
     expect(screen.textContent).toContain("historico");
@@ -736,9 +1142,7 @@ describe("Knowledge Base", () => {
         onOpenMemory?: (nodeId: string) => void;
       }>, { embedded: true, onOpenMemory: openMemory }),
     );
-    const memoryButton = Array.from(screen.querySelectorAll("button")).find(
-      (button) => button.getAttribute("aria-label")?.includes("Abrir captura"),
-    );
+    const memorySurface = screen.querySelector<HTMLElement>("[data-memory-card-link]");
     const surface = screen.querySelector("section") as HTMLElement;
     const firstContent = Array.from(surface.children).find(
       (child) => !child.hasAttribute("aria-live"),
@@ -746,7 +1150,9 @@ describe("Knowledge Base", () => {
     const searchRegion = screen.querySelector("[data-memory-search-region]");
     const resultsScroll = screen.querySelector("[data-memory-results-scroll]");
 
-    expect(memoryButton).toBeTruthy();
+    expect(memorySurface).toBeTruthy();
+    expect(memorySurface?.tagName).toBe("ARTICLE");
+    expect(memorySurface?.getAttribute("role")).toBe("link");
     expect(screen.querySelector("h1")).toBeNull();
     expect(screen.textContent).not.toContain("Tus capturas organizadas por contexto.");
     expect(firstContent).toBe(searchRegion);
@@ -761,7 +1167,7 @@ describe("Knowledge Base", () => {
     expect(screen.querySelector("[data-memory-stack-page]")).toBeNull();
     expect(screen.querySelector("a[href^='/memory/detail']")).toBeNull();
 
-    await click(memoryButton as HTMLButtonElement);
+    await click(memorySurface as HTMLElement);
 
     expect(openMemory).toHaveBeenCalledWith("embedded-memory");
     expect(mocks.replace).not.toHaveBeenCalledWith(
@@ -817,11 +1223,13 @@ function createNode({
   content = "Contenido",
   updatedAt = "2026-01-01T00:00:00.000Z",
   status = "ACTIVE",
+  archivedAt = null,
 }: {
   id: string;
   content?: string;
   updatedAt?: string;
   status?: Node["status"];
+  archivedAt?: string | null;
 }): Node {
   return {
     id,
@@ -833,6 +1241,7 @@ function createNode({
     metadata: {},
     version: 1,
     createdAt: updatedAt,
+    archivedAt,
     updatedAt,
     deletedAt: null,
     createdByDeviceId: "device-1",
@@ -897,8 +1306,78 @@ function getButtonContaining(container: HTMLElement, text: string) {
   return button as HTMLButtonElement;
 }
 
+function getButtonByLabel(container: HTMLElement, label: string) {
+  const button = container.querySelector<HTMLButtonElement>(
+    `button[aria-label="${label}"]`,
+  );
+
+  if (!button) {
+    throw new Error(`Button not found: ${label}`);
+  }
+
+  return button;
+}
+
+function getMenuItem(container: HTMLElement, text: string) {
+  const element = Array.from(
+    container.querySelectorAll<HTMLElement>("[role='menuitem']"),
+  ).find(
+    (item) => item.textContent?.trim() === text,
+  );
+
+  if (!element) {
+    throw new Error(`Element not found: ${text}`);
+  }
+
+  return element;
+}
+
 function getFirstDetailLink(container: HTMLElement) {
-  return container.querySelector("a[href^='/memory/detail']");
+  return (
+    container.querySelector("a[href^='/memory/detail']") ??
+    container.querySelector("[data-memory-card-href^='/memory/detail']")
+  ) as HTMLElement | null;
+}
+
+function getMemoryDetailSurfaces(container: HTMLElement) {
+  return Array.from(
+    container.querySelectorAll<HTMLElement>(
+      "a[href^='/memory/detail'], [data-memory-card-href^='/memory/detail']",
+    ),
+  );
+}
+
+function getMemorySurfaceHref(element: Element | null | undefined) {
+  return element?.getAttribute("href") ?? element?.getAttribute("data-memory-card-href") ?? null;
+}
+
+function getCardLink(container: HTMLElement) {
+  const link = container.querySelector<HTMLElement>("[data-memory-card-link]");
+
+  if (!link) {
+    throw new Error("Memory card link not found");
+  }
+
+  return link;
+}
+
+function getMenu() {
+  return document.body.querySelector<HTMLElement>("[role='menu']");
+}
+
+function findTextNode(root: globalThis.Node, text: string): Text | null {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let current = walker.nextNode();
+
+  while (current) {
+    if (current.textContent?.includes(text)) {
+      return current as Text;
+    }
+
+    current = walker.nextNode();
+  }
+
+  return null;
 }
 
 function getLinkByHref(container: HTMLElement, href: string) {
@@ -912,6 +1391,67 @@ async function click(element: HTMLElement) {
     element.click();
     await flushPromises();
   });
+}
+
+async function pressPointerClick(element: HTMLElement) {
+  await act(async () => {
+    element.dispatchEvent(createPointerEvent("pointerdown"));
+    element.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    element.dispatchEvent(createPointerEvent("pointerup"));
+    element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0 }));
+    element.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
+    await flushPromises();
+  });
+}
+
+async function keyDown(element: HTMLElement, key: string) {
+  await act(async () => {
+    element.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key }));
+    await flushPromises();
+  });
+}
+
+async function pointerDown(element: HTMLElement) {
+  await act(async () => {
+    element.dispatchEvent(createPointerEvent("pointerdown"));
+    await flushPromises();
+  });
+}
+
+async function openDropdown(element: HTMLElement) {
+  await act(async () => {
+    element.dispatchEvent(createPointerEvent("pointerdown"));
+    element.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0 }));
+    element.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
+    await flushPromises();
+  });
+}
+
+function createPointerEvent(type: string) {
+  if (typeof PointerEvent === "function") {
+    return new PointerEvent(type, { bubbles: true, button: 0 });
+  }
+
+  return new MouseEvent(type, { bubbles: true, button: 0 });
+}
+
+async function changeInput(input: HTMLInputElement, value: string) {
+  await act(async () => {
+    setNativeValue(input, value);
+    input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    await flushPromises();
+  });
+}
+
+function setNativeValue(element: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "value",
+  )?.set;
+
+  setter?.call(element, value);
 }
 
 async function flushPromises() {

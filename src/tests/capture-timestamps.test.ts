@@ -80,7 +80,7 @@ describe("capture timestamps", () => {
     expect(updated.contentUpdatedAt).toBe(updated.updatedAt);
   });
 
-  it("orders Base by contentUpdatedAt and includes legacy archived captures", async () => {
+  it("orders Base by contentUpdatedAt, keeps legacy archived status and excludes forgotten captures", async () => {
     const repository = new InMemoryNodeRepository([
       makeNode({
         id: "old-restored",
@@ -96,13 +96,12 @@ describe("capture timestamps", () => {
         updatedAt: "2026-01-05T00:00:00.000Z",
       }),
       makeNode({
-        id: "archive-a",
+        id: "legacy-archive",
         status: "ARCHIVED",
         contentUpdatedAt: "2026-01-05T00:00:00.000Z",
-        archivedAt: "2026-01-03T00:00:00.000Z",
       }),
       makeNode({
-        id: "archive-b",
+        id: "forgotten",
         status: "ARCHIVED",
         contentUpdatedAt: "2026-01-01T00:00:00.000Z",
         archivedAt: "2026-01-04T00:00:00.000Z",
@@ -113,11 +112,11 @@ describe("capture timestamps", () => {
       listKnowledgeCapturePage(repository, { workspaceId: workspace.id, limit: 10 }),
     ).resolves.toMatchObject({
       items: [
-        { id: "archive-a" },
         { id: "fresh-content" },
-        { id: "archive-b" },
+        { id: "legacy-archive" },
         { id: "old-restored" },
       ],
+      total: 3,
     });
   });
 

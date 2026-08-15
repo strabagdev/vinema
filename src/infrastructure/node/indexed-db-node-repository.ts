@@ -19,13 +19,32 @@ export class IndexedDbNodeRepository implements NodeRepository {
     return node;
   }
 
+  async archive(captureId: string, archivedAt: string): Promise<Node> {
+    const db = await getVinemaDb();
+    const existing = normalizeStoredNode(await db.get(NODES_STORE, captureId), {
+      includeArchived: true,
+    });
+
+    if (!existing || existing.deletedAt !== null) {
+      throw new Error("No se encontro la captura.");
+    }
+
+    const archivedNode = toArchivedNode(existing, archivedAt);
+    await db.put(NODES_STORE, toStoredNode(archivedNode));
+    return archivedNode;
+  }
+
   async findById(id: string): Promise<Node | null> {
     const db = await getVinemaDb();
     const node = await db.get(NODES_STORE, id);
 
     const normalizedNode = normalizeStoredNode(node);
 
-    if (!normalizedNode || normalizedNode.deletedAt !== null) {
+    if (
+      !normalizedNode ||
+      normalizedNode.deletedAt !== null ||
+      normalizedNode.archivedAt
+    ) {
       return null;
     }
 
@@ -37,11 +56,12 @@ export class IndexedDbNodeRepository implements NodeRepository {
     const nodes = await db.getAll(NODES_STORE);
 
     return nodes
-      .map(normalizeStoredNode)
+      .map((node) => normalizeStoredNode(node))
       .filter((node): node is Node => node !== null)
       .filter(
         (node) =>
           node.deletedAt === null &&
+          !node.archivedAt &&
           node.organizationStatus === "ORGANIZED",
       )
       .sort(byNewestUpdatedAt);
@@ -52,29 +72,36 @@ export class IndexedDbNodeRepository implements NodeRepository {
     const nodes = await db.getAll(NODES_STORE);
 
     return nodes
-      .map(normalizeStoredNode)
+      .map((node) => normalizeStoredNode(node))
       .filter((node): node is Node => node !== null)
       .filter(
         (node) =>
           node.deletedAt === null &&
+          !node.archivedAt &&
           node.organizationStatus === "INBOX",
       )
       .sort(byNewestUpdatedAt);
   }
 
-  async listByWorkspace(workspaceId: string): Promise<Node[]> {
+  async listByWorkspace(
+    workspaceId: string,
+    options: { includeArchived?: boolean } = {},
+  ): Promise<Node[]> {
     const db = await getVinemaDb();
     const nodes = await db.getAllFromIndex(NODES_STORE, "by-workspace", workspaceId);
 
     return nodes
-      .map(normalizeStoredNode)
+      .map((node) => normalizeStoredNode(node, options))
       .filter((node): node is Node => node !== null)
       .filter((node) => node.deletedAt === null)
       .sort(byNewestUpdatedAt);
   }
 }
 
-export function normalizeStoredNode(value: unknown): Node | null {
+export function normalizeStoredNode(
+  value: unknown,
+  options: { includeArchived?: boolean } = {},
+): Node | null {
   if (typeof value !== "object" || value === null) {
     return null;
   }
@@ -107,12 +134,14 @@ export function normalizeStoredNode(value: unknown): Node | null {
     return null;
   }
 
-  return toStoredNode({
+  const archivedAt = typeof record.archivedAt === "string" ? record.archivedAt : null;
+  const restoredAt = typeof record.restoredAt === "string" ? record.restoredAt : null;
+  const node: Node = {
     id: record.id,
     workspaceId: record.workspaceId,
     type: record.type,
     content: recoveredContent,
-    status: "ACTIVE",
+    status: archivedAt ? "ARCHIVED" : "ACTIVE",
     organizationStatus: record.organizationStatus,
     metadata:
       typeof record.metadata === "object" && record.metadata !== null
@@ -125,7 +154,21 @@ export function normalizeStoredNode(value: unknown): Node | null {
     deletedAt: typeof record.deletedAt === "string" ? record.deletedAt : null,
     createdByDeviceId: record.createdByDeviceId,
     lastModifiedByDeviceId: record.lastModifiedByDeviceId,
-  });
+  };
+
+  if (archivedAt) {
+    node.archivedAt = archivedAt;
+  }
+
+  if (restoredAt) {
+    node.restoredAt = restoredAt;
+  }
+
+  if (node.archivedAt && !options.includeArchived) {
+    return null;
+  }
+
+  return node;
 }
 
 function toStoredNode(node: Node): Node {
@@ -136,4 +179,14 @@ function toStoredNode(node: Node): Node {
   delete cleanNode.title;
   delete cleanNode.context;
   return cleanNode;
+}
+
+function toArchivedNode(node: Node, archivedAt: string): Node {
+  return {
+    ...node,
+    status: "ARCHIVED",
+    archivedAt,
+    updatedAt: archivedAt,
+    version: node.version + 1,
+  };
 }

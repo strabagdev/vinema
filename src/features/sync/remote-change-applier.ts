@@ -291,7 +291,9 @@ async function applyCapture({
   result: RemoteChangeApplierResult;
 }) {
   const store = transaction.objectStore(NODES_STORE);
-  const existing = normalizeStoredNode(await store.get(entity.id));
+  const existing = normalizeStoredNode(await store.get(entity.id), {
+    includeArchived: true,
+  });
   const decision = decideVersion(existing?.version ?? null, entity.version);
 
   if (decision === "IGNORE") {

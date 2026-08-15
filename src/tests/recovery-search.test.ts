@@ -310,6 +310,11 @@ describe("local recovery search", () => {
     const nodeRepository = new InMemoryNodeRepository([
       makeNode({ id: "node-1", content: "Pan humedo", status: "ARCHIVED" }),
       makeNode({
+        id: "node-archived-at",
+        content: "Pan humedo archivado",
+        archivedAt: "2026-01-03T00:00:00.000Z",
+      }),
+      makeNode({
         id: "node-2",
         content: "Pan humedo eliminado",
         deletedAt: "2026-01-02T00:00:00.000Z",

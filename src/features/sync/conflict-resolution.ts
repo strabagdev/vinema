@@ -221,7 +221,7 @@ export async function resolveCaptureConflict(input: {
     mutation: {
       mutationId: latest.mutation.mutationId,
       entityType: "capture",
-      operation: latest.mutation.operation,
+      operation: "upsert",
       entityId: latest.mutation.entityId,
       baseVersion: remote.version,
       payload: {

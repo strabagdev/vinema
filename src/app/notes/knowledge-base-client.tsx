@@ -23,6 +23,9 @@ import {
   getContentExcerpt,
   getCapturePreview,
 } from "@/features/node/node-display";
+import { archiveNode } from "@/features/node/archive-node";
+import { CaptureActionsMenu } from "@/features/node/capture-actions-menu";
+import { ForgetCaptureDialog } from "@/features/node/forget-capture-dialog";
 import type { CaptureEmergentIdentity } from "@/features/identity/capture-emergent-identity";
 import { CaptureEmergentIdentityLabel } from "@/features/identity/capture-emergent-identity-view";
 import { loadCaptureEmergentIdentities } from "@/features/identity/load-capture-emergent-identities";
@@ -32,7 +35,6 @@ import {
   type MemoryThreadEntry,
   type MemoryThreadCapture,
 } from "@/features/memory/memory-threads";
-import { getConceptExplorationPath } from "@/features/exploration/concept-routes";
 import { getNodeDetailPath } from "@/features/node/node-routes";
 import { useVinemaContext } from "@/features/node/hooks/use-vinema-context";
 import { createHighlightedParts } from "@/features/recovery/highlight-text";
@@ -40,8 +42,10 @@ import { getKnowledgeBasePath } from "@/features/recovery/recovery-routes";
 import type { RecoveryResult } from "@/features/recovery/recovery-result";
 import { searchNodes } from "@/features/recovery/search-nodes";
 import { useSyncDataInvalidation } from "@/features/sync/use-sync-data-invalidation";
+import { emitSyncDataChanged } from "@/features/sync/sync-data-events";
 import {
   contextRepository,
+  createLocalSyncRepositorySet,
   nodeContextRelationRepository,
   nodeRepository,
 } from "@/infrastructure/repositories";
@@ -88,12 +92,16 @@ export function KnowledgeBaseClient({
   const [captureTotal, setCaptureTotal] = useState(0);
   const [captureHasMore, setCaptureHasMore] = useState(false);
   const [searchResults, setSearchResults] = useState<RecoveryResult[]>([]);
+  const [forgetTarget, setForgetTarget] = useState<Node | null>(null);
+  const [forgetProcessing, setForgetProcessing] = useState(false);
+  const [forgetError, setForgetError] = useState<string | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [error, setError] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const embeddedScrollRef = useRef<HTMLDivElement | null>(null);
 
   const activeQuery = query.trim();
+
   const searchResultsByNodeId = useMemo(
     () => new Map(searchResults.map((result) => [result.nodeId, result])),
     [searchResults],
@@ -309,6 +317,51 @@ export function KnowledgeBaseClient({
     });
   }
 
+  function openForgetCapture(node: Node) {
+    setForgetTarget(node);
+  }
+
+  async function confirmForgetCapture() {
+    if (vinemaContext.status !== "ready" || !forgetTarget || forgetProcessing) {
+      return;
+    }
+
+    const archivedAt = new Date().toISOString();
+    const repositories = createLocalSyncRepositorySet({
+      workspaceId: vinemaContext.workspace.id,
+      deviceId: vinemaContext.device.id,
+    });
+
+    setForgetProcessing(true);
+    setForgetError(null);
+
+    try {
+      await archiveNode(repositories.nodeRepository, {
+        id: forgetTarget.id,
+        archivedAt,
+      });
+      setCaptures((current) =>
+        current.filter((capture) => capture.id !== forgetTarget.id),
+      );
+      setSearchResults((current) =>
+        current.filter((result) => result.nodeId !== forgetTarget.id),
+      );
+      setCaptureTotal((current) => Math.max(0, current - 1));
+      setForgetTarget(null);
+      emitSyncDataChanged({
+        workspaceId: vinemaContext.workspace.id,
+        entityTypes: ["capture"],
+        changedAt: archivedAt,
+      });
+    } catch {
+      setForgetError(
+        "No se pudo olvidar la captura. La Memoria local no fue modificada.",
+      );
+    } finally {
+      setForgetProcessing(false);
+    }
+  }
+
   const searchForm = (
     <form
       onSubmit={handleSubmit}
@@ -392,6 +445,7 @@ export function KnowledgeBaseClient({
                   onToggle={() => toggleThread(entry.thread.id)}
                   embedded={embedded}
                   onOpenMemory={onOpenMemory}
+                  onForgetCapture={openForgetCapture}
                 />
               ) : (
                 <MemoryCaptureEntryItem
@@ -401,6 +455,7 @@ export function KnowledgeBaseClient({
                   embedded={embedded}
                   onOpenMemory={onOpenMemory}
                   onOpenConcept={onOpenConcept}
+                  onForgetCapture={openForgetCapture}
                 />
               ),
             )}
@@ -437,7 +492,7 @@ export function KnowledgeBaseClient({
     <section
       className={
         embedded
-          ? "vinema-memory-shell vinema-memory-shell--embedded mx-auto flex h-full min-h-0 w-full max-w-5xl flex-1 flex-col gap-0 px-4 py-4 sm:px-6"
+          ? "vinema-memory-shell vinema-memory-shell--embedded relative mx-auto flex h-full min-h-0 w-full max-w-5xl flex-1 flex-col gap-0 px-4 py-4 sm:px-6"
           : "vinema-memory-shell mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8"
       }
       data-knowledge-base-client=""
@@ -481,6 +536,21 @@ export function KnowledgeBaseClient({
       ) : (
         resultsContent
       )}
+
+      <ForgetCaptureDialog
+        open={Boolean(forgetTarget)}
+        captureContent={forgetTarget?.content ?? ""}
+        processing={forgetProcessing}
+        error={forgetError}
+        inline={embedded}
+        onOpenChange={(open) => {
+          if (!open && !forgetProcessing) {
+            setForgetTarget(null);
+            setForgetError(null);
+          }
+        }}
+        onConfirm={confirmForgetCapture}
+      />
     </section>
   );
 }
@@ -492,6 +562,7 @@ function MemoryThreadItem({
   onToggle,
   embedded,
   onOpenMemory,
+  onForgetCapture,
 }: {
   thread: MemoryThread;
   query: string;
@@ -499,6 +570,7 @@ function MemoryThreadItem({
   onToggle: () => void;
   embedded?: boolean;
   onOpenMemory?: (nodeId: string) => void;
+  onForgetCapture?: (node: Node) => void;
 }) {
   const visibleCaptures = expanded
     ? thread.captures
@@ -533,6 +605,7 @@ function MemoryThreadItem({
           query={query}
           embedded={embedded}
           onOpenMemory={onOpenMemory}
+          onForgetCapture={onForgetCapture}
         />
         ))}
       </div>
@@ -561,13 +634,19 @@ function MemoryThreadCaptureItem({
   query,
   embedded = false,
   onOpenMemory,
+  onForgetCapture,
 }: {
   capture: MemoryThreadCapture;
   query: string;
   embedded?: boolean;
   onOpenMemory?: (nodeId: string) => void;
+  onForgetCapture?: (node: Node) => void;
 }) {
+  const router = useRouter();
   const preview = getCapturePreview(capture.node.content, { maxLength: 160 });
+  const href = getNodeDetailPath(capture.node.id, {
+    returnTo: query ? getKnowledgeBasePath(query) : "/memory",
+  });
   const content = (
     <>
       <span className="line-clamp-2 text-sm leading-6 text-zinc-700">
@@ -581,27 +660,51 @@ function MemoryThreadCaptureItem({
 
   if (embedded) {
     return (
-      <button
-        type="button"
-        aria-label={`Abrir captura: ${getCapturePreview(preview, { maxLength: 80 })}`}
-        className="block w-full rounded-md border-l-2 border-zinc-200 py-1 pl-3 text-left outline-none transition-colors hover:border-zinc-400 focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2"
-        onClick={() => onOpenMemory?.(capture.node.id)}
-      >
-        {content}
-      </button>
+      <div className="relative rounded-md border-l-2 border-zinc-200 transition-colors hover:border-zinc-400">
+        <button
+          type="button"
+          aria-label={`Abrir captura: ${getCapturePreview(preview, { maxLength: 80 })}`}
+          className="block w-full min-w-0 py-1 pl-3 pr-12 text-left outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2"
+          onClick={() => onOpenMemory?.(capture.node.id)}
+        >
+          {content}
+        </button>
+        <CaptureActionsMenu
+          onForget={() => onForgetCapture?.(capture.node)}
+          buttonClassName="absolute right-1 top-1 h-8 w-8"
+          embedded={embedded}
+        />
+      </div>
     );
   }
 
   return (
-    <Link
-      href={getNodeDetailPath(capture.node.id, {
-        returnTo: query ? getKnowledgeBasePath(query) : "/memory",
-      })}
-      aria-label={`Abrir captura: ${getCapturePreview(preview, { maxLength: 80 })}`}
-      className="block rounded-md border-l-2 border-zinc-200 py-1 pl-3 outline-none transition-colors hover:border-zinc-400 focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2"
-    >
-      {content}
-    </Link>
+    <div className="relative rounded-md border-l-2 border-zinc-200 transition-colors hover:border-zinc-400">
+      <Link
+        href={href}
+        aria-label={`Abrir captura: ${getCapturePreview(preview, { maxLength: 80 })}`}
+        className="block min-w-0 py-1 pl-3 pr-12 outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2"
+        onClick={(event) => {
+          if (isPlainPrimaryClick(event)) {
+            event.preventDefault();
+            router.push(href);
+          }
+        }}
+        onKeyDown={(event) => {
+          if (event.key === " ") {
+            event.preventDefault();
+            router.push(href);
+          }
+        }}
+      >
+        {content}
+      </Link>
+      <CaptureActionsMenu
+        onForget={() => onForgetCapture?.(capture.node)}
+        buttonClassName="absolute right-1 top-1 h-8 w-8"
+        embedded={embedded}
+      />
+    </div>
   );
 }
 
@@ -611,12 +714,14 @@ function MemoryCaptureEntryItem({
   embedded,
   onOpenMemory,
   onOpenConcept,
+  onForgetCapture,
 }: {
   capture: MemoryThreadCapture;
   query: string;
   embedded?: boolean;
   onOpenMemory?: (nodeId: string) => void;
   onOpenConcept?: (conceptId: string) => void;
+  onForgetCapture?: (node: Node) => void;
 }) {
   return (
     <KnowledgeCaptureItem
@@ -627,6 +732,7 @@ function MemoryCaptureEntryItem({
       embedded={embedded}
       onOpenMemory={onOpenMemory}
       onOpenConcept={onOpenConcept}
+      onForgetCapture={onForgetCapture}
     />
   );
 }
@@ -639,6 +745,7 @@ function KnowledgeCaptureItem({
   embedded = false,
   onOpenMemory,
   onOpenConcept,
+  onForgetCapture,
 }: {
   node: Node;
   identity: CaptureEmergentIdentity | null;
@@ -647,6 +754,7 @@ function KnowledgeCaptureItem({
   embedded?: boolean;
   onOpenMemory?: (nodeId: string) => void;
   onOpenConcept?: (conceptId: string) => void;
+  onForgetCapture?: (node: Node) => void;
 }) {
   return (
     <KnowledgeResultItem
@@ -657,9 +765,11 @@ function KnowledgeCaptureItem({
       updatedAt={getContentTimestamp(node)}
       query={query}
       nodeId={node.id}
+      node={node}
       embedded={embedded}
       onOpenMemory={onOpenMemory}
       onOpenConcept={onOpenConcept}
+      onForgetCapture={onForgetCapture}
     />
   );
 }
@@ -672,9 +782,11 @@ function KnowledgeResultItem({
   updatedAt,
   query = "",
   nodeId,
+  node,
   embedded = false,
   onOpenMemory,
   onOpenConcept,
+  onForgetCapture,
 }: {
   href: string;
   preview: string;
@@ -683,62 +795,116 @@ function KnowledgeResultItem({
   updatedAt: string;
   query?: string;
   nodeId: string;
+  node: Node;
   embedded?: boolean;
   onOpenMemory?: (nodeId: string) => void;
   onOpenConcept?: (conceptId: string) => void;
+  onForgetCapture?: (node: Node) => void;
 }) {
+  const router = useRouter();
   const bodyText = getBodyTextForIdentity({ identity, preview, excerpt });
-  const title = (
-    <span className="block rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2">
-      <span className="line-clamp-3 text-base leading-7 text-zinc-800">
-        <HighlightedText
-          text={identity?.displayText ? bodyText : preview}
-          query={query}
-        />
-      </span>
-    </span>
-  );
+  const openCapture = () => {
+    if (embedded) {
+      onOpenMemory?.(nodeId);
+      return;
+    }
+
+    router.push(href);
+  };
 
   return (
-    <article className="rounded-lg border border-zinc-200 bg-white p-4 transition-colors hover:border-zinc-300 hover:bg-zinc-50">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 space-y-1">
-          {identity?.displayText ? (
-            <CaptureEmergentIdentityLabel
-              identity={identity}
-              getConceptHref={embedded ? undefined : getConceptExplorationPath}
-              onConceptClick={embedded ? onOpenConcept : undefined}
+    <article
+      role="link"
+      tabIndex={0}
+      aria-label={`Abrir captura: ${getCapturePreview(preview, { maxLength: 80 })}`}
+      className="relative cursor-pointer rounded-lg border border-zinc-200 bg-white p-4 pr-14 transition-colors hover:border-zinc-300 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2"
+      data-memory-capture-card=""
+      data-memory-card-link=""
+      data-memory-card-href={embedded ? undefined : href}
+      onClick={(event) => {
+        if (shouldIgnoreCardNavigation(event)) {
+          return;
+        }
+
+        openCapture();
+      }}
+      onKeyDown={(event) => {
+        if (shouldIgnoreCardNavigation(event)) {
+          return;
+        }
+
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openCapture();
+        }
+      }}
+    >
+      <KnowledgeResultContent
+        identity={identity}
+        preview={preview}
+        bodyText={bodyText}
+        query={query}
+        updatedAt={updatedAt}
+        embedded={embedded}
+        onOpenConcept={onOpenConcept}
+      />
+      <div className="absolute right-3 top-3">
+        <CaptureActionsMenu
+          onForget={() => onForgetCapture?.(node)}
+          embedded={embedded}
+        />
+      </div>
+    </article>
+  );
+}
+
+function KnowledgeResultContent({
+  identity,
+  preview,
+  bodyText,
+  query,
+  updatedAt,
+  embedded,
+  onOpenConcept,
+}: {
+  identity: CaptureEmergentIdentity | null;
+  preview: string;
+  bodyText: string;
+  query: string;
+  updatedAt: string;
+  embedded: boolean;
+  onOpenConcept?: (conceptId: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="min-w-0 space-y-1">
+        {identity?.displayText ? (
+          <CaptureEmergentIdentityLabel
+            identity={identity}
+            getConceptHref={undefined}
+            onConceptClick={embedded ? onOpenConcept : undefined}
+          />
+        ) : null}
+        <span className="block rounded-sm">
+          <span className="line-clamp-3 text-base leading-7 text-zinc-800">
+            <HighlightedText
+              text={identity?.displayText ? bodyText : preview}
+              query={query}
             />
-          ) : null}
-          {embedded ? (
-            <button
-              type="button"
-              aria-label={`Abrir captura: ${getCapturePreview(preview, { maxLength: 80 })}`}
-              className="block w-full rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2"
-              onClick={() => onOpenMemory?.(nodeId)}
-            >
-              {title}
-            </button>
-          ) : (
-            <Link
-              href={href}
-              aria-label={`Abrir captura: ${getCapturePreview(preview, { maxLength: 80 })}`}
-              className="block rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2"
-            >
-              {title}
-            </Link>
-          )}
-          {!identity?.displayText && bodyText ? (
-            <p className="line-clamp-2 text-sm leading-6 text-zinc-600">
-              <HighlightedText text={bodyText} query={query} />
-            </p>
-          ) : null}
-        </div>
-        <time className="shrink-0 text-xs text-zinc-500">
+          </span>
+        </span>
+        {!identity?.displayText && bodyText ? (
+          <p className="line-clamp-2 text-sm leading-6 text-zinc-600">
+            <HighlightedText text={bodyText} query={query} />
+          </p>
+        ) : null}
+      </div>
+      <div className="flex shrink-0 items-center gap-2 pr-1">
+        <time className="text-xs text-zinc-500">
           {formatCompactDate(updatedAt)}
         </time>
       </div>
-    </article>
+    </div>
   );
 }
 
@@ -762,6 +928,52 @@ function getBodyTextForIdentity({
 
 function normalizeComparableText(value: string) {
   return value.trim().replace(/\s+/g, " ");
+}
+
+function shouldIgnoreCardNavigation(
+  event: React.MouseEvent<HTMLElement> | React.KeyboardEvent<HTMLElement>,
+) {
+  const target =
+    event.target instanceof Element ? event.target : null;
+
+  if (
+    target?.closest(
+      [
+        "button",
+        "a",
+        "input",
+        "textarea",
+        "select",
+        "[role='button']",
+        "[role='menuitem']",
+        "[data-card-interactive]",
+      ].join(","),
+    )
+  ) {
+    return true;
+  }
+
+  if ("button" in event && event.button !== 0) {
+    return true;
+  }
+
+  if (event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) {
+    return true;
+  }
+
+  const selection = window.getSelection?.();
+
+  return Boolean(selection && !selection.isCollapsed);
+}
+
+function isPlainPrimaryClick(event: React.MouseEvent<HTMLElement>) {
+  return (
+    event.button === 0 &&
+    !event.metaKey &&
+    !event.altKey &&
+    !event.ctrlKey &&
+    !event.shiftKey
+  );
 }
 
 function filterMemoryThreadEntries(

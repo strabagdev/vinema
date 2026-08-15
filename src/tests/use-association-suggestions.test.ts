@@ -14,10 +14,13 @@ import { InMemoryNodeRepository } from "@/tests/fakes/in-memory-node-repository"
 class DeferredNodeRepository extends InMemoryNodeRepository {
   private readonly resolvers: Array<(nodes: Node[]) => void> = [];
 
-  override async listByWorkspace(workspaceId: string): Promise<Node[]> {
+  override async listByWorkspace(
+    workspaceId: string,
+    options: { includeArchived?: boolean } = {},
+  ): Promise<Node[]> {
     return new Promise((resolve) => {
       this.resolvers.push(async () => {
-        resolve(await super.listByWorkspace(workspaceId));
+        resolve(await super.listByWorkspace(workspaceId, options));
       });
     });
   }

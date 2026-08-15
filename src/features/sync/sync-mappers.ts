@@ -14,7 +14,22 @@ export function mapLocalNodeToCaptureMutation(input: {
   mutationId: string;
   node: Node;
   baseVersion: number | null;
+  operation?: "upsert" | "archive";
 }): SyncMutation {
+  if (input.operation === "archive") {
+    return {
+      mutationId: input.mutationId,
+      entityType: "capture",
+      operation: "archive",
+      entityId: input.node.id,
+      baseVersion: input.baseVersion,
+      payload: {
+        updatedAt: input.node.updatedAt,
+        archivedAt: input.node.archivedAt ?? input.node.updatedAt,
+      },
+    };
+  }
+
   return {
     mutationId: input.mutationId,
     entityType: "capture",
@@ -25,6 +40,7 @@ export function mapLocalNodeToCaptureMutation(input: {
       content: input.node.content,
       createdAt: input.node.createdAt,
       updatedAt: input.node.updatedAt,
+      archivedAt: input.node.archivedAt ?? null,
     },
   };
 }
@@ -94,6 +110,7 @@ export function mapRemoteCaptureToLocalNode(
     version: capture.version,
     createdAt: capture.createdAt,
     contentUpdatedAt: capture.updatedAt,
+    archivedAt: capture.archivedAt ?? null,
     updatedAt: capture.updatedAt,
     deletedAt: null,
     createdByDeviceId: deviceId,

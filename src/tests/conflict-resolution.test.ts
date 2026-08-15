@@ -21,7 +21,7 @@ const nodeId = "33333333-3333-4333-8333-333333333333";
 const now = "2026-08-03T12:00:00.000Z";
 type CaptureMutationPayload = Extract<
   SyncMutationOutboxRecord["mutation"],
-  { entityType: "capture" }
+  { entityType: "capture"; operation: "upsert" }
 >["payload"];
 
 describe("conflict resolution", () => {

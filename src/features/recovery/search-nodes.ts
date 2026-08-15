@@ -40,7 +40,9 @@ export async function searchNodes(
     return [];
   }
 
-  const nodes = await repositories.nodeRepository.listByWorkspace(input.workspaceId);
+  const nodes = (
+    await repositories.nodeRepository.listByWorkspace(input.workspaceId)
+  ).filter((node) => node.deletedAt === null && !node.archivedAt);
   const results = await Promise.all(
     nodes.map(async (node) => {
       const contexts =

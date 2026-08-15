@@ -89,16 +89,30 @@ export class InMemorySyncStore implements SyncStore {
     mutation: SyncMutation;
   }): Promise<{ version: number; operation: SyncOperation; serverCursor: string }> {
     const version = input.mutation.baseVersion === null ? 1 : input.mutation.baseVersion + 1;
-    const archived = Boolean(input.mutation.payload.archivedAt);
-    const operation: SyncOperation = archived ? "archive" : "upsert";
+    const operation: SyncOperation = input.mutation.operation;
 
     if (input.mutation.entityType === "capture") {
+      if (input.mutation.operation === "archive") {
+        const existing = this.captures.get(input.mutation.entityId);
+
+        if (!existing || existing.workspaceId !== input.workspaceId) {
+          throw new Error("La captura no existe.");
+        }
+
+        this.captures.set(input.mutation.entityId, {
+          ...existing,
+          updatedAt: input.mutation.payload.updatedAt,
+          archivedAt: input.mutation.payload.archivedAt,
+          version,
+        });
+      } else {
       this.captures.set(input.mutation.entityId, {
         id: input.mutation.entityId,
         workspaceId: input.workspaceId,
         ...input.mutation.payload,
         version,
       });
+      }
     } else if (input.mutation.entityType === "concept") {
       this.concepts.set(input.mutation.entityId, {
         id: input.mutation.entityId,

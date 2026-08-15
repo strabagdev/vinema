@@ -13,7 +13,10 @@ import {
   toStoredNodeContextRelation,
 } from "@/infrastructure/context/indexed-db-node-context-relation-repository";
 import { IndexedDbNodeContextRelationRepository } from "@/infrastructure/context/indexed-db-node-context-relation-repository";
-import { IndexedDbNodeRepository } from "@/infrastructure/node/indexed-db-node-repository";
+import {
+  IndexedDbNodeRepository,
+  normalizeStoredNode,
+} from "@/infrastructure/node/indexed-db-node-repository";
 import {
   CONTEXTS_STORE,
   NODE_CONTEXT_RELATIONS_STORE,
@@ -168,6 +171,65 @@ export class IndexedDbLocalSyncNodeRepository implements NodeRepository {
       });
       await transaction.done;
       return node;
+    });
+  }
+
+  async archive(captureId: string, archivedAt: string): Promise<Node> {
+    const db = await getVinemaDb();
+    const transaction = db.transaction(
+      [NODES_STORE, SYNC_MUTATIONS_STORE],
+      "readwrite",
+    );
+
+    return runAtomically(transaction, async () => {
+      const nodes = transaction.objectStore(NODES_STORE);
+      const existing = await nodes.get(captureId);
+      const normalizedExisting = normalizeStoredNode(existing, {
+        includeArchived: true,
+      });
+
+      if (!normalizedExisting || normalizedExisting.deletedAt !== null) {
+        throw new LocalSyncWriteError(
+          "DOMAIN_RECORD_NOT_FOUND",
+          "No se encontro la captura para archivar.",
+          { captureId },
+        );
+      }
+
+      assertSameWorkspace(
+        this.options.syncContext,
+        normalizedExisting.workspaceId,
+      );
+
+      if (normalizedExisting.archivedAt) {
+        await transaction.done;
+        return normalizedExisting;
+      }
+
+      const archivedNode: Node = {
+        ...normalizedExisting,
+        status: "ARCHIVED",
+        archivedAt,
+        updatedAt: archivedAt,
+        version: normalizedExisting.version + 1,
+        lastModifiedByDeviceId: this.options.syncContext.deviceId,
+      };
+      await nodes.put(archivedNode);
+      await enqueueLocalMutation({
+        outboxStore: transaction.objectStore(SYNC_MUTATIONS_STORE),
+        syncContext: this.options.syncContext,
+        origin: this.origin,
+        at: archivedAt,
+        localVersion: archivedNode.version,
+        mutation: mapLocalNodeToCaptureMutation({
+          mutationId: this.mutationIdFactory(),
+          node: archivedNode,
+          baseVersion: normalizedExisting.version,
+          operation: "archive",
+        }),
+      });
+      await transaction.done;
+      return archivedNode;
     });
   }
 }

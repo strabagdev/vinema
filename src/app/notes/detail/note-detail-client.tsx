@@ -29,12 +29,16 @@ import {
   detachNodeFromContext,
 } from "@/features/context/node-context-relations";
 import { updateNode } from "@/features/node/update-node";
+import { archiveNode } from "@/features/node/archive-node";
+import { CaptureActionsMenu } from "@/features/node/capture-actions-menu";
+import { ForgetCaptureDialog } from "@/features/node/forget-capture-dialog";
 import { useNode } from "@/features/node/hooks/use-node";
 import { useVinemaContext } from "@/features/node/hooks/use-vinema-context";
 import { getNodeIdFromSearchParams } from "@/features/node/node-routes";
 import { getReturnToFromSearchParams } from "@/features/recovery/recovery-routes";
 import { validateEditableNode } from "@/features/node/node-validation";
 import { useSyncDataInvalidation } from "@/features/sync/use-sync-data-invalidation";
+import { emitSyncDataChanged } from "@/features/sync/sync-data-events";
 import {
   deriveCaptureEmergentIdentity,
 } from "@/features/identity/capture-emergent-identity";
@@ -270,6 +274,26 @@ function NoteDetailLoader({
         setNode(updatedNode);
         return updatedNode;
       }}
+      onArchive={async () => {
+        const archivedAt = new Date().toISOString();
+        await archiveNode(localRepositories.nodeRepository, {
+          id: node.id,
+          archivedAt,
+        });
+        setNode(null);
+        emitSyncDataChanged({
+          workspaceId: context.workspace.id,
+          entityTypes: ["capture"],
+          changedAt: archivedAt,
+        });
+
+        if (embedded) {
+          onBack?.();
+          return;
+        }
+
+        router.push(returnTo ?? "/memory");
+      }}
       onSaveContextRelations={async (selectedContextIds) => {
         const persistedContextIds = new Set(
           getPersistedSelectedContextIds({
@@ -380,6 +404,7 @@ export function NoteDetailView({
   embeddedState,
   onEmbeddedStateChange,
   canvasPreferencesStorage = storageAdapter,
+  onArchive,
 }: {
   node: Node;
   relatedContexts?: Context[];
@@ -401,6 +426,7 @@ export function NoteDetailView({
   embeddedState?: NoteDetailEmbeddedState;
   onEmbeddedStateChange?: (state: NoteDetailEmbeddedState) => void;
   canvasPreferencesStorage?: StorageAdapter;
+  onArchive?: () => Promise<void>;
 }) {
   const feedback = useVisualFeedback();
   const canvasPreferences = useCanvasPreferences(canvasPreferencesStorage);
@@ -411,6 +437,9 @@ export function NoteDetailView({
     "idle" | "dirty" | "saving" | "saved" | "error"
   >("idle");
   const [formError, setFormError] = useState<string | null>(null);
+  const [forgetOpen, setForgetOpen] = useState(false);
+  const [forgetProcessing, setForgetProcessing] = useState(false);
+  const [forgetError, setForgetError] = useState<string | null>(null);
   const [capturedSelection, setCapturedSelection] =
     useState<CapturedTextSelection | null>(null);
   const [selectionResolution, setSelectionResolution] =
@@ -423,6 +452,7 @@ export function NoteDetailView({
       relatedRelations,
     }),
   );
+
   const selectedContextIdsRef = useRef(selectedContextIds);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const embeddedScrollRef = useRef<HTMLElement | null>(null);
@@ -835,6 +865,32 @@ export function NoteDetailView({
     }
   }
 
+  async function confirmForgetCapture() {
+    if (!onArchive || forgetProcessing) {
+      return;
+    }
+
+    clearCapturedSelection();
+    clearAutosaveTimer();
+    setForgetProcessing(true);
+    setForgetError(null);
+
+    try {
+      await onArchive();
+      setForgetOpen(false);
+    } catch {
+      setForgetError(
+        "No se pudo olvidar la captura. La Memoria local no fue modificada.",
+      );
+    } finally {
+      setForgetProcessing(false);
+    }
+  }
+
+  function openForgetConfirmation() {
+    setForgetOpen(true);
+  }
+
   function handleKeyDown(event: React.KeyboardEvent) {
     const key = typeof event.key === "string"
       ? event.key.toLowerCase()
@@ -855,7 +911,7 @@ export function NoteDetailView({
       ref={embedded ? embeddedScrollRef : undefined}
       className={
         embedded
-          ? "vinema-scrollbar mx-auto flex h-full min-h-0 w-full max-w-[60rem] flex-1 flex-col gap-6 overflow-y-auto px-4 py-5 sm:px-6 sm:py-7 lg:px-8"
+          ? "vinema-scrollbar relative mx-auto flex h-full min-h-0 w-full max-w-[60rem] flex-1 flex-col gap-6 overflow-y-auto px-4 py-5 sm:px-6 sm:py-7 lg:px-8"
           : "mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8"
       }
       onKeyDown={handleKeyDown}
@@ -897,6 +953,10 @@ export function NoteDetailView({
 
             {mode === "read" ? (
               <div className="flex gap-2" data-note-detail-actions="">
+                <CaptureDetailActionsMenu
+                  onForget={openForgetConfirmation}
+                  embedded={embedded}
+                />
                 <Button variant="secondary" onClick={beginEdit}>
                   Editar
                 </Button>
@@ -1019,6 +1079,10 @@ export function NoteDetailView({
                 <Button variant="ghost" onClick={handleBack}>
                   ← Volver
                 </Button>
+                <CaptureDetailActionsMenu
+                  onForget={openForgetConfirmation}
+                  embedded={embedded}
+                />
                 <Button variant="secondary" onClick={beginEdit}>
                   Editar
                 </Button>
@@ -1115,7 +1179,37 @@ export function NoteDetailView({
           )}
         </>
       )}
+      <ForgetCaptureDialog
+        open={forgetOpen}
+        captureContent={persistedNode.content}
+        processing={forgetProcessing}
+        error={forgetError}
+        inline={embedded}
+        onOpenChange={(open) => {
+          if (!open && !forgetProcessing) {
+            setForgetOpen(false);
+            setForgetError(null);
+          }
+        }}
+        onConfirm={confirmForgetCapture}
+      />
     </section>
+  );
+}
+
+function CaptureDetailActionsMenu({
+  onForget,
+  embedded,
+}: {
+  onForget: () => void;
+  embedded: boolean;
+}) {
+  return (
+    <CaptureActionsMenu
+      onForget={onForget}
+      buttonClassName="h-10 w-10"
+      embedded={embedded}
+    />
   );
 }
 

@@ -39,5 +39,5 @@ export function sortKnowledgeCaptures(nodes: Node[]): Node[] {
 }
 
 function isActiveRecoverableNode(node: Node) {
-  return node.deletedAt === null;
+  return node.deletedAt === null && !node.archivedAt;
 }

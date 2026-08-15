@@ -75,13 +75,21 @@ export const syncEntitySchema = z.discriminatedUnion("entityType", [
   }),
 ]);
 
-export const syncMutationSchema = z.discriminatedUnion("entityType", [
+export const syncMutationSchema = z.union([
   baseMutationSchema.extend({
     entityType: z.literal("capture"),
     operation: z.literal("upsert"),
     payload: captureEntitySchema
       .omit({ id: true, workspaceId: true, version: true })
       .extend({ content: z.string().max(MAX_CAPTURE_CONTENT_LENGTH) }),
+  }),
+  baseMutationSchema.extend({
+    entityType: z.literal("capture"),
+    operation: z.literal("archive"),
+    payload: z.object({
+      updatedAt: isoDateSchema,
+      archivedAt: isoDateSchema,
+    }),
   }),
   baseMutationSchema.extend({
     entityType: z.literal("concept"),

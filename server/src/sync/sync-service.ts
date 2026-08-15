@@ -81,6 +81,17 @@ export async function processPush(
       continue;
     }
 
+    if (mutation.operation === "archive" && currentVersion === null) {
+      response.rejected.push({
+        mutationId: mutation.mutationId,
+        entityType: mutation.entityType,
+        entityId: mutation.entityId,
+        code: "ENTITY_NOT_FOUND",
+        message: "La entidad no existe en el servidor.",
+      });
+      continue;
+    }
+
     if (currentVersion === null && mutation.baseVersion !== null) {
       response.rejected.push({
         mutationId: mutation.mutationId,
