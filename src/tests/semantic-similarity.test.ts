@@ -668,6 +668,37 @@ describe("semantic vector index and engine", () => {
     ]);
   });
 
+  it("keeps discovery able to suggest pure semantic capture neighbors", () => {
+    const semanticNode = makeNode({ id: "semantic", content: "viaje a Valparaíso" });
+    const results = mergeSemanticAssociationSuggestions(
+      [],
+      [
+        {
+          node: semanticNode,
+          evidence: {
+            source: "LOCAL_EMBEDDING",
+            sourceType: "capture",
+            targetType: "capture",
+            modelId: model.modelId,
+            modelVersion: model.modelVersion,
+            dimensions: model.dimensions,
+            similarity: 0.74,
+            rank: 1,
+            marginToNext: null,
+          },
+        },
+      ],
+      5,
+    );
+
+    expect(results).toMatchObject([
+      {
+        node: { id: "semantic" },
+        reasons: [expect.objectContaining({ type: "VECTOR_SIMILARITY" })],
+      },
+    ]);
+  });
+
   it("adds pure semantic concept suggestions as explained RELATED_NOW suggestions", () => {
     const context = makeContext({ id: "sleep", name: "Sueño" });
     const results = mergeSemanticConceptSuggestions({

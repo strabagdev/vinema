@@ -1253,6 +1253,23 @@ describe("Knowledge Base", () => {
     expect(mocks.replace).toHaveBeenCalledWith("/memory", { scroll: false });
   });
 
+  it("shows zero memory search results when medical query has no backed evidence", async () => {
+    mocks.searchParams = new URLSearchParams("q=paracetamol");
+    setMockNodes([
+      createNode({
+        id: "anteversion",
+        content: "Anteversion Pelvica Ejercicios",
+      }),
+    ]);
+
+    const screen = await renderKnowledgeBase();
+
+    expect(screen.textContent).toContain(
+      'No encontramos capturas para "paracetamol".',
+    );
+    expect(screen.textContent).not.toContain("Anteversion Pelvica Ejercicios");
+  });
+
   it("opens memory details through callbacks when embedded", async () => {
     const openMemory = vi.fn();
     setMockNodes([

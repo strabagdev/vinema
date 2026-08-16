@@ -14,8 +14,7 @@ export type RecoveryRankCategory =
   | "canonical-concept"
   | "alias"
   | "explicit-association"
-  | "backed-relationship"
-  | "semantic-only";
+  | "backed-relationship";
 
 export type RecoveryResultContext = Pick<
   Context,

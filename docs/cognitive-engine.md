@@ -289,11 +289,12 @@ Politica de uso:
 - Search optimiza precision; Discovery optimiza recall.
 - En busqueda manual, Semantic Similarity complementa evidencia literal y
   conceptual, pero no la desplaza.
-- `VECTOR_SIMILARITY` sola tiene menor autoridad en Search que en Discovery: en
-  Search solo puede entrar como respaldo fuerte y por debajo de evidencia
-  literal, canonica, alias, asociaciones explicitas o relaciones respaldadas.
+- En busqueda manual, Semantic Similarity no constituye evidencia suficiente de
+  elegibilidad por si sola: `VECTOR_SIMILARITY` puede enriquecer o desempatar un
+  resultado ya respaldado, pero nunca producir un resultado independiente.
 - “Me recuerda a” conserva una politica exploratoria mas amplia y puede usar el
-  umbral semantico interno provisional para sugerir vecinos utiles.
+  umbral semantico interno provisional para sugerir vecinos utiles. Discovery
+  puede utilizar similitud vectorial como fuente independiente de candidatos.
 
 Integración:
 

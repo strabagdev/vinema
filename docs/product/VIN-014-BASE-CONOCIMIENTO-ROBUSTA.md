@@ -37,7 +37,8 @@ tenia una estrategia clara para crecer.
 - Las capturas archivadas se excluyen por defecto.
 - La busqueda integrada reutiliza `searchNodes` con politica Search: prioriza
   coincidencias literales, conceptos canonicos, aliases, asociaciones explicitas
-  y relaciones respaldadas antes de cualquier similitud vectorial.
+  y relaciones respaldadas. La similitud vectorial no hace elegible una captura
+  por si sola.
 - Los hilos son una vista derivada desde `Node`, `Context` y
   `NodeContextRelation`; no se persisten ni se sincronizan como entidad propia.
 - Las capturas siguen sin titulo editable.

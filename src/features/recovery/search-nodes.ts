@@ -18,15 +18,12 @@ import type {
 import type { SemanticSimilarityPolicy } from "@/features/semantic-similarity/semantic-similarity-engine";
 
 const EXCERPT_RADIUS = 72;
-const SEARCH_SEMANTIC_ONLY_MIN_SIMILARITY = 0.76;
-const SEARCH_SEMANTIC_ONLY_MIN_MARGIN = 0.05;
 const RANK_CATEGORY_PRIORITY: Record<RecoveryRankCategory, number> = {
   literal: 1,
   "canonical-concept": 2,
   alias: 3,
   "explicit-association": 4,
   "backed-relationship": 5,
-  "semantic-only": 6,
 };
 
 export type SearchNodesRepositories = {
@@ -139,7 +136,6 @@ async function buildSemanticRecoveryResults(
 
   return semanticMatches
     .filter((match) => match.node.deletedAt === null && !match.node.archivedAt)
-    .filter((match) => isStrongSearchSemanticOnlyMatch(match.evidence))
     .map((match) => ({
       nodeId: match.node.id,
       preview: getCapturePreview(match.node.content, { maxLength: 90 }),
@@ -148,8 +144,7 @@ async function buildSemanticRecoveryResults(
       matchedFields: ["semantic" as const],
       contexts: [],
       updatedAt: getContentTimestamp(match.node),
-      score: 10 + Math.round(match.evidence.similarity * 10),
-      rankCategory: "semantic-only" as const,
+      score: 0,
       semantic: {
         similarity: match.evidence.similarity,
         rank: match.evidence.rank,
@@ -172,7 +167,6 @@ function mergeRecoveryResults(
     const existing = results.get(result.nodeId);
 
     if (!existing) {
-      results.set(result.nodeId, result);
       continue;
     }
 
@@ -438,17 +432,6 @@ function bestRankCategory(
   return RANK_CATEGORY_PRIORITY[candidate] < RANK_CATEGORY_PRIORITY[current]
     ? candidate
     : current;
-}
-
-function isStrongSearchSemanticOnlyMatch(evidence: {
-  similarity: number;
-  marginToNext: number | null;
-}) {
-  return (
-    evidence.similarity >= SEARCH_SEMANTIC_ONLY_MIN_SIMILARITY &&
-    (evidence.marginToNext ?? SEARCH_SEMANTIC_ONLY_MIN_MARGIN) >=
-      SEARCH_SEMANTIC_ONLY_MIN_MARGIN
-  );
 }
 
 function getRankCategoryPriority(result: RecoveryResult) {
