@@ -430,6 +430,107 @@ describe("semantic vector index and engine", () => {
     ).resolves.toMatchObject([{ node: { id: "ready" } }]);
   });
 
+  it("filters capture search to capture source embeddings", async () => {
+    const nodeRepository = new InMemoryNodeRepository([
+      makeNode({ id: "ready", content: "rutina de sueño" }),
+    ]);
+    const repository = new InMemoryEmbeddingRepository([
+      makeEmbeddingRecord({
+        sourceId: "ready",
+        sourceType: "capture",
+        vector: new Float32Array([1, 0, 0]),
+        status: "READY",
+      }),
+      makeEmbeddingRecord({
+        sourceId: "ready",
+        sourceType: "concept",
+        vector: new Float32Array([0, 1, 0]),
+        status: "READY",
+      }),
+    ]);
+    const engine = new SemanticSimilarityEngine({
+      repository,
+      nodeRepository,
+      runtime: makeRuntime({ vector: new Float32Array([0, 1, 0]) }),
+    });
+
+    await expect(
+      engine.findSimilarCaptures({ workspaceId, text: "descanso", topK: 5 }),
+    ).resolves.toEqual([]);
+  });
+
+  it("embeds each manual query with the current text", async () => {
+    const embeddedTexts: string[] = [];
+    const nodeRepository = new InMemoryNodeRepository([
+      makeNode({ id: "ready", content: "rutina de sueño" }),
+    ]);
+    const repository = new InMemoryEmbeddingRepository([
+      makeEmbeddingRecord({
+        sourceId: "ready",
+        vector: new Float32Array([1, 0, 0]),
+        status: "READY",
+      }),
+    ]);
+    const engine = new SemanticSimilarityEngine({
+      repository,
+      nodeRepository,
+      runtime: makeRuntime({
+        embed: async (text) => {
+          embeddedTexts.push(text);
+          return new Float32Array([1, 0, 0]);
+        },
+      }),
+    });
+
+    await engine.findSimilarCaptures({
+      workspaceId,
+      text: "vinema",
+      policy: "search",
+    });
+    await engine.findSimilarCaptures({
+      workspaceId,
+      text: "codelco",
+      policy: "search",
+    });
+
+    expect(embeddedTexts).toEqual(["vinema", "codelco"]);
+  });
+
+  it("keeps discovery broader than search for vector neighbors", async () => {
+    const nodeRepository = new InMemoryNodeRepository([
+      makeNode({ id: "broad-neighbor", content: "rutina distante" }),
+    ]);
+    const repository = new InMemoryEmbeddingRepository([
+      makeEmbeddingRecord({
+        sourceId: "broad-neighbor",
+        vector: new Float32Array([0.5, 0, 0]),
+        status: "READY",
+      }),
+    ]);
+    const engine = new SemanticSimilarityEngine({
+      repository,
+      nodeRepository,
+      runtime: makeRuntime({ vector: new Float32Array([1, 0, 0]) }),
+    });
+
+    await expect(
+      engine.findSimilarCaptures({
+        workspaceId,
+        text: "descanso",
+        topK: 5,
+        policy: "search",
+      }),
+    ).resolves.toEqual([]);
+    await expect(
+      engine.findSimilarCaptures({
+        workspaceId,
+        text: "descanso",
+        topK: 5,
+        policy: "discovery",
+      }),
+    ).resolves.toMatchObject([{ node: { id: "broad-neighbor" } }]);
+  });
+
   it("finds capture-to-concept matches and excludes explicit or selected concepts", async () => {
     const evidenceModel = makeEvidenceModel({
       contexts: [

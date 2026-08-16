@@ -259,10 +259,68 @@ describe("Knowledge Base", () => {
     expect(searchPanel?.className).toContain("space-y-1");
     expect(form?.className).toContain("gap-2");
     expect(form?.className).not.toContain("bg-white");
+    expect(form?.querySelector("input")?.className).toContain("h-11");
+    expect(
+      Array.from(form?.querySelectorAll("button") ?? []).some(
+        (button) => button.textContent?.trim() === "Buscar",
+      ),
+    ).toBe(false);
     expect(counter?.className).toContain("text-xs");
     expect(searchRegion?.contains(form)).toBe(true);
     expect(searchRegion?.contains(counter)).toBe(true);
     expect(counter?.textContent).toContain("2 capturas activas.");
+  });
+
+  it("runs memory search reactively after debounce without requiring Enter", async () => {
+    vi.useFakeTimers();
+    try {
+      setMockNodes([
+        createNode({ id: "codelco", content: "Contrato Codelco" }),
+        createNode({ id: "other", content: "Captura sin relacion" }),
+      ]);
+
+      const screen = await renderKnowledgeBase(
+        createElement(KnowledgeBaseClient as ComponentType<{
+          embedded?: boolean;
+        }>, { embedded: true }),
+      );
+      const input = screen.querySelector<HTMLInputElement>("#knowledge-search");
+      const form = screen.querySelector("[data-memory-search-form]");
+
+      if (!input) {
+        throw new Error("Memory search input not found");
+      }
+
+      expect(
+        Array.from(form?.querySelectorAll("button") ?? []).some(
+          (button) => button.textContent?.trim() === "Buscar",
+        ),
+      ).toBe(false);
+      expect(screen.textContent).toContain("2 capturas activas.");
+
+      await changeInput(input, "codelco");
+      await act(async () => {
+        vi.advanceTimersByTime(299);
+        await flushPromises();
+      });
+
+      expect(screen.textContent).toContain("2 capturas activas.");
+
+      await act(async () => {
+        vi.advanceTimersByTime(1);
+        await flushPromises();
+      });
+
+      expect(screen.textContent).toContain('1 resultados para "codelco".');
+      expect(screen.textContent).toContain("Contrato Codelco");
+      expect(screen.textContent).not.toContain("Captura sin relacion");
+
+      await keyDown(input, "Enter");
+
+      expect(screen.textContent).toContain('1 resultados para "codelco".');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("renders memory captures as a normal vertical list without changing DOM order or navigation", async () => {
@@ -605,6 +663,74 @@ describe("Knowledge Base", () => {
     expect(screen.textContent).toContain("1 resultados para \"proveedor mitcom\".");
     expect(screen.textContent).toContain("Contenido sin el alias visible");
     expect(screen.textContent).not.toContain("Contenido externo");
+  });
+
+  it("renders active search results in searchNodes ranking instead of recency order", async () => {
+    mocks.searchParams = new URLSearchParams("q=codelco");
+    setMockNodes([
+      createNode({
+        id: "literal-old",
+        content: "Contrato literal Codelco",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }),
+      createNode({
+        id: "concept-new",
+        content: "Bitacora operativa",
+        updatedAt: "2026-01-05T00:00:00.000Z",
+      }),
+    ]);
+    setMockContexts([createContext({ id: "codelco", name: "Codelco" })]);
+    setMockRelations([
+      createRelation({ nodeId: "concept-new", contextId: "codelco" }),
+    ]);
+
+    const screen = await renderKnowledgeBase();
+    const cards = getMemoryDetailSurfaces(screen);
+
+    expect(cards.map((card) => getMemorySurfaceHref(card))).toEqual([
+      expect.stringContaining("nodeId=literal-old"),
+      expect.stringContaining("nodeId=concept-new"),
+    ]);
+  });
+
+  it("lets a thread inherit the best search rank from its captures", async () => {
+    mocks.searchParams = new URLSearchParams("q=codelco");
+    setMockNodes([
+      createNode({
+        id: "thread-literal",
+        content: "Contrato literal Codelco",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }),
+      createNode({
+        id: "thread-companion",
+        content: "Seguimiento operativo",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+      }),
+      createNode({
+        id: "concept-new",
+        content: "Bitacora operativa",
+        updatedAt: "2026-01-05T00:00:00.000Z",
+      }),
+    ]);
+    setMockContexts([
+      createContext({ id: "codelco", name: "Codelco" }),
+      createContext({ id: "sync", name: "Sincronizacion" }),
+    ]);
+    setMockRelations([
+      createRelation({ nodeId: "thread-literal", contextId: "codelco" }),
+      createRelation({ nodeId: "thread-literal", contextId: "sync" }),
+      createRelation({ nodeId: "thread-companion", contextId: "codelco" }),
+      createRelation({ nodeId: "thread-companion", contextId: "sync" }),
+      createRelation({ nodeId: "concept-new", contextId: "codelco" }),
+    ]);
+
+    const screen = await renderKnowledgeBase();
+    const content = screen.textContent ?? "";
+
+    expect(content.indexOf("Codelco · Sincronizacion")).toBeGreaterThanOrEqual(0);
+    expect(content.indexOf("Bitacora operativa")).toBeGreaterThan(
+      content.indexOf("Codelco · Sincronizacion"),
+    );
   });
 
   it("shows accepted concepts as emergent identity without duplicating the body", async () => {
@@ -1105,7 +1231,7 @@ describe("Knowledge Base", () => {
     expect(screen.textContent).toContain('2 resultados para "Mitcom (A)".');
     expect(screen.querySelectorAll("mark")).toHaveLength(4);
     expect(getMemorySurfaceHref(getFirstDetailLink(screen))).toBe(
-      "/memory/detail?nodeId=legacy-status&returnTo=%2Fmemory%3Fq%3DMitcom%2520(A)",
+      "/memory/detail?nodeId=match&returnTo=%2Fmemory%3Fq%3DMitcom%2520(A)",
     );
     expect(screen.textContent).toContain("historico");
   });
@@ -1156,8 +1282,12 @@ describe("Knowledge Base", () => {
     expect(screen.querySelector("h1")).toBeNull();
     expect(screen.textContent).not.toContain("Tus capturas organizadas por contexto.");
     expect(firstContent).toBe(searchRegion);
-    expect(searchRegion?.querySelector("form")?.textContent).toContain("Buscar");
-    expect(firstContent?.textContent).toContain("Buscar");
+	    expect(searchRegion?.querySelector("form input")).toBeTruthy();
+	    expect(
+	      Array.from(
+	        searchRegion?.querySelectorAll("form button") ?? [],
+	      ).some((button) => button.textContent?.trim() === "Buscar"),
+	    ).toBe(false);
     expect(surface.hasAttribute("data-memory-scroll-container")).toBe(false);
     expect(resultsScroll?.getAttribute("data-memory-scroll-container")).toBe("");
     expect(resultsScroll?.parentElement).toBe(surface);

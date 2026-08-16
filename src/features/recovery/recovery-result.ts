@@ -1,6 +1,21 @@
 import type { Context } from "@/domain/context/context";
 
-export type RecoveryMatchedField = "content" | "context" | "semantic";
+export type RecoveryMatchedField =
+  | "content"
+  | "context"
+  | "concept"
+  | "alias"
+  | "association"
+  | "relationship"
+  | "semantic";
+
+export type RecoveryRankCategory =
+  | "literal"
+  | "canonical-concept"
+  | "alias"
+  | "explicit-association"
+  | "backed-relationship"
+  | "semantic-only";
 
 export type RecoveryResultContext = Pick<
   Context,
@@ -15,6 +30,8 @@ export type RecoveryResult = {
   contexts: RecoveryResultContext[];
   updatedAt: string;
   score: number;
+  rankCategory?: RecoveryRankCategory;
+  searchRank?: number;
   semantic?: {
     similarity: number;
     rank: number;

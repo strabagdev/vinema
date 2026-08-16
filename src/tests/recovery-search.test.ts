@@ -211,7 +211,12 @@ describe("local recovery search", () => {
       query: "masa madre",
     });
 
-    expect(results[0]?.matchedFields).toEqual(["context", "content"]);
+    expect(results[0]?.matchedFields).toEqual([
+      "content",
+      "context",
+      "concept",
+      "association",
+    ]);
   });
 
   it("normalizes accents, casing and redundant spaces", async () => {
@@ -245,7 +250,7 @@ describe("local recovery search", () => {
     ).resolves.toEqual([]);
   });
 
-  it("orders by context, content and updatedAt", async () => {
+  it("orders by literal, concept and updatedAt", async () => {
     const contextMatch = makeNode({
       id: "context",
       content: "Receta",
@@ -276,10 +281,11 @@ describe("local recovery search", () => {
     });
 
     expect(results.map((result) => result.nodeId)).toEqual([
-      "context",
       "recent-content",
       "content",
+      "context",
     ]);
+    expect(results.map((result) => result.searchRank)).toEqual([1, 2, 3]);
   });
 
   it("updates results after editing a source", async () => {
@@ -331,7 +337,166 @@ describe("local recovery search", () => {
     ).resolves.toMatchObject([{ nodeId: "node-1" }]);
   });
 
-  it("merges local semantic matches without surfacing archived captures", async () => {
+  it("keeps literal evidence ahead of strong semantic-only matches", async () => {
+    const semanticNode = makeNode({
+      id: "semantic-node",
+      content: "Anteversion pelvica ejercicios",
+      updatedAt: "2026-01-04T00:00:00.000Z",
+    });
+    const repositories = {
+      ...makeRepositories({
+        nodes: [
+          makeNode({
+            id: "literal-node",
+            content: "Contrato Codelco Norte",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          }),
+          semanticNode,
+        ],
+      }),
+      semanticSimilarity: {
+        findSimilarCaptures: async () => [
+          {
+            node: semanticNode,
+            evidence: { similarity: 0.92, rank: 1, marginToNext: 0.08 },
+          },
+        ],
+      },
+    };
+
+    const results = await searchNodes(repositories, {
+      workspaceId,
+      query: "codelco",
+    });
+
+    expect(results.map((result) => result.nodeId)).toEqual([
+      "literal-node",
+      "semantic-node",
+    ]);
+    expect(results[0]).toMatchObject({
+      matchedFields: ["content"],
+      rankCategory: "literal",
+    });
+    expect(results[1]).toMatchObject({
+      matchedFields: ["semantic"],
+      rankCategory: "semantic-only",
+    });
+  });
+
+  it("does not admit weak semantic-only matches into manual search", async () => {
+    const unrelatedNode = makeNode({
+      id: "anteversion",
+      content: "Anteversion Pelvica Ejercicios",
+    });
+    const repositories = {
+      ...makeRepositories({ nodes: [unrelatedNode] }),
+      semanticSimilarity: {
+        findSimilarCaptures: async () => [
+          {
+            node: unrelatedNode,
+            evidence: { similarity: 0.52, rank: 1, marginToNext: 0.03 },
+          },
+        ],
+      },
+    };
+
+    await expect(
+      searchNodes(repositories, { workspaceId, query: "vinema" }),
+    ).resolves.toEqual([]);
+  });
+
+  it("does not reuse stale semantic results between successive searches", async () => {
+    const codelcoNode = makeNode({
+      id: "codelco-node",
+      content: "Contrato Codelco",
+    });
+    const seenQueries: string[] = [];
+    const repositories = {
+      ...makeRepositories({ nodes: [codelcoNode] }),
+      semanticSimilarity: {
+        findSimilarCaptures: async (input: { text: string }) => {
+          seenQueries.push(input.text);
+          return input.text === "codelco"
+            ? [
+                {
+                  node: codelcoNode,
+                  evidence: { similarity: 0.9, rank: 1, marginToNext: 0.08 },
+                },
+              ]
+            : [];
+        },
+      },
+    };
+
+    await expect(
+      searchNodes(repositories, { workspaceId, query: "vinema" }),
+    ).resolves.toEqual([]);
+    await expect(
+      searchNodes(repositories, { workspaceId, query: "codelco" }),
+    ).resolves.toMatchObject([{ nodeId: "codelco-node" }]);
+    expect(seenQueries).toEqual(["vinema", "codelco"]);
+  });
+
+  it("finds captures through canonical concepts, aliases, associations and backed relationships", async () => {
+    const repositories = makeRepositories({
+      nodes: [
+        makeNode({ id: "associated", content: "Bitacora operativa" }),
+        makeNode({ id: "alias", content: "Bitacora del proveedor" }),
+        makeNode({ id: "related", content: "Revision posterior" }),
+      ],
+      contexts: [
+        makeContext({
+          id: "codelco",
+          name: "Codelco",
+          aliases: ["Cliente minero"],
+          normalizedAliases: ["mandante rojo"],
+        }),
+      ],
+      relations: [
+        makeRelation({ nodeId: "associated", contextId: "codelco" }),
+        makeRelation({ nodeId: "alias", contextId: "codelco" }),
+        makeRelation({
+          id: "association-associated-related",
+          nodeId: "associated",
+          contextId: "related",
+          relatedNodeId: "related",
+          relationType: "CAPTURE_ASSOCIATION",
+        }),
+      ],
+    });
+
+    const canonicalResults = await searchNodes(repositories, {
+      workspaceId,
+      query: "codelco",
+      includeContexts: false,
+    });
+    const aliasResults = await searchNodes(repositories, {
+      workspaceId,
+      query: "mandante rojo",
+      includeContexts: false,
+    });
+
+    expect(canonicalResults.map((result) => result.nodeId)).toEqual([
+      "associated",
+      "alias",
+      "related",
+    ]);
+    expect(canonicalResults[0]).toMatchObject({
+      matchedFields: expect.arrayContaining(["concept", "association"]),
+      contexts: [],
+      rankCategory: "canonical-concept",
+    });
+    expect(canonicalResults[2]).toMatchObject({
+      matchedFields: expect.arrayContaining(["relationship"]),
+      rankCategory: "backed-relationship",
+    });
+    expect(aliasResults[0]).toMatchObject({
+      matchedFields: expect.arrayContaining(["alias", "association"]),
+      rankCategory: "alias",
+    });
+  });
+
+  it("merges strong local semantic matches without surfacing archived captures", async () => {
     const semanticNode = makeNode({
       id: "semantic-node",
       content: "Bitacora de respiracion antes de dormir",
@@ -353,7 +518,7 @@ describe("local recovery search", () => {
         findSimilarCaptures: async () => [
           {
             node: semanticNode,
-            evidence: { similarity: 0.71, rank: 1, marginToNext: 0.08 },
+            evidence: { similarity: 0.88, rank: 1, marginToNext: 0.08 },
           },
           {
             node: archivedNode,
@@ -375,7 +540,7 @@ describe("local recovery search", () => {
     );
     expect(results.find((result) => result.nodeId === "semantic-node")).toMatchObject({
       matchedFields: ["semantic"],
-      semantic: { similarity: 0.71 },
+      semantic: { similarity: 0.88 },
     });
   });
 

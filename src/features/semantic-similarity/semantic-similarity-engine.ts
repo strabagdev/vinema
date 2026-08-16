@@ -15,6 +15,9 @@ import { SemanticVectorIndex } from "@/features/semantic-similarity/semantic-vec
 
 const DEFAULT_TOP_K = 5;
 const MIN_INTERNAL_SIMILARITY = 0.18;
+const MIN_SEARCH_SEMANTIC_SIMILARITY = 0.76;
+
+export type SemanticSimilarityPolicy = "search" | "discovery";
 
 export type SemanticSimilarityEvidence = {
   source: "LOCAL_EMBEDDING";
@@ -54,6 +57,7 @@ export class SemanticSimilarityEngine {
     text: string;
     currentNodeId?: string;
     topK?: number;
+    policy?: SemanticSimilarityPolicy;
   }): Promise<SemanticSimilarityMatch[]> {
     const normalizedText = captureMarkdownToEmbeddingText(input.text);
 
@@ -67,6 +71,7 @@ export class SemanticSimilarityEngine {
       modelId: this.options.runtime.metadata.modelId,
       modelVersion: this.options.runtime.metadata.modelVersion,
       dimensions: this.options.runtime.metadata.dimensions,
+      sourceType: "capture",
     });
     const activeNodes = await this.options.nodeRepository.listByWorkspace(input.workspaceId);
     const nodesById = new Map(
@@ -94,7 +99,7 @@ export class SemanticSimilarityEngine {
     });
 
     return matches
-      .filter((match) => match.score >= MIN_INTERNAL_SIMILARITY)
+      .filter((match) => match.score >= getMinimumSimilarity(input.policy))
       .flatMap((match): SemanticSimilarityMatch[] => {
         const node = nodesById.get(match.id);
 
@@ -252,4 +257,10 @@ export class SemanticSimilarityEngine {
         ];
       });
   }
+}
+
+function getMinimumSimilarity(policy: SemanticSimilarityPolicy = "discovery") {
+  return policy === "search"
+    ? MIN_SEARCH_SEMANTIC_SIMILARITY
+    : MIN_INTERNAL_SIMILARITY;
 }

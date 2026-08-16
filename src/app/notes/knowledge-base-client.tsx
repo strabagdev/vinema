@@ -378,14 +378,14 @@ export function KnowledgeBaseClient({
         Buscar en la Memoria
       </label>
       <div className="relative min-w-0 flex-1">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+        <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
         <Input
           id="knowledge-search"
           ref={searchInputRef}
           value={draftQuery}
           onChange={(event) => setDraftQuery(event.target.value)}
-          placeholder="Buscar en la Memoria"
-          className="h-9 pl-9"
+          placeholder="Buscar capturas, conceptos o aliases"
+          className="h-11 w-full pl-10 text-base"
         />
       </div>
       {activeQuery ? (
@@ -394,10 +394,6 @@ export function KnowledgeBaseClient({
           Limpiar
         </Button>
       ) : null}
-      <Button type="submit" size="sm">
-        <Search className="h-4 w-4" />
-        Buscar
-      </Button>
     </form>
   );
   const resultCounter = (
@@ -1032,7 +1028,44 @@ function filterMemoryThreadEntries(
         },
       };
     })
-    .filter((entry): entry is MemoryThreadEntry => entry !== null);
+    .filter((entry): entry is MemoryThreadEntry => entry !== null)
+    .sort((first, second) =>
+      compareSearchThreadEntries(first, second, searchResultsByNodeId),
+    );
+}
+
+function compareSearchThreadEntries(
+  first: MemoryThreadEntry,
+  second: MemoryThreadEntry,
+  searchResultsByNodeId: Map<string, RecoveryResult>,
+) {
+  const firstRank = getBestSearchRank(first, searchResultsByNodeId);
+  const secondRank = getBestSearchRank(second, searchResultsByNodeId);
+
+  if (firstRank !== secondRank) {
+    return firstRank - secondRank;
+  }
+
+  return getThreadEntryLastCapturedAt(second).getTime() -
+    getThreadEntryLastCapturedAt(first).getTime();
+}
+
+function getBestSearchRank(
+  entry: MemoryThreadEntry,
+  searchResultsByNodeId: Map<string, RecoveryResult>,
+) {
+  const captures = entry.kind === "thread" ? entry.thread.captures : [entry.capture];
+  const ranks = captures
+    .map((capture) => searchResultsByNodeId.get(capture.node.id)?.searchRank)
+    .filter((rank): rank is number => typeof rank === "number");
+
+  return ranks.length > 0 ? Math.min(...ranks) : Number.POSITIVE_INFINITY;
+}
+
+function getThreadEntryLastCapturedAt(entry: MemoryThreadEntry) {
+  return entry.kind === "thread"
+    ? entry.thread.lastCapturedAt
+    : entry.capture.capturedAt;
 }
 
 function matchesMemoryCapture(

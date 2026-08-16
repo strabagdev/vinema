@@ -228,12 +228,13 @@ export function useAssociationSuggestions({
           conceptsMs = evaluation.diagnostics.conceptsMs;
           const semanticService = getSemanticSimilarityService(nodeRepository);
           const semanticMatches =
-            await semanticService.findSimilarCaptures({
-              workspaceId,
-              text,
-              currentNodeId,
-              topK: 5,
-            });
+	            await semanticService.findSimilarCaptures({
+	              workspaceId,
+	              text,
+	              currentNodeId,
+	              topK: 5,
+	              policy: "discovery",
+	            });
           const recoveryMatches = mergeSemanticAssociationSuggestions(
             evaluation.recoveryMatches,
             semanticMatches,

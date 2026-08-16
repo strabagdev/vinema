@@ -5,7 +5,10 @@ import type { MemoryEvidenceModel } from "@/features/cognition/memory-evidence/m
 import { IndexedDbEmbeddingRepository } from "@/infrastructure/semantic-similarity/indexed-db-embedding-repository";
 import { createTransformersEmbeddingRuntime } from "@/features/semantic-similarity/embedding-runtime";
 import { EmbeddingJobQueue } from "@/features/semantic-similarity/embedding-job-queue";
-import { SemanticSimilarityEngine } from "@/features/semantic-similarity/semantic-similarity-engine";
+import {
+  SemanticSimilarityEngine,
+  type SemanticSimilarityPolicy,
+} from "@/features/semantic-similarity/semantic-similarity-engine";
 
 export type SemanticSimilarityService = {
   backfillWorkspace(workspaceId: string, options?: { limit?: number }): Promise<void>;
@@ -14,12 +17,13 @@ export type SemanticSimilarityService = {
     evidenceModel: MemoryEvidenceModel,
     options?: { limit?: number },
   ): Promise<void>;
-  findSimilarCaptures(input: {
-    workspaceId: string;
-    text: string;
-    currentNodeId?: string;
-    topK?: number;
-  }): Promise<Awaited<ReturnType<SemanticSimilarityEngine["findSimilarCaptures"]>>>;
+	  findSimilarCaptures(input: {
+	    workspaceId: string;
+	    text: string;
+	    currentNodeId?: string;
+	    topK?: number;
+	    policy?: SemanticSimilarityPolicy;
+	  }): Promise<Awaited<ReturnType<SemanticSimilarityEngine["findSimilarCaptures"]>>>;
   findSimilarConceptsForCapture(
     input: Parameters<SemanticSimilarityEngine["findSimilarConceptsForCapture"]>[0],
   ): Promise<

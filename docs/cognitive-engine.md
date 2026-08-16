@@ -284,6 +284,17 @@ Reglas:
 - backfill, pull aplicado, restore/import y nuevas capturas pueden pedir
   actualización gradual del índice local.
 
+Politica de uso:
+
+- Search optimiza precision; Discovery optimiza recall.
+- En busqueda manual, Semantic Similarity complementa evidencia literal y
+  conceptual, pero no la desplaza.
+- `VECTOR_SIMILARITY` sola tiene menor autoridad en Search que en Discovery: en
+  Search solo puede entrar como respaldo fuerte y por debajo de evidencia
+  literal, canonica, alias, asociaciones explicitas o relaciones respaldadas.
+- “Me recuerda a” conserva una politica exploratoria mas amplia y puede usar el
+  umbral semantico interno provisional para sugerir vecinos utiles.
+
 Integración:
 
 - participa solo como fuente adicional de recuperación interna para

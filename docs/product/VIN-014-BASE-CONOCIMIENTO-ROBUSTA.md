@@ -35,7 +35,9 @@ tenia una estrategia clara para crecer.
 - La Base muestra contenido activo, incluyendo datos historicos `NOTE/ORGANIZED`
   e `IDEA/INBOX`.
 - Las capturas archivadas se excluyen por defecto.
-- La busqueda integrada reutiliza `searchNodes`.
+- La busqueda integrada reutiliza `searchNodes` con politica Search: prioriza
+  coincidencias literales, conceptos canonicos, aliases, asociaciones explicitas
+  y relaciones respaldadas antes de cualquier similitud vectorial.
 - Los hilos son una vista derivada desde `Node`, `Context` y
   `NodeContextRelation`; no se persisten ni se sincronizan como entidad propia.
 - Las capturas siguen sin titulo editable.
@@ -53,6 +55,11 @@ La implementacion actual sigue leyendo los registros activos del workspace y
 pagina en memoria. Es suficiente para el volumen local esperado del MVP. Cuando
 el volumen crezca a miles o decenas de miles de capturas, convendra exponer una
 consulta paginada real desde IndexedDB usando indices.
+
+Cuando hay una consulta activa, Memoria respeta el ranking de `searchNodes`.
+Los hilos heredan el mejor ranking de sus capturas coincidentes. Sin consulta,
+se conserva el orden normal cronologico/por hilo. Search optimiza precision;
+Discovery, como “Me recuerda a”, optimiza recall.
 
 ## 5. Criterio de orden
 
