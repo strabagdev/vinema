@@ -15,14 +15,16 @@ import type {
   SyncMetadataRecord,
   SyncMutationOutboxRecord,
 } from "@/features/sync/sync-outbox-repository";
+import type { StoredEmbeddingRecord } from "@/features/semantic-similarity/embedding-types";
 
 export const VINEMA_DB_NAME = "vinema";
-export const VINEMA_DB_VERSION = 8;
+export const VINEMA_DB_VERSION = 9;
 
 export const APP_SETTINGS_STORE = "app_settings";
 export const AUTH_SESSION_STORE = "auth_session";
 export const CONTEXTS_STORE = "contexts";
 export const DEVICES_STORE = "devices";
+export const EMBEDDINGS_STORE = "embeddings";
 export const LEGACY_KEY_VALUE_STORE = "key-value";
 export const NODE_CONTEXT_RELATIONS_STORE = "node_context_relations";
 export const NODES_STORE = "nodes";
@@ -53,6 +55,15 @@ export interface VinemaDbSchema extends DBSchema {
   [DEVICES_STORE]: {
     key: string;
     value: { id: string } & Record<string, unknown>;
+  };
+  [EMBEDDINGS_STORE]: {
+    key: string;
+    value: StoredEmbeddingRecord;
+    indexes: {
+      "by-source": [string, string, string];
+      "by-status": [string, string];
+      "by-workspace-and-model": [string, string, string, number];
+    };
   };
   [LEGACY_KEY_VALUE_STORE]: {
     key: string;
@@ -120,6 +131,7 @@ type UpgradeTransaction = Parameters<
 type InlineStoreName =
   | typeof CONTEXTS_STORE
   | typeof DEVICES_STORE
+  | typeof EMBEDDINGS_STORE
   | typeof NODE_CONTEXT_RELATIONS_STORE
   | typeof NODES_STORE
   | typeof WORKSPACES_STORE;
@@ -224,6 +236,7 @@ async function ensureVinemaStores(
 
   await ensureInlineIdStore(db, transaction, DEVICES_STORE);
   await ensureInlineIdStore(db, transaction, WORKSPACES_STORE);
+  await ensureInlineIdStore(db, transaction, EMBEDDINGS_STORE, ensureEmbeddingIndexes);
   await ensureInlineIdStore(db, transaction, NODES_STORE, ensureNodeIndexes);
   await ensureInlineIdStore(
     db,
@@ -271,6 +284,25 @@ async function ensureInlineIdStore(
     if (hasInlineId(record)) {
       await recreatedStore.put(stripLegacyEmbeddedContext(record));
     }
+  }
+}
+
+function ensureEmbeddingIndexes(store: UpgradeObjectStore) {
+  if (!store.indexNames.contains("by-source")) {
+    store.createIndex("by-source", ["workspaceId", "sourceType", "sourceId"]);
+  }
+
+  if (!store.indexNames.contains("by-status")) {
+    store.createIndex("by-status", ["workspaceId", "status"]);
+  }
+
+  if (!store.indexNames.contains("by-workspace-and-model")) {
+    store.createIndex("by-workspace-and-model", [
+      "workspaceId",
+      "modelId",
+      "modelVersion",
+      "dimensions",
+    ]);
   }
 }
 

@@ -1,6 +1,6 @@
 import type { Context } from "@/domain/context/context";
 
-export type RecoveryMatchedField = "content" | "context";
+export type RecoveryMatchedField = "content" | "context" | "semantic";
 
 export type RecoveryResultContext = Pick<
   Context,
@@ -15,4 +15,9 @@ export type RecoveryResult = {
   contexts: RecoveryResultContext[];
   updatedAt: string;
   score: number;
+  semantic?: {
+    similarity: number;
+    rank: number;
+    marginToNext: number | null;
+  };
 };

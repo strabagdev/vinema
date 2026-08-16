@@ -86,14 +86,26 @@ La superficie solo cambia su ubicacion y contexto visual:
 
 ## “Me recuerda a”
 
-La recuperacion sigue usando `CaptureRecoveryResults` sin cambios de motor.
+La recuperacion sigue usando `CaptureRecoveryResults` como superficie. Desde la
+Fase 1 de Semantic Similarity, puede recibir una fuente adicional de embeddings
+locales para capturas parecidas por significado, en paralelo a coincidencias
+literales, conceptos, relaciones y señales temporales.
+
+Desde Fase 2, las sugerencias de conceptos existentes tambien pueden recibir una
+señal vectorial conservadora cuando la captura actual parece hablar de un
+concepto aunque no lo mencione literalmente. Esa señal se muestra como
+`Relacionado ahora` con una explicacion humana breve y no acepta ni crea
+conceptos automaticamente.
 
 La seccion:
 
 - aparece solo si hay resultados, loading o error;
 - muestra fragmentos de capturas, no titulos fabricados;
 - conserva el borrador antes de abrir un recuerdo;
-- permanece subordinada al texto actual.
+- permanece subordinada al texto actual;
+- no muestra puntuaciones tecnicas de similitud;
+- no crea ni persiste relaciones nuevas;
+- no sincroniza embeddings ni vectores.
 
 ## Estado sync y conectividad
 
@@ -137,4 +149,3 @@ No se implementaron Plazas.
 No se implemento grafo.
 
 No se modifico sincronizacion, autenticacion, IndexedDB, Prisma ni motores de asociaciones.
-

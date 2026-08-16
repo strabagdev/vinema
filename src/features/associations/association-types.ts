@@ -17,6 +17,12 @@ export type AssociationReason =
   | {
       type: "SHARED_NEIGHBOR";
       captureIds: string[];
+    }
+  | {
+      type: "VECTOR_SIMILARITY";
+      similarity: number;
+      rank: number;
+      marginToNext: number | null;
     };
 
 export type AssociationSuggestion = {
@@ -37,6 +43,7 @@ export type ExistingConceptSuggestion = {
   matchedAlias?: string;
   knowledgeSuggestionKind?: "RELATED_NOW" | "MISSING_CONTEXT" | "REVISIT";
   knowledgeSuggestionReasons?: string[];
+  suggestionSource?: "VECTOR_SIMILARITY";
 };
 
 export type EmergingConceptSuggestion = {

@@ -8,6 +8,8 @@ import {
 } from "@/components/app-shell/vinema-initial-loading";
 import { useAuth } from "@/features/auth/auth-provider";
 import { useVinemaContext } from "@/features/node/hooks/use-vinema-context";
+import { getSemanticSimilarityService } from "@/features/semantic-similarity/semantic-similarity-service";
+import { useSemanticSimilarityIndexing } from "@/features/semantic-similarity/use-semantic-similarity-indexing";
 import {
   createLocalSyncRepositorySet,
   storageAdapter,
@@ -43,6 +45,14 @@ export function CaptureHomeClient() {
       deviceId,
     });
   }, [deviceId, workspaceId]);
+
+  useSemanticSimilarityIndexing({
+    workspaceId: workspaceId ?? "",
+    nodeRepository: repositories?.nodeRepository ?? null,
+    contextRepository: repositories?.contextRepository ?? null,
+    relationRepository: repositories?.nodeContextRelationRepository ?? null,
+    enabled: Boolean(workspaceId && repositories),
+  });
 
   useEffect(() => {
     if (context.status !== "ready" || syncing) {
@@ -86,6 +96,9 @@ export function CaptureHomeClient() {
         storage={storageAdapter}
         repositories={repositories}
         onCaptureCommitted={() => {
+          void getSemanticSimilarityService(
+            repositories.nodeRepository,
+          ).backfillWorkspace(context.workspace.id, { limit: 2 });
           if (auth.authStatus === "AUTHENTICATED_ONLINE") {
             void auth.syncNow();
           }

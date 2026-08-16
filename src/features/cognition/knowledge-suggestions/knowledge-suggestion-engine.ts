@@ -32,6 +32,7 @@ export interface DeriveKnowledgeSuggestionsOptions {
   limit?: number;
   behavioralEvidenceModel?: MemoryEvidenceModel;
   evolutionEvidenceModel?: MemoryEvidenceModel;
+  semanticRelatedConceptIds?: string[];
 }
 
 type SuggestionBucket = {
@@ -65,6 +66,7 @@ export function deriveKnowledgeSuggestions({
   limit = DEFAULT_LIMIT,
   behavioralEvidenceModel,
   evolutionEvidenceModel,
+  semanticRelatedConceptIds = [],
 }: DeriveKnowledgeSuggestionsOptions): KnowledgeSuggestion[] {
   if (limit <= 0) {
     return [];
@@ -301,6 +303,25 @@ export function deriveKnowledgeSuggestions({
           : "Existe memoria previa que podría ser relevante",
       ],
       evidenceNodeIds: signal.evidenceNodeIds,
+    });
+  }
+
+  for (const candidateConceptId of semanticRelatedConceptIds) {
+    const conceptId = resolveCanonicalConceptId(candidateConceptId, model);
+    const context = model.recordsById.get(conceptId)?.context;
+
+    if (!context || !canSuggestConcept(conceptId, presentConceptIds, model)) {
+      continue;
+    }
+
+    addSignal(buckets, {
+      kind: "RELATED_NOW",
+      conceptId,
+      canonicalLabel: context.name,
+      score: 3,
+      recurrence: 1,
+      reasons: ["Contenido relacionado por significado."],
+      evidenceNodeIds: [],
     });
   }
 

@@ -61,7 +61,7 @@ IndexedDB usa una unica base:
 
 - Nombre: `vinema`
 - Version anterior: `1`
-- Version nueva: `3`
+- Version actual: `9`
 
 Stores:
 
@@ -71,6 +71,8 @@ Stores:
   `keyPath: "id"`.
 - `workspaces`: workspace local por defecto, in-line con `keyPath: "id"`.
 - `nodes`: notas e ideas, in-line con `keyPath: "id"`.
+- `embeddings`: indice semantico local reconstruible, in-line con
+  `keyPath: "id"`.
 
 La migracion no usa `deleteDatabase`. Al abrir version 3, Vinema inspecciona
 `nodes`, `workspaces` y `devices`; si alguno no usa `keyPath: "id"`, preserva
@@ -78,6 +80,14 @@ sus registros, elimina solo ese object store, lo recrea con clave in-line y
 reinserta los datos. El adaptador de settings lee primero desde `app_settings` y
 luego desde `key-value`, por lo que el Device existente se conserva y se
 reescribe en el store nuevo al actualizarse.
+
+Desde version 9, `embeddings` guarda vectores locales de capturas activas y
+conceptos como `ArrayBuffer` junto a modelo, version, dimensiones, hash de
+fuente, `sourceType` y estado de proceso. Este store no se sincroniza y puede
+reconstruirse desde `nodes`, `contexts` y `node_context_relations`; existe para
+acelerar recuperacion semantica local en “Me recuerda a”, Memoria y sugerencias
+conservadoras de conceptos existentes. Capturas eliminadas u olvidadas mediante
+`node.archivedAt` no participan.
 
 ## Rutas
 
@@ -114,6 +124,9 @@ cuenta.
 - SQLite nativo sigue fuera de alcance en este documento historico.
 - No hay papelera ni eliminacion definitiva.
 - No hay Markdown avanzado, tags, proyectos, relaciones ni IA.
+- La similitud semantica local es evidencia probabilistica de recuperacion y
+  exploracion; no crea relaciones persistentes, no crea conceptos ni sincroniza
+  vectores.
 - En export estatico, `/notes/detail` forma parte del build y lee el `nodeId`
   desde query params, por lo que no depende de generar IDs locales durante build.
 

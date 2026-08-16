@@ -193,12 +193,15 @@ Fuentes de señal:
 - señales temporales del Memory Evolution Engine;
 - conceptos detectados directamente en el texto actual;
 - conceptos seleccionados explícitamente por el usuario.
+- similitud semántica local hacia conceptos existentes, solo para
+  `RELATED_NOW`.
 
 Reglas:
 
 - solo sugiere conceptos existentes;
 - no crea conceptos automáticamente;
-- no usa IA, LLM, embeddings ni servicios externos;
+- no usa IA generativa, LLM ni servicios externos;
+- no usa similitud semántica local para `MISSING_CONTEXT` por sí sola;
 - no persiste sugerencias;
 - no modifica `Node`, `Context` ni `NodeContextRelation`;
 - no muestra sugerencias de baja confianza en la superficie principal;
@@ -233,6 +236,88 @@ Límites:
 - no genera navegación nueva;
 - no reemplaza la recuperación “Me recuerda a”;
 - no sincroniza datos adicionales.
+
+## Semantic Similarity Engine v1
+
+El Semantic Similarity Engine agrega evidencia probabilística local para
+recordar capturas parecidas aunque no compartan las mismas palabras. No declara
+verdad, causalidad ni relación persistente entre capturas.
+
+Implementación inicial:
+
+- usa embeddings locales de capturas activas con
+  `intfloat/multilingual-e5-small` mediante Transformers.js y ONNX Runtime
+  Web/WASM;
+- carga el runtime de forma lazy y reutiliza tokenizer/modelo mientras la app
+  viva;
+- convierte Markdown a texto plano con los helpers de rich text existentes y
+  normaliza solo espacios y saltos repetidos;
+- conserva acentos, idioma y forma original; no aplica stemming,
+  lematización ni traducción;
+- aplica los prefijos E5 de forma centralizada: `query: {texto}` para consultas
+  de capturas, `passage: {texto}` para capturas almacenadas y conceptos
+  almacenados, y usa consulta semántica equivalente para buscar vecinos de un
+  concepto;
+- almacena vectores normalizados en IndexedDB como `ArrayBuffer`, nunca como
+  `number[]`;
+- calcula similitud por producto punto/coseno sobre vectores normalizados con
+  búsqueda lineal local.
+
+Reglas:
+
+- las embeddings se guardan en un repositorio local no sincronizado;
+- cada registro incluye modelo, versión, dimensiones, hash de fuente y estado
+  `PENDING`, `PROCESSING`, `READY` o `FAILED`;
+- el hash se deriva del texto plano normalizado para reutilizar embeddings
+  válidos y descartar resultados obsoletos;
+- capturas con `deletedAt` o `node.archivedAt` no se embeben ni aparecen como
+  resultados;
+- los conceptos pueden tener una representación vectorial derivada desde
+  `MemoryEvidenceModel`, identidad canónica, aliases y evidencia representativa
+  limitada;
+- `CONCEPT_REPRESENTATION_VERSION = 1` participa en el hash conceptual junto a
+  nombre canónico, aliases y evidencia usada;
+- la cola procesa en segundo plano, con reintentos limitados, sin bloquear
+  escrituras locales;
+- si una captura cambia mientras se procesa, el resultado viejo se descarta y
+  se encola la versión nueva;
+- backfill, pull aplicado, restore/import y nuevas capturas pueden pedir
+  actualización gradual del índice local.
+
+Integración:
+
+- participa solo como fuente adicional de recuperación interna para
+  “Me recuerda a” y búsqueda de Memoria;
+- puede sugerir conceptos existentes para `RELATED_NOW` cuando una captura es
+  semánticamente cercana a la representación de un concepto;
+- puede exponer conceptos semánticamente cercanos entre sí como evidencia de
+  exploración/perfil;
+- corre en paralelo conceptual con señales literales, conceptos, relaciones y
+  tiempo;
+- no alimenta `MISSING_CONTEXT` por sí sola;
+- no persiste `NodeContextRelation` ni relaciones concepto-concepto;
+- no sincroniza texto, vectores ni metadatos de embeddings.
+
+Disponibilidad:
+
+- funciona en `AUTHENTICATED_LOCAL` sin API, Railway ni sync remoto;
+- PWA descarga/cachea el modelo en el primer uso según soporte del navegador;
+- Tauri usa la misma estrategia común por ahora; empaquetar el modelo queda para
+  una fase posterior;
+- si el modelo, WASM o caché no están disponibles, Vinema conserva las fuentes
+  existentes sin mostrar errores dramáticos ni degradar salud;
+- no hay API externa, telemetría ni logs del texto embebido.
+
+Límites:
+
+- la similitud es probabilística y calibrada de forma interna;
+- la similitud captura-concepto puede sugerir conceptos existentes, pero nunca
+  aceptarlos automáticamente ni crear conceptos nuevos;
+- la similitud concepto-concepto no constituye una relación persistida;
+- no existe umbral universal duro aplicable a todo usuario o idioma;
+- BPE, tokenización y pooling pertenecen al modelo/runtime, no a reglas de
+  Vinema;
+- no reemplaza Semantic Understanding ni Evidence Fusion.
 
 ## Memory Orchestrator v1
 

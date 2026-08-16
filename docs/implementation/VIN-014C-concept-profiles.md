@@ -34,6 +34,7 @@ El perfil se deriva desde:
 - `Context`;
 - `Node`;
 - `NodeContextRelation`.
+- `MemoryEvidenceModel` como evidencia compartida para motores derivados.
 
 No se persiste completo y no modifica Prisma, IndexedDB, sync contracts, backup,
 restore ni reset.
@@ -96,6 +97,24 @@ Si otro `Context` existente tiene el mismo nombre normalizado que el label
 canonico o que un alias confirmado del concepto actual, el perfil no lo muestra
 como conexion. La identidad canonica tiene prioridad sobre la lista visual de
 relaciones.
+
+## Representacion vectorial local
+
+Semantic Similarity puede construir una representacion textual deterministica de
+un concepto desde el mismo modelo de evidencia:
+
+- `Nombre: {canonicalName}`;
+- `Aliases: {aliases}`;
+- `Evidencia:` con recuerdos representativos limitados.
+
+No se generan resumenes con IA y no se incluyen todas las capturas
+indiscriminadamente. La version inicial es
+`CONCEPT_REPRESENTATION_VERSION = 1`; cambios en nombre canonico, aliases,
+evidencia representativa o version invalidan el embedding conceptual local.
+
+La representacion vectorial no forma parte del perfil persistido. Puede estar
+disponible como evidencia progresiva para exploracion, pero no crea conexiones
+ni modifica recuerdos.
 
 ## Actividad
 
@@ -193,8 +212,7 @@ VIN-014C no implementa:
 
 - tipos de concepto;
 - relaciones explicitas concepto-concepto;
-- IA;
-- embeddings;
+- IA generativa;
 - inferencia semantica universal;
 - persistencia de perfiles;
 - cache persistente.

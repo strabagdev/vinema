@@ -125,7 +125,6 @@ describe("association scoring", () => {
     });
 
     expect(suggestions.map((suggestion) => suggestion.node.id)).toEqual([
-      "archived",
       "mitcom",
     ]);
     expect(suggestions[0].score).toBeGreaterThan(0);

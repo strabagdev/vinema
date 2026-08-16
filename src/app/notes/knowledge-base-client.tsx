@@ -41,6 +41,7 @@ import { createHighlightedParts } from "@/features/recovery/highlight-text";
 import { getKnowledgeBasePath } from "@/features/recovery/recovery-routes";
 import type { RecoveryResult } from "@/features/recovery/recovery-result";
 import { searchNodes } from "@/features/recovery/search-nodes";
+import { getSemanticSimilarityService } from "@/features/semantic-similarity/semantic-similarity-service";
 import { useSyncDataInvalidation } from "@/features/sync/use-sync-data-invalidation";
 import { emitSyncDataChanged } from "@/features/sync/sync-data-events";
 import {
@@ -139,7 +140,12 @@ export function KnowledgeBaseClient({
       if (activeQuery) {
         const [results, page] = await Promise.all([
           searchNodes(
-            { contextRepository, nodeContextRelationRepository, nodeRepository },
+            {
+              contextRepository,
+              nodeContextRelationRepository,
+              nodeRepository,
+              semanticSimilarity: getSemanticSimilarityService(nodeRepository),
+            },
             {
               workspaceId: vinemaContext.workspace.id,
               query: activeQuery,

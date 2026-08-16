@@ -24,6 +24,17 @@ relacion es bidireccional y no tiene verbo:
 El motor excluye capturas archivadas, conceptos archivados, relaciones de
 asociacion no aceptadas y duplicados por label normalizado.
 
+## Similitud semantica no es relacion derivada
+
+Semantic Similarity puede encontrar conceptos cercanos en el espacio vectorial
+local. Esa cercania no significa coocurrencia, dependencia, jerarquia ni
+`RELATED_TO` persistido.
+
+VIN-014D sigue derivando relaciones desde evidencia compartida o significado
+explicito observado por Semantic Understanding. La similitud concepto-concepto
+puede mostrarse o exponerse como evidencia de exploracion progresiva, pero no
+crea edges ni modifica `NodeContextRelation`.
+
 ## Modelo Derivado
 
 El nucleo vive en:
@@ -307,7 +318,7 @@ VIN-014D no implementa:
 - relaciones con verbo;
 - relaciones persistidas concepto-concepto;
 - IA;
-- embeddings;
+- conversion automatica de embeddings en relaciones;
 - librerias de grafos;
 - coordenadas visuales;
 - taxonomias.

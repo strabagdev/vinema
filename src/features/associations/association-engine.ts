@@ -299,6 +299,10 @@ export function formatAssociationReason(reason: AssociationReason) {
     return "Relacionada con capturas ya seleccionadas";
   }
 
+  if (reason.type === "VECTOR_SIMILARITY") {
+    return "Contenido parecido en tu memoria";
+  }
+
   return "Comparte capturas cercanas";
 }
 
@@ -441,6 +445,7 @@ function isIndexableActiveNode(node: Node) {
     typeof node.id === "string" &&
     node.id.length > 0 &&
     node.deletedAt === null &&
+    !node.archivedAt &&
     typeof node.content === "string"
   );
 }

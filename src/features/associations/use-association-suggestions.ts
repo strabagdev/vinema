@@ -14,11 +14,15 @@ import type {
   ConceptSuggestion,
   SuggestionDiagnostics,
 } from "@/features/associations/association-types";
+import { createMemoryEvidenceModel } from "@/features/cognition/memory-evidence/memory-evidence-model";
 import {
   normalizeAssociationError,
   reportAssociationError,
   type AssociationError,
 } from "@/features/associations/association-errors";
+import { mergeSemanticAssociationSuggestions } from "@/features/semantic-similarity/semantic-association-integration";
+import { mergeSemanticConceptSuggestions } from "@/features/semantic-similarity/semantic-concept-integration";
+import { getSemanticSimilarityService } from "@/features/semantic-similarity/semantic-similarity-service";
 
 const ASSOCIATION_DEBOUNCE_MS = 320;
 const ASSOCIATION_LOADING_TIMEOUT_MS = 3500;
@@ -222,11 +226,55 @@ export function useAssociationSuggestions({
           indexPreparationMs = evaluation.diagnostics.indexPreparationMs;
           recoveryMs = evaluation.diagnostics.recoveryMs;
           conceptsMs = evaluation.diagnostics.conceptsMs;
+          const semanticService = getSemanticSimilarityService(nodeRepository);
+          const semanticMatches =
+            await semanticService.findSimilarCaptures({
+              workspaceId,
+              text,
+              currentNodeId,
+              topK: 5,
+            });
+          const recoveryMatches = mergeSemanticAssociationSuggestions(
+            evaluation.recoveryMatches,
+            semanticMatches,
+            5,
+          );
+          const evidenceModel = createMemoryEvidenceModel({
+            contexts,
+            relations,
+            nodes,
+            recentWindowDays: 30,
+          });
+          void semanticService.backfillConceptsFromEvidenceModel(
+            workspaceId,
+            evidenceModel,
+            { limit: 4 },
+          );
+          const explicitConceptIds = new Set([
+            ...selectedContextIdsForRequest,
+            ...evaluation.diagnostics.conceptTraces
+              .filter((trace) => trace.directMatches > 0)
+              .map((trace) => trace.context.id),
+          ]);
+          const semanticConceptMatches =
+            await semanticService.findSimilarConceptsForCapture({
+              workspaceId,
+              text,
+              evidenceModel,
+              excludeConceptIds: explicitConceptIds,
+              topK: 5,
+            });
+          const conceptSuggestions = mergeSemanticConceptSuggestions({
+            existing: evaluation.conceptSuggestions,
+            semanticMatches: semanticConceptMatches,
+            limit: 8,
+          });
 
           if (!cancelled && requestId === latestRequestId.current) {
             const stateUpdateStartedAt = performance.now();
             const diagnostics: SuggestionDiagnostics = {
               ...evaluation.diagnostics,
+              conceptResultCount: conceptSuggestions.length,
               stateUpdateMs: Math.round(performance.now() - stateUpdateStartedAt),
               totalMs: Math.round(performance.now() - effectStartedAt),
               contextCount,
@@ -235,8 +283,8 @@ export function useAssociationSuggestions({
 
             setState({
               status: "ready",
-              suggestions: evaluation.recoveryMatches,
-              conceptSuggestions: evaluation.conceptSuggestions,
+              suggestions: recoveryMatches,
+              conceptSuggestions,
               error: null,
               comparedCaptures: evaluation.diagnostics.captureCount,
               elapsedMs: diagnostics.totalMs,

@@ -996,6 +996,61 @@ temporales en cada motor.
 - `../src/features/cognition/behavioral-engine/behavioral-engine.ts`
 - `../src/features/cognition/memory-evolution/memory-evolution-detector.ts`
 
+## DEC-035 — La similitud semántica es evidencia local no sincronizada
+
+**Fecha:** 2026-08-15
+**Estado:** Vigente
+**Ámbito:** Arquitectura / Privacidad
+
+### Decisión
+
+Vinema puede calcular similitud semántica entre capturas y conceptos mediante
+embeddings locales, pero esa similitud es evidencia probabilística de
+recuperación/exploración, no una relación persistente ni una verdad del modelo de
+conocimiento.
+
+### Motivo
+
+La recuperación humana suele depender de cercanía de significado, no solo de
+palabras exactas. A la vez, sincronizar vectores o convertir coincidencias
+probabilísticas en relaciones permanentes debilitaría privacidad, trazabilidad y
+confianza del usuario.
+
+### Consecuencias
+
+Los embeddings de capturas y conceptos se generan y almacenan solo en IndexedDB
+local. No se suben al backend, no participan en sync, no producen telemetría y
+no registran texto en logs. El runtime usa un modelo Transformers.js/ONNX
+compatible con
+`intfloat/multilingual-e5-small`; BPE, tokenización y pooling pertenecen al
+modelo, no a reglas ad hoc de Vinema.
+
+Los conceptos pueden tener una representación vectorial derivada de identidad y
+evidencia: nombre canónico, aliases y recuerdos representativos seleccionados de
+forma determinista desde `MemoryEvidenceModel`. La versión de representación
+participa en el hash que invalida embeddings conceptuales.
+
+La similitud puede enriquecer “Me recuerda a”, búsqueda de Memoria y
+`RELATED_NOW` con conceptos existentes. No alimenta `MISSING_CONTEXT` por sí
+sola, no acepta conceptos automáticamente, no crea conceptos, no crea
+`NodeContextRelation` y no reemplaza Semantic Understanding, Behavioral Engine,
+Memory Evolution ni una futura capa de Evidence Fusion.
+
+La similitud concepto-concepto puede estar disponible para exploración o perfil,
+pero no constituye una relación persistida ni un edge derivado de coocurrencia.
+
+Si el modelo local, WASM o caché no están disponibles, Vinema conserva la
+recuperación literal, conceptual, relacional y temporal sin mostrar errores
+dramáticos.
+
+### Evidencia
+
+- `cognitive-engine.md`
+- `../src/features/semantic-similarity/*`
+- `../src/infrastructure/semantic-similarity/indexed-db-embedding-repository.ts`
+- `../src/features/associations/use-association-suggestions.ts`
+- `../src/features/recovery/search-nodes.ts`
+
 ## Decisiones pendientes de consolidación
 
 - Las vistas de lectura pueden conservar scroll natural. Falta una fuente

@@ -331,6 +331,54 @@ describe("local recovery search", () => {
     ).resolves.toMatchObject([{ nodeId: "node-1" }]);
   });
 
+  it("merges local semantic matches without surfacing archived captures", async () => {
+    const semanticNode = makeNode({
+      id: "semantic-node",
+      content: "Bitacora de respiracion antes de dormir",
+    });
+    const archivedNode = makeNode({
+      id: "archived-semantic-node",
+      content: "Respiracion archivada",
+      status: "ARCHIVED",
+      archivedAt: "2026-01-03T00:00:00.000Z",
+    });
+    const repositories = {
+      ...makeRepositories({
+        nodes: [
+          makeNode({ id: "literal-node", content: "Pan con masa madre" }),
+          semanticNode,
+        ],
+      }),
+      semanticSimilarity: {
+        findSimilarCaptures: async () => [
+          {
+            node: semanticNode,
+            evidence: { similarity: 0.71, rank: 1, marginToNext: 0.08 },
+          },
+          {
+            node: archivedNode,
+            evidence: { similarity: 0.9, rank: 2, marginToNext: null },
+          },
+        ],
+      },
+    };
+
+    const results = await searchNodes(repositories, {
+      workspaceId,
+      query: "pan",
+    });
+
+    expect(results.map((result) => result.nodeId)).toContain("literal-node");
+    expect(results.map((result) => result.nodeId)).toContain("semantic-node");
+    expect(results.map((result) => result.nodeId)).not.toContain(
+      "archived-semantic-node",
+    );
+    expect(results.find((result) => result.nodeId === "semantic-node")).toMatchObject({
+      matchedFields: ["semantic"],
+      semantic: { similarity: 0.71 },
+    });
+  });
+
   it("builds recovery navigation paths for source detail", () => {
     expect(getRecoveryPath("pan humedo")).toBe("/memory?q=pan%20humedo");
     expect(

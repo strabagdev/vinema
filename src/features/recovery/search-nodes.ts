@@ -20,6 +20,22 @@ export type SearchNodesRepositories = {
   contextRepository: ContextRepository;
   nodeContextRelationRepository: NodeContextRelationRepository;
   nodeRepository: NodeRepository;
+  semanticSimilarity?: {
+    findSimilarCaptures(input: {
+      workspaceId: string;
+      text: string;
+      topK?: number;
+    }): Promise<
+      Array<{
+        node: Node;
+        evidence: {
+          similarity: number;
+          rank: number;
+          marginToNext: number | null;
+        };
+      }>
+    >;
+  };
 };
 
 export type SearchNodesInput = {
@@ -64,9 +80,75 @@ export async function searchNodes(
     }),
   );
 
-  return results
+  const literalResults = results
     .filter((result): result is RecoveryResult => result !== null)
     .sort(byRecoveryPriority);
+  const semanticResults = repositories.semanticSimilarity
+    ? await buildSemanticRecoveryResults(repositories, input)
+    : [];
+
+  return mergeRecoveryResults(literalResults, semanticResults).sort(byRecoveryPriority);
+}
+
+async function buildSemanticRecoveryResults(
+  repositories: SearchNodesRepositories,
+  input: SearchNodesInput,
+): Promise<RecoveryResult[]> {
+  const semanticMatches =
+    (await repositories.semanticSimilarity?.findSimilarCaptures({
+      workspaceId: input.workspaceId,
+      text: input.query,
+      topK: 8,
+    })) ?? [];
+
+  return semanticMatches
+    .filter((match) => match.node.deletedAt === null && !match.node.archivedAt)
+    .map((match) => ({
+      nodeId: match.node.id,
+      preview: getCapturePreview(match.node.content, { maxLength: 90 }),
+      excerpt:
+        getCapturePreview(match.node.content, { maxLength: 160 }) || "Sin contenido",
+      matchedFields: ["semantic" as const],
+      contexts: [],
+      updatedAt: getContentTimestamp(match.node),
+      score: 8 + Math.round(match.evidence.similarity * 10),
+      semantic: {
+        similarity: match.evidence.similarity,
+        rank: match.evidence.rank,
+        marginToNext: match.evidence.marginToNext,
+      },
+    }));
+}
+
+function mergeRecoveryResults(
+  literalResults: RecoveryResult[],
+  semanticResults: RecoveryResult[],
+) {
+  const results = new Map<string, RecoveryResult>();
+
+  for (const result of literalResults) {
+    results.set(result.nodeId, result);
+  }
+
+  for (const result of semanticResults) {
+    const existing = results.get(result.nodeId);
+
+    if (!existing) {
+      results.set(result.nodeId, result);
+      continue;
+    }
+
+    results.set(result.nodeId, {
+      ...existing,
+      matchedFields: Array.from(
+        new Set([...existing.matchedFields, ...result.matchedFields]),
+      ),
+      score: existing.score + 3,
+      semantic: result.semantic,
+    });
+  }
+
+  return Array.from(results.values());
 }
 
 function buildRecoveryResult(
