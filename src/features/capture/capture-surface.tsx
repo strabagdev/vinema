@@ -88,6 +88,7 @@ const CONCEPT_HIGHLIGHT_MS = 1200;
 const PANEL_HOVER_CLOSE_DELAY_MS = 240;
 const PANEL_PREVIEW_EXIT_MS = 240;
 const PANEL_VIEWPORT_MARGIN = 12;
+const SEMANTIC_CONCEPT_EXPLANATION = "Contenido relacionado por significado.";
 
 type DraftStatus = "idle" | "saving" | "saved" | "error";
 type ActivePanel = "concepts" | "memories" | "preferences" | "memoryStatus" | null;
@@ -2258,9 +2259,18 @@ function getConceptSuggestionExplanation(suggestion: ConceptSuggestion) {
     return `Detectado como ${usefulAlias}`;
   }
 
-  return (
-    suggestion.knowledgeSuggestionReasons?.find(isVisibleSuggestionReason) ?? null
-  );
+  const visibleReason =
+    suggestion.knowledgeSuggestionReasons?.find(isVisibleSuggestionReason) ?? null;
+
+  if (visibleReason) {
+    return visibleReason;
+  }
+
+  if (suggestion.suggestionSource === "VECTOR_SIMILARITY") {
+    return SEMANTIC_CONCEPT_EXPLANATION;
+  }
+
+  return null;
 }
 
 function isVisibleSuggestionReason(reason: string) {

@@ -1601,6 +1601,18 @@ describe("CaptureSurface", () => {
       name: "Continuidad operacional",
     });
     const tracking = createContext({ id: "tracking", name: "Tracking" });
+    const semanticExplicit = createContext({
+      id: "semantic-explicit",
+      name: "Sueño semántico",
+    });
+    const semanticFallback = createContext({
+      id: "semantic-fallback",
+      name: "Descanso relacionado",
+    });
+    const semanticAlias = createContext({
+      id: "semantic-alias",
+      name: "Operational Readiness",
+    });
     const selected = createContext({ id: "selected", name: "Seleccionado" });
     const container = await renderConceptPanelContent({
       suggestions: [
@@ -1651,6 +1663,39 @@ describe("CaptureSurface", () => {
         },
         {
           kind: "existing",
+          context: semanticExplicit,
+          conceptId: semanticExplicit.id,
+          label: semanticExplicit.name,
+          score: 0.6,
+          evidenceCaptureIds: ["capture-semantic"],
+          matchedTerms: [],
+          knowledgeSuggestionReasons: ["Contenido relacionado por significado."],
+          suggestionSource: "VECTOR_SIMILARITY",
+        },
+        {
+          kind: "existing",
+          context: semanticFallback,
+          conceptId: semanticFallback.id,
+          label: semanticFallback.name,
+          score: 0.6,
+          evidenceCaptureIds: ["capture-semantic"],
+          matchedTerms: [],
+          suggestionSource: "VECTOR_SIMILARITY",
+        },
+        {
+          kind: "existing",
+          context: semanticAlias,
+          conceptId: semanticAlias.id,
+          label: semanticAlias.name,
+          score: 0.6,
+          evidenceCaptureIds: ["capture-semantic"],
+          matchedTerms: [],
+          matchedAlias: "OR",
+          knowledgeSuggestionReasons: ["Contenido relacionado por significado."],
+          suggestionSource: "VECTOR_SIMILARITY",
+        },
+        {
+          kind: "existing",
           context: selected,
           conceptId: selected.id,
           label: selected.name,
@@ -1663,6 +1708,7 @@ describe("CaptureSurface", () => {
         },
       ],
       selectedContextIds: [selected.id],
+      expanded: true,
     });
 
     const literalRow = getConceptSuggestionRow(container, "codelco");
@@ -1689,6 +1735,22 @@ describe("CaptureSurface", () => {
     );
     expect(literalAndNonLiteralRow?.textContent).toContain(
       "Existe memoria previa que podría ser relevante",
+    );
+
+    const semanticExplicitRow = getConceptSuggestionRow(container, "semantic-explicit");
+    expect(semanticExplicitRow?.textContent).toContain(
+      "Contenido relacionado por significado.",
+    );
+
+    const semanticFallbackRow = getConceptSuggestionRow(container, "semantic-fallback");
+    expect(semanticFallbackRow?.textContent).toContain(
+      "Contenido relacionado por significado.",
+    );
+
+    const semanticAliasRow = getConceptSuggestionRow(container, "semantic-alias");
+    expect(semanticAliasRow?.textContent).toContain("Detectado como OR");
+    expect(semanticAliasRow?.textContent).not.toContain(
+      "Contenido relacionado por significado.",
     );
 
     const selectedRow = getConceptSuggestionRow(container, "selected");
