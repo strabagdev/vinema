@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   CANVAS_CARET_VISUAL_FOLLOW_RATIO,
   CANVAS_EDITOR_INITIAL_ANCHOR,
+  CANVAS_FORMAT_TOOLBAR_SAFE_GAP,
   createTextareaCaretFollower,
   followCaretInScrollViewport,
   followTextareaCaret,
@@ -48,6 +49,45 @@ describe("canvas caret following", () => {
     expect(changed).toBe(true);
     expect(viewport.scrollTop).toBe(70);
     expect(editor.scrollTop).toBe(0);
+  });
+
+  it("keeps the caret below the measured format toolbar safe area", () => {
+    const { viewport, editor } = createMeasuredCanvas({
+      viewportHeight: 500,
+      viewportScrollHeight: 900,
+      editorTop: 200,
+      scrollTop: 140,
+    });
+
+    viewport.style.scrollPaddingTop = `${96 + CANVAS_FORMAT_TOOLBAR_SAFE_GAP}px`;
+
+    const changed = followCaretInScrollViewport({
+      viewport,
+      editor,
+      caretOffset: 20,
+    });
+
+    expect(changed).toBe(true);
+    expect(viewport.scrollTop).toBe(108);
+  });
+
+  it("uses the canvas toolbar safe-area variable when scroll padding is not explicit", () => {
+    const { viewport, editor } = createMeasuredCanvas({
+      viewportHeight: 500,
+      viewportScrollHeight: 900,
+      editorTop: 72,
+      scrollTop: 40,
+    });
+
+    viewport.style.setProperty("--vinema-canvas-format-toolbar-safe-top", "88px");
+
+    followCaretInScrollViewport({
+      viewport,
+      editor,
+      caretOffset: 8,
+    });
+
+    expect(viewport.scrollTop).toBe(0);
   });
 
   it("keeps moving older content up across additional lines", () => {

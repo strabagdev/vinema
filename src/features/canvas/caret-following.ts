@@ -3,15 +3,18 @@
 export const CANVAS_EDITOR_INITIAL_ANCHOR = "42%";
 export const CANVAS_EDITOR_INITIAL_ANCHOR_RATIO = 0.42;
 export const CANVAS_CARET_VISUAL_FOLLOW_RATIO = 0.7;
+export const CANVAS_FORMAT_TOOLBAR_SAFE_GAP = 16;
 
-export type CaretOffsetMeasure = (textarea: HTMLTextAreaElement) => number;
+export type CaretOffsetMeasure<TElement extends HTMLElement = HTMLElement> = (
+  editor: TElement,
+) => number;
 
-export function createTextareaCaretFollower({
-  getTextarea,
-  measureCaretOffset = measureTextareaCaretOffset,
+export function createElementCaretFollower<TElement extends HTMLElement>({
+  getEditor,
+  measureCaretOffset,
 }: {
-  getTextarea: () => HTMLTextAreaElement | null;
-  measureCaretOffset?: CaretOffsetMeasure;
+  getEditor: () => TElement | null;
+  measureCaretOffset: CaretOffsetMeasure<TElement>;
 }) {
   let autoScrollInProgress = false;
   let suspended = false;
@@ -32,13 +35,13 @@ export function createTextareaCaretFollower({
 
     frame = window.requestAnimationFrame(() => {
       frame = null;
-      const textarea = getTextarea();
+      const editor = getEditor();
 
-      if (!textarea) {
+      if (!editor) {
         return;
       }
 
-      autoScrollInProgress = followTextareaCaret(textarea, measureCaretOffset);
+      autoScrollInProgress = followElementCaret(editor, measureCaretOffset);
 
       if (autoScrollInProgress) {
         window.setTimeout(() => {
@@ -67,11 +70,31 @@ export function createTextareaCaretFollower({
   };
 }
 
+export function createTextareaCaretFollower({
+  getTextarea,
+  measureCaretOffset = measureTextareaCaretOffset,
+}: {
+  getTextarea: () => HTMLTextAreaElement | null;
+  measureCaretOffset?: CaretOffsetMeasure<HTMLTextAreaElement>;
+}) {
+  return createElementCaretFollower({
+    getEditor: getTextarea,
+    measureCaretOffset,
+  });
+}
+
 export function followTextareaCaret(
   textarea: HTMLTextAreaElement,
-  measureCaretOffset: CaretOffsetMeasure = measureTextareaCaretOffset,
+  measureCaretOffset: CaretOffsetMeasure<HTMLTextAreaElement> = measureTextareaCaretOffset,
 ) {
-  const viewport = getCanvasScrollViewport(textarea);
+  return followElementCaret(textarea, measureCaretOffset);
+}
+
+export function followElementCaret<TElement extends HTMLElement>(
+  editor: TElement,
+  measureCaretOffset: CaretOffsetMeasure<TElement>,
+) {
+  const viewport = getCanvasScrollViewport(editor);
 
   if (!viewport) {
     return false;
@@ -79,8 +102,8 @@ export function followTextareaCaret(
 
   return followCaretInScrollViewport({
     viewport,
-    editor: textarea,
-    caretOffset: measureCaretOffset(textarea),
+    editor,
+    caretOffset: measureCaretOffset(editor),
   });
 }
 
@@ -101,7 +124,20 @@ export function followCaretInScrollViewport({
 
   const editorTop = getOffsetTopWithin(editor, viewport);
   const caretTop = editorTop + caretOffset - viewport.scrollTop;
+  const safeTop = getScrollSafeTop(viewport);
   const followLine = visibleHeight * CANVAS_CARET_VISUAL_FOLLOW_RATIO;
+
+  if (caretTop < safeTop) {
+    const nextScrollTop = Math.max(0, viewport.scrollTop - (safeTop - caretTop));
+
+    if (Math.abs(nextScrollTop - viewport.scrollTop) < 1) {
+      return false;
+    }
+
+    viewport.scrollTop = nextScrollTop;
+
+    return true;
+  }
 
   if (caretTop <= followLine) {
     return false;
@@ -122,14 +158,14 @@ export function followCaretInScrollViewport({
   return true;
 }
 
-function getCanvasScrollViewport(textarea: HTMLTextAreaElement) {
-  const viewport = textarea.closest("[data-canvas-scroll-viewport]");
+function getCanvasScrollViewport(editor: HTMLElement) {
+  const viewport = editor.closest("[data-canvas-scroll-viewport]");
 
   if (viewport instanceof HTMLElement) {
     return viewport;
   }
 
-  return textarea;
+  return editor;
 }
 
 function getOffsetTopWithin(element: HTMLElement, ancestor: HTMLElement) {
@@ -148,6 +184,25 @@ function getOffsetTopWithin(element: HTMLElement, ancestor: HTMLElement) {
   }
 
   return element.getBoundingClientRect().top - ancestor.getBoundingClientRect().top;
+}
+
+function getScrollSafeTop(viewport: HTMLElement) {
+  const computedStyle = window.getComputedStyle(viewport);
+  const scrollPaddingTop = parseCssPixels(computedStyle.scrollPaddingTop);
+
+  if (scrollPaddingTop > 0) {
+    return scrollPaddingTop;
+  }
+
+  return parseCssPixels(
+    computedStyle.getPropertyValue("--vinema-canvas-format-toolbar-safe-top"),
+  );
+}
+
+function parseCssPixels(value: string) {
+  const parsed = Number.parseFloat(value);
+
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
 }
 
 export function measureTextareaCaretOffset(textarea: HTMLTextAreaElement) {

@@ -44,6 +44,10 @@ import { Button } from "@/components/ui/button";
 import type { CanvasPreferences } from "@/features/canvas/canvas-preferences";
 import { getCanvasEditorStyle } from "@/features/canvas/canvas-preferences";
 import {
+  CANVAS_FORMAT_TOOLBAR_SAFE_GAP,
+  createElementCaretFollower,
+} from "@/features/canvas/caret-following";
+import {
   createEmptyRichDocument,
   markdownToRichDocument,
   richDocumentToMarkdown,
@@ -126,6 +130,12 @@ export const VinemaCanvasRichEditor = forwardRef<
   ref,
 ) {
   const editorHostRef = useRef<HTMLDivElement | null>(null);
+  const caretFollowerRef = useRef<ReturnType<typeof createElementCaretFollower> | null>(
+    null,
+  );
+  const activeEditorRef = useRef<NonNullable<ReturnType<typeof useEditor>> | null>(
+    null,
+  );
   const callbacksRef = useRef({
     onChange,
     onFocusChange,
@@ -134,6 +144,21 @@ export const VinemaCanvasRichEditor = forwardRef<
   });
   const lastEmittedMarkdownRef = useRef(value);
   const lastPlainTextRef = useRef(richDocumentToPlainText(markdownToRichDocument(value)));
+
+  const getCaretFollower = () => {
+    caretFollowerRef.current ??= createElementCaretFollower({
+      getEditor: () =>
+        editorHostRef.current?.querySelector<HTMLElement>(
+          "[data-canvas-rich-editor-content]",
+        ) ?? null,
+      measureCaretOffset: () =>
+        activeEditorRef.current
+          ? measureRichEditorCaretOffset(activeEditorRef.current)
+          : 0,
+    });
+
+    return caretFollowerRef.current;
+  };
 
   useEffect(() => {
     callbacksRef.current = {
@@ -162,7 +187,7 @@ export const VinemaCanvasRichEditor = forwardRef<
           "data-canvas-rich-editor-content": "",
           "data-canvas-caret-follow-ratio": "0.7",
           class: cn(
-            "vinema-canvas-editor vinema-rich-editor min-h-[1lh] w-full overflow-hidden text-zinc-950 outline-none",
+            "vinema-canvas-editor vinema-rich-editor min-h-[1lh] w-full text-zinc-950 outline-none",
             className,
           ),
         },
@@ -181,11 +206,13 @@ export const VinemaCanvasRichEditor = forwardRef<
       },
       immediatelyRender: false,
       onUpdate({ editor: currentEditor }) {
+        activeEditorRef.current = currentEditor;
         const document = currentEditor.getJSON();
         const markdown = richDocumentToMarkdown(document);
         const plainText = richDocumentToPlainText(document);
 
         lastPlainTextRef.current = plainText;
+        getCaretFollower().follow(true);
 
         if (markdown === lastEmittedMarkdownRef.current) {
           return;
@@ -195,17 +222,53 @@ export const VinemaCanvasRichEditor = forwardRef<
         callbacksRef.current.onChange({ markdown, plainText, document });
       },
       onSelectionUpdate({ editor: currentEditor }) {
+        activeEditorRef.current = currentEditor;
+        getCaretFollower().follow(false);
         callbacksRef.current.onSelectionChange(getSelectionSnapshot(currentEditor));
       },
       onFocus({ editor: currentEditor }) {
+        activeEditorRef.current = currentEditor;
         callbacksRef.current.onFocusChange(true);
         callbacksRef.current.onSelectionChange(getSelectionSnapshot(currentEditor));
+        getCaretFollower().follow(false);
       },
       onBlur() {
         callbacksRef.current.onSelectionChange(null);
       },
     },
     [placeholderExtension],
+  );
+
+  useEffect(() => {
+    caretFollowerRef.current?.dispose();
+    caretFollowerRef.current = null;
+    activeEditorRef.current = editor;
+
+    if (!editor) {
+      return;
+    }
+
+    const viewport = editor.view.dom.closest("[data-canvas-scroll-viewport]");
+
+    if (!(viewport instanceof HTMLElement)) {
+      return;
+    }
+
+    const follower = getCaretFollower();
+
+    viewport.addEventListener("scroll", follower.handleScroll);
+
+    return () => {
+      viewport.removeEventListener("scroll", follower.handleScroll);
+    };
+  }, [editor]);
+
+  useEffect(
+    () => () => {
+      caretFollowerRef.current?.dispose();
+      caretFollowerRef.current = null;
+    },
+    [],
   );
 
   useEffect(() => {
@@ -326,7 +389,7 @@ export const VinemaCanvasRichEditor = forwardRef<
     <div
       ref={editorHostRef}
       className={cn(
-        "relative min-h-[1lh] w-full overflow-hidden",
+        "relative min-h-[1lh] w-full",
         "vinema-canvas-editor vinema-rich-editor text-zinc-950",
         className,
       )}
@@ -335,7 +398,11 @@ export const VinemaCanvasRichEditor = forwardRef<
       data-canvas-rich-editor-host=""
       data-canvas-caret-follow-ratio="0.7"
     >
-      <EditorContent editor={editor} />
+      <EditorContent
+        className="w-full"
+        editor={editor}
+        data-canvas-rich-editor-content-host=""
+      />
       {formatToolbarOpen ? (
         <RichFormatToolbar
           editor={editor}
@@ -360,6 +427,7 @@ function RichFormatToolbar({
     left: 16,
     top: 96,
   });
+  const toolbarRef = useRef<HTMLDivElement | null>(null);
   const linkButtonRef = useRef<HTMLButtonElement | null>(null);
   const linkPopoverRef = useRef<HTMLDivElement | null>(null);
 
@@ -395,6 +463,57 @@ function RichFormatToolbar({
     setLinkDraft("");
     setLinkPopoverOpen(false);
   }
+
+  useLayoutEffect(() => {
+    function updateCanvasSafeArea() {
+      const toolbar = toolbarRef.current;
+      const viewport = document.querySelector<HTMLElement>(
+        "[data-canvas-scroll-viewport]",
+      );
+
+      if (!toolbar || !viewport) {
+        return;
+      }
+
+      const toolbarRect = toolbar.getBoundingClientRect();
+      const viewportRect = viewport.getBoundingClientRect();
+      const safeTop = Math.max(
+        0,
+        toolbarRect.bottom - viewportRect.top + CANVAS_FORMAT_TOOLBAR_SAFE_GAP,
+      );
+
+      viewport.style.setProperty(
+        "--vinema-canvas-format-toolbar-safe-top",
+        `${safeTop}px`,
+      );
+    }
+
+    updateCanvasSafeArea();
+    window.addEventListener("resize", updateCanvasSafeArea);
+    window.addEventListener("scroll", updateCanvasSafeArea, true);
+
+    const toolbar = toolbarRef.current;
+    const resizeObserver =
+      typeof ResizeObserver === "undefined" || !toolbar
+        ? null
+        : new ResizeObserver(updateCanvasSafeArea);
+
+    if (resizeObserver && toolbar) {
+      resizeObserver.observe(toolbar);
+    }
+
+    return () => {
+      window.removeEventListener("resize", updateCanvasSafeArea);
+      window.removeEventListener("scroll", updateCanvasSafeArea, true);
+      resizeObserver?.disconnect();
+
+      const viewport = document.querySelector<HTMLElement>(
+        "[data-canvas-scroll-viewport]",
+      );
+
+      viewport?.style.removeProperty("--vinema-canvas-format-toolbar-safe-top");
+    };
+  }, []);
 
   useLayoutEffect(() => {
     if (!linkPopoverOpen) {
@@ -465,10 +584,12 @@ function RichFormatToolbar({
   return (
     <>
       <div
+        ref={toolbarRef}
         className="fixed left-1/2 top-[4.25rem] z-[70] flex w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-nowrap items-center gap-0.5 overflow-x-auto overflow-y-hidden rounded-full border border-zinc-200/80 bg-white/95 px-1.5 py-1 text-zinc-700 shadow-md backdrop-blur-sm max-sm:top-[3.75rem]"
         role="toolbar"
         aria-label="Formato"
         data-canvas-format-toolbar=""
+        data-canvas-format-toolbar-safe-gap={CANVAS_FORMAT_TOOLBAR_SAFE_GAP}
         data-canvas-format-toolbar-layout="single-row"
         data-canvas-format-toolbar-width="content"
         data-canvas-format-toolbar-scroll="horizontal"
@@ -619,6 +740,19 @@ function ToolbarButton({
 
 function focusEditor(editor: NonNullable<ReturnType<typeof useEditor>>) {
   return editor.chain().focus(undefined, { scrollIntoView: false });
+}
+
+function measureRichEditorCaretOffset(
+  editor: NonNullable<ReturnType<typeof useEditor>>,
+) {
+  try {
+    const caretRect = editor.view.coordsAtPos(editor.state.selection.from);
+    const editorRect = editor.view.dom.getBoundingClientRect();
+
+    return caretRect.top - editorRect.top;
+  } catch {
+    return 0;
+  }
 }
 
 function ToolbarSeparator() {

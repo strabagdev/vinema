@@ -201,6 +201,10 @@ body {
   background: var(--vinema-canvas-background);
 }
 
+[data-canvas-scroll-viewport] {
+  scroll-padding-top: var(--vinema-canvas-format-toolbar-safe-top, 0px);
+}
+
 .vinema-canvas-main-grid,
 .vinema-canvas-header-grid,
 .vinema-canvas-footer-grid {
@@ -267,6 +271,8 @@ body {
 }
 
 .vinema-rich-editor .ProseMirror {
+  width: 100%;
+  height: auto;
   min-height: 1lh;
   outline: none;
   color: var(--vinema-text-primary);

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { act, createElement, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -673,7 +674,7 @@ describe("CaptureSurface", () => {
     ).toBe("var(--vinema-canvas-editor-start-effective, 42%)");
     expect(textarea?.className).toContain("row-[2]");
     expect(textarea?.className).not.toContain("pt-[calc(50%-0.85em)]");
-    expect(textarea?.className).toContain("overflow-hidden");
+    expect(textarea?.className).not.toContain("overflow-hidden");
     expect(textarea?.className).not.toContain("overflow-y-auto");
     expect(textarea?.className).not.toContain("vinema-scrollbar");
     expect(textarea?.getAttribute("data-canvas-caret-follow-ratio")).toBe("0.7");
@@ -694,7 +695,7 @@ describe("CaptureSurface", () => {
     await advanceTime(500);
 
     expect(getTextarea(screen.container)?.className).toContain("row-[2]");
-    expect(getTextarea(screen.container)?.className).toContain("overflow-hidden");
+    expect(getTextarea(screen.container)?.className).not.toContain("overflow-hidden");
     expect(screen.container.querySelector("[data-canvas-scroll-viewport]")?.className).toContain(
       "overflow-y-auto",
     );
@@ -757,7 +758,7 @@ describe("CaptureSurface", () => {
     );
     expect(writingTrack.getAttribute("data-canvas-context-reserve")).toBe("structural");
     expect(initialTextareaClassName).toContain("row-[2]");
-    expect(initialTextareaClassName).toContain("overflow-hidden");
+    expect(initialTextareaClassName).not.toContain("overflow-hidden");
     expect(initialTextareaClassName).not.toContain("overflow-y-auto");
     expect(textarea.getAttribute("data-canvas-caret-follow-ratio")).toBe("0.7");
 
@@ -787,7 +788,108 @@ describe("CaptureSurface", () => {
     expect(getStableEditorClassName(getTextarea(screen.container))).toBe(
       getStableEditorClassNameFromString(initialTextareaClassName),
     );
-    expect(getTextarea(screen.container)?.className).toContain("overflow-hidden");
+    expect(getTextarea(screen.container)?.className).not.toContain("overflow-hidden");
+  });
+
+  it("lets the rich editor grow inside the canvas scroll viewport", async () => {
+    const screen = await renderCaptureSurface();
+    const scrollViewport = screen.container.querySelector<HTMLElement>(
+      "[data-canvas-scroll-viewport]",
+    );
+    const writingTrack = screen.container.querySelector<HTMLElement>(
+      "[data-canvas-writing-track]",
+    );
+    const editorHost = screen.container.querySelector<HTMLElement>(
+      "[data-canvas-rich-editor-host]",
+    );
+    const editorContentHost = screen.container.querySelector<HTMLElement>(
+      "[data-canvas-rich-editor-content-host]",
+    );
+    const proseMirror = screen.container.querySelector<HTMLElement>(
+      "[data-canvas-rich-editor-content]",
+    );
+
+    if (!scrollViewport || !writingTrack || !editorHost || !editorContentHost || !proseMirror) {
+      throw new Error("Expected rich editor canvas geometry.");
+    }
+
+    const initialWritingTrackClassName = writingTrack.className;
+    const initialEditorHostClassName = editorHost.className;
+    const initialEditorContentHostClassName = editorContentHost.className;
+    const initialProseMirrorClassName = getStableEditorClassName(proseMirror);
+
+    expect(scrollViewport.className).toContain("overflow-y-auto");
+    expect(scrollViewport.className).toContain("vinema-scrollbar");
+    expect(editorContentHost.className).toContain("w-full");
+    expect(proseMirror.className).toContain("w-full");
+
+    for (const element of [editorContentHost, proseMirror]) {
+      const className = element.className;
+
+      expect(className).not.toContain("overflow-hidden");
+      expect(className).not.toContain("overflow-y-auto");
+      expect(className).not.toContain("overflow-auto");
+      expect(className).not.toContain("h-full");
+      expect(className).not.toContain("max-h");
+      expect(className).not.toContain("absolute");
+      expect(className).not.toContain("fit-content");
+    }
+
+    const globals = readFileSync("src/app/globals.css", "utf8");
+    const proseMirrorCss = globals.match(
+      /\.vinema-rich-editor \.ProseMirror \{([\s\S]*?)\n\}/,
+    )?.[1];
+
+    expect(proseMirrorCss).toBeDefined();
+    expect(proseMirrorCss).toContain("width: 100%;");
+    expect(proseMirrorCss).toContain("height: auto;");
+    expect(proseMirrorCss).not.toContain("overflow:");
+    expect(proseMirrorCss).not.toContain("overflow-y:");
+    expect(proseMirrorCss).not.toContain("max-height:");
+
+    Object.defineProperty(proseMirror, "scrollHeight", {
+      configurable: true,
+      get() {
+        return Math.max(1, proseMirror.querySelectorAll("p").length) * 28;
+      },
+    });
+
+    await changeTextarea(screen.container, "Una linea");
+    await advanceTime(500);
+
+    const singleLineScrollHeight = proseMirror.scrollHeight;
+
+    await changeTextarea(
+      screen.container,
+      ["Primer parrafo", "Segundo parrafo", "Tercer parrafo", "Cuarto parrafo"].join(
+        "\n\n",
+      ),
+    );
+    await advanceTime(500);
+
+    expect(proseMirror.scrollHeight).toBeGreaterThan(singleLineScrollHeight);
+    expect(screen.container.querySelector("[data-canvas-writing-track]")?.className).toBe(
+      initialWritingTrackClassName,
+    );
+    expect(screen.container.querySelector("[data-canvas-rich-editor-host]")?.className).toBe(
+      initialEditorHostClassName,
+    );
+    expect(
+      screen.container.querySelector("[data-canvas-rich-editor-content-host]")?.className,
+    ).toBe(initialEditorContentHostClassName);
+    expect(getStableEditorClassName(getTextarea(screen.container))).toBe(
+      initialProseMirrorClassName,
+    );
+
+    await focusEditor(screen.container);
+
+    expect(document.body.querySelector("[data-canvas-format-toolbar]")).toBeDefined();
+    expect(screen.container.querySelector("[data-canvas-writing-track]")?.className).toBe(
+      initialWritingTrackClassName,
+    );
+    expect(screen.container.querySelector("[data-canvas-rich-editor-host]")?.className).toBe(
+      initialEditorHostClassName,
+    );
   });
 
   it("keeps the same editor origin across supported text sizes", async () => {
@@ -803,7 +905,7 @@ describe("CaptureSurface", () => {
 
       expect(textarea?.style.fontSize).toBe(`${textSize}px`);
       expect(textarea?.className).toContain("row-[2]");
-      expect(textarea?.className).toContain("overflow-hidden");
+      expect(textarea?.className).not.toContain("overflow-hidden");
 
       await changeTextarea(screen.container, "A");
       await advanceTime(500);
@@ -1330,6 +1432,110 @@ describe("CaptureSurface", () => {
       });
     }
   });
+
+  it("reserves the measured format toolbar area as canvas scroll padding", async () => {
+    for (const viewport of [
+      { width: 1440, height: 900, toolbarTop: 68, toolbarHeight: 40 },
+      { width: 820, height: 760, toolbarTop: 68, toolbarHeight: 40 },
+      { width: 390, height: 760, toolbarTop: 60, toolbarHeight: 40 },
+    ]) {
+      setViewportSize(viewport);
+
+      const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+
+      HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect() {
+        if (this.matches("[data-canvas-format-toolbar]")) {
+          return createDomRect({
+            left: 320,
+            top: viewport.toolbarTop,
+            width: Math.min(560, viewport.width - 32),
+            height: viewport.toolbarHeight,
+          });
+        }
+
+        if (this.matches("[data-canvas-scroll-viewport]")) {
+          return createDomRect({
+            left: 0,
+            top: 0,
+            width: viewport.width,
+            height: viewport.height,
+          });
+        }
+
+        return originalGetBoundingClientRect.call(this);
+      };
+
+      try {
+        const screen = await renderCaptureSurface({
+          nodeRepository: new InMemoryNodeRepository(),
+        });
+        const composer = screen.container.querySelector<HTMLElement>(
+          "[data-canvas-writing-surface]",
+        );
+        const scrollViewport = screen.container.querySelector<HTMLElement>(
+          "[data-canvas-scroll-viewport]",
+        );
+        const dock = screen.container.querySelector<HTMLElement>(
+          "[data-canvas-capture-dock]",
+        );
+
+        if (!composer || !scrollViewport || !dock) {
+          throw new Error("Expected canvas geometry.");
+        }
+
+        const initialDockClassName = dock.className;
+        const initialComposerStart = composer.style.getPropertyValue(
+          "--vinema-canvas-editor-start",
+        );
+
+        scrollViewport.scrollTop = 180;
+
+        await focusEditor(screen.container);
+
+        const toolbar = document.body.querySelector<HTMLElement>(
+          "[data-canvas-format-toolbar]",
+        );
+        const expectedSafeTop = viewport.toolbarTop + viewport.toolbarHeight + 16;
+
+        expect(toolbar).toBeDefined();
+        expect(toolbar?.getAttribute("data-canvas-format-toolbar-safe-gap")).toBe("16");
+        expect(
+          scrollViewport.style.getPropertyValue(
+            "--vinema-canvas-format-toolbar-safe-top",
+          ),
+        ).toBe(`${expectedSafeTop}px`);
+        expect(scrollViewport.scrollTop).toBe(180);
+        expect(initialComposerStart).toBe(
+          "var(--vinema-canvas-editor-start-effective, 42%)",
+        );
+        expect(composer.style.getPropertyValue("--vinema-canvas-editor-start")).toBe(
+          initialComposerStart,
+        );
+        expect(dock.className).toBe(initialDockClassName);
+
+        await keydownWindow({ key: "Escape" });
+
+        expect(document.body.querySelector("[data-canvas-format-toolbar]")).toBeNull();
+        expect(
+          scrollViewport.style.getPropertyValue(
+            "--vinema-canvas-format-toolbar-safe-top",
+          ),
+        ).toBe("");
+        expect(composer.style.getPropertyValue("--vinema-canvas-editor-start")).toBe(
+          initialComposerStart,
+        );
+        expect(dock.className).toBe(initialDockClassName);
+
+        await act(async () => {
+          screen.root.unmount();
+          await flushPromises();
+        });
+        document.body.replaceChildren();
+      } finally {
+        HTMLElement.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+      }
+    }
+  }, 30000);
 
   it("keeps rail contextual controls from narrowing the editor", async () => {
     const nodeRepository = new InMemoryNodeRepository([
