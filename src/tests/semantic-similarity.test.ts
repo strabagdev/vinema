@@ -196,7 +196,8 @@ describe("concept semantic representation", () => {
       representationVersion: CONCEPT_REPRESENTATION_VERSION,
     });
     expect(representation.text).toContain("Nombre: Sueño");
-    expect(representation.text).toContain("Aliases: Descanso, rutina nocturna");
+    expect(representation.identityText).toContain("Aliases: Descanso, rutina nocturna");
+    expect(representation.evidenceText).toContain("Evidencia:");
     expect(representation.evidenceNodeIds).toHaveLength(5);
     expect(representation.sourceHash).toBe(repeated.sourceHash);
   });
@@ -222,7 +223,11 @@ describe("concept semantic representation", () => {
     expect(base.sourceHash).not.toBe(withAlias.sourceHash);
     expect(base.sourceHash).toBe(
       createEmbeddingSourceHash(
-        `concept-representation-v${CONCEPT_REPRESENTATION_VERSION}\n${base.text}`,
+        [
+          `concept-representation-v${CONCEPT_REPRESENTATION_VERSION}`,
+          base.identityText,
+          base.evidenceText,
+        ].join("\n"),
       ),
     );
   });
@@ -631,6 +636,236 @@ describe("semantic vector index and engine", () => {
     expect(matches.map((match) => match.concept.id)).not.toContain("sleep");
   });
 
+  it("does not let shared evidence give weak concept identities nearly equivalent semantic scores", async () => {
+    const evidenceModel = makeEvidenceModel({
+      contexts: [
+        makeContext({ id: "aligned-a", name: "Área de maniobra" }),
+        makeContext({ id: "aligned-b", name: "Baja visibilidad" }),
+        makeContext({ id: "weak-shared", name: "Perforación de avance" }),
+        makeContext({ id: "pure-semantic", name: "Detección operacional" }),
+      ],
+      nodes: [
+        makeNode({
+          id: "shared-node",
+          content:
+            "Una mala iluminación dificulta identificar personas en el frente de trabajo.",
+        }),
+        makeNode({
+          id: "semantic-node",
+          content: "El operador detecta trabajadores en zonas con baja visibilidad.",
+        }),
+      ],
+      relations: [
+        makeRelation({ nodeId: "shared-node", contextId: "aligned-a" }),
+        makeRelation({ nodeId: "shared-node", contextId: "aligned-b" }),
+        makeRelation({ nodeId: "shared-node", contextId: "weak-shared" }),
+        makeRelation({ nodeId: "semantic-node", contextId: "pure-semantic" }),
+      ],
+    });
+    const repository = new InMemoryEmbeddingRepository([
+      makeEmbeddingRecord({
+        sourceType: "concept",
+        sourceId: "aligned-a",
+        status: "READY",
+        vector: new Float32Array([0.9, 0.44]),
+      }),
+      makeEmbeddingRecord({
+        sourceType: "concept",
+        sourceId: "aligned-b",
+        status: "READY",
+        vector: new Float32Array([0.88, 0.48]),
+      }),
+      makeEmbeddingRecord({
+        sourceType: "concept",
+        sourceId: "weak-shared",
+        status: "READY",
+        vector: new Float32Array([0.52, 0.85]),
+      }),
+      makeEmbeddingRecord({
+        sourceType: "concept",
+        sourceId: "pure-semantic",
+        status: "READY",
+        vector: new Float32Array([0.9, 0.43]),
+      }),
+    ]);
+    const runtime = makeRuntime({
+      embed: async (text) => {
+        if (text.includes("shared-node")) {
+          return new Float32Array([1, 0]);
+        }
+
+        return new Float32Array([1, 0]);
+      },
+    });
+    const engine = new SemanticSimilarityEngine({
+      repository,
+      nodeRepository: new InMemoryNodeRepository(),
+      runtime,
+    });
+
+    const matches = await engine.findSimilarConceptsForCapture({
+      workspaceId,
+      text: "baja visibilidad en área de maniobra",
+      evidenceModel,
+      topK: 4,
+    });
+    const ids = matches.map((match) => match.concept.id);
+
+    expect(ids).toEqual(
+      expect.arrayContaining(["aligned-a", "aligned-b", "pure-semantic"]),
+    );
+    expect(ids).not.toContain("weak-shared");
+    expect(
+      matches.find((match) => match.concept.id === "pure-semantic"),
+    ).toBeDefined();
+  });
+
+  it("penalizes vector concept drag from evidence shared with stronger local concepts", async () => {
+    const capture1 =
+      "Durante la perforación de avance, una mala iluminación puede dificultar la identificación de personas u obstáculos en el frente de trabajo.";
+    const capture2 =
+      "Los equipos móviles presentan mayor riesgo de atropello cuando existen personas circulando dentro de su radio de operación.";
+    const capture3 =
+      "En sectores con baja visibilidad, el operador puede detectar tardíamente a trabajadores que ingresan al área de maniobra del equipo.";
+    const capture4 =
+      "La segregación mediante barreras físicas disminuye la exposición de peatones a equipos móviles durante las maniobras.";
+    const evidenceModel = makeEvidenceModel({
+      contexts: [
+        makeContext({ id: "identificacion-personas", name: "Identificación de personas" }),
+        makeContext({ id: "mala-iluminacion", name: "Mala iluminación" }),
+        makeContext({ id: "perforacion-avance", name: "Perforación de avance" }),
+        makeContext({ id: "equipos-moviles", name: "Equipos móviles" }),
+        makeContext({ id: "radio-operacion", name: "Radio de operación" }),
+        makeContext({ id: "riesgo-atropello", name: "Riesgo de atropello" }),
+        makeContext({ id: "area-maniobra", name: "Área de maniobra" }),
+        makeContext({ id: "baja-visibilidad", name: "Baja visibilidad" }),
+        makeContext({ id: "maniobra-equipo", name: "Maniobra del equipo" }),
+        makeContext({ id: "deteccion-tardia", name: "Detección tardía" }),
+      ],
+      nodes: [
+        makeNode({ id: "capture-1", content: capture1 }),
+        makeNode({ id: "capture-2", content: capture2 }),
+        makeNode({ id: "capture-3", content: capture3 }),
+      ],
+      relations: [
+        ...[
+          "identificacion-personas",
+          "mala-iluminacion",
+          "perforacion-avance",
+        ].map((contextId) =>
+          makeRelation({ nodeId: "capture-1", contextId }),
+        ),
+        ...[
+          "equipos-moviles",
+          "radio-operacion",
+          "riesgo-atropello",
+        ].map((contextId) =>
+          makeRelation({ nodeId: "capture-2", contextId }),
+        ),
+        ...[
+          "area-maniobra",
+          "baja-visibilidad",
+          "maniobra-equipo",
+          "deteccion-tardia",
+          "identificacion-personas",
+          "mala-iluminacion",
+        ].map((contextId) =>
+          makeRelation({ nodeId: "capture-3", contextId }),
+        ),
+      ],
+    });
+    const repository = new InMemoryEmbeddingRepository([
+      makeEmbeddingRecord({
+        sourceType: "concept",
+        sourceId: "area-maniobra",
+        status: "READY",
+        vector: new Float32Array([0.86, 0]),
+      }),
+      makeEmbeddingRecord({
+        sourceType: "concept",
+        sourceId: "maniobra-equipo",
+        status: "READY",
+        vector: new Float32Array([0.85, 0]),
+      }),
+      makeEmbeddingRecord({
+        sourceType: "concept",
+        sourceId: "equipos-moviles",
+        status: "READY",
+        vector: new Float32Array([0.84, 0]),
+      }),
+      makeEmbeddingRecord({
+        sourceType: "concept",
+        sourceId: "baja-visibilidad",
+        status: "READY",
+        vector: new Float32Array([0.82, 0]),
+      }),
+      makeEmbeddingRecord({
+        sourceType: "concept",
+        sourceId: "identificacion-personas",
+        status: "READY",
+        vector: new Float32Array([0.81, 0]),
+      }),
+      makeEmbeddingRecord({
+        sourceType: "concept",
+        sourceId: "mala-iluminacion",
+        status: "READY",
+        vector: new Float32Array([0.8, 0]),
+      }),
+      makeEmbeddingRecord({
+        sourceType: "concept",
+        sourceId: "perforacion-avance",
+        status: "READY",
+        vector: new Float32Array([0.79, 0]),
+      }),
+      makeEmbeddingRecord({
+        sourceType: "concept",
+        sourceId: "radio-operacion",
+        status: "READY",
+        vector: new Float32Array([0.78, 0]),
+      }),
+      makeEmbeddingRecord({
+        sourceType: "concept",
+        sourceId: "riesgo-atropello",
+        status: "READY",
+        vector: new Float32Array([0.77, 0]),
+      }),
+      makeEmbeddingRecord({
+        sourceType: "concept",
+        sourceId: "deteccion-tardia",
+        status: "READY",
+        vector: new Float32Array([0.76, 0]),
+      }),
+    ]);
+    const engine = new SemanticSimilarityEngine({
+      repository,
+      nodeRepository: new InMemoryNodeRepository(),
+      runtime: makeRuntime({
+        embed: async () => new Float32Array([1, 0]),
+      }),
+    });
+
+    const matches = await engine.findSimilarConceptsForCapture({
+      workspaceId,
+      text: capture4,
+      evidenceModel,
+      excludeConceptIds: new Set([
+        "area-maniobra",
+        "maniobra-equipo",
+        "equipos-moviles",
+      ]),
+      topK: 8,
+    });
+    const ids = matches.map((match) => match.concept.id);
+
+    expect(ids).toContain("identificacion-personas");
+    expect(ids).not.toContain("baja-visibilidad");
+    expect(ids).not.toContain("mala-iluminacion");
+    expect(ids).not.toContain("perforacion-avance");
+    expect(ids).not.toContain("radio-operacion");
+    expect(ids).not.toContain("riesgo-atropello");
+    expect(ids).not.toContain("deteccion-tardia");
+  });
+
   it("adds semantic matches to recovery suggestions without replacing literals", () => {
     const semanticNode = makeNode({ id: "semantic", content: "viaje a Valparaíso" });
     const results = mergeSemanticAssociationSuggestions(
@@ -707,7 +942,11 @@ describe("semantic vector index and engine", () => {
         {
           concept: context,
           representationText: "Nombre: Sueño",
+          identityText: "Nombre: Sueño",
+          evidenceText: "Evidencia:\n- dormir mejor",
           evidenceNodeIds: ["node-1"],
+          conceptSimilarity: 0.72,
+          evidenceSimilarity: 0.6,
           evidence: {
             source: "LOCAL_EMBEDDING",
             sourceType: "capture",

@@ -204,3 +204,18 @@ usuario o para una ejecucion futura solicitada explicitamente.
 La etiqueta emergente es heuristica y conservadora. La persistencia emergente usa
 `Context` tipo `AREA` por compatibilidad hasta que el dominio defina una entidad
 `Concept` independiente.
+
+## Siguiente paso funcional
+
+Despues de cerrar la secuencia actual de calibracion, incluyendo Captura 5 y una
+captura final de prueba antes de guardar, queda planificado automatizar la
+asociacion de conceptos al guardar una captura:
+
+- conceptos detectados directamente/localmente en la captura se asocian
+  automaticamente;
+- conceptos recuperados por significado, relaciones o memoria se muestran como
+  contexto relacionado, pero no se asocian automaticamente;
+- el flujo normal no deberia requerir que el usuario seleccione manualmente
+  todos los conceptos;
+- mantener abierta la posibilidad de intervencion manual unicamente para casos
+  ambiguos.

@@ -10,7 +10,7 @@ import {
   normalizeEmbeddingText,
 } from "@/features/semantic-similarity/embedding-text";
 
-export const CONCEPT_REPRESENTATION_VERSION = 1;
+export const CONCEPT_REPRESENTATION_VERSION = 2;
 const REPRESENTATIVE_EVIDENCE_LIMIT = 5;
 const REPRESENTATIVE_EXCERPT_LENGTH = 190;
 
@@ -18,6 +18,8 @@ export type ConceptSemanticRepresentation = {
   conceptId: string;
   representationVersion: number;
   text: string;
+  identityText: string;
+  evidenceText: string;
   sourceHash: string;
   evidenceNodeIds: string[];
 };
@@ -57,14 +59,17 @@ export function buildConceptSemanticRepresentation(
       getCapturePreview(content, { maxLength: REPRESENTATIVE_EXCERPT_LENGTH }),
     ))
     .filter(Boolean);
-  const sections = [
+  const identitySections = [
     `Nombre: ${record.canonicalLabel}`,
     aliases.length > 0 ? `Aliases: ${aliases.join(", ")}` : null,
+  ].filter((section): section is string => Boolean(section));
+  const evidenceText = normalizeEmbeddingText(
     evidenceLines.length > 0
       ? `Evidencia:\n${evidenceLines.map((line) => `- ${line}`).join("\n")}`
-      : null,
-  ].filter((section): section is string => Boolean(section));
-  const text = normalizeEmbeddingText(sections.join("\n"));
+      : "",
+  );
+  const identityText = normalizeEmbeddingText(identitySections.join("\n"));
+  const text = identityText;
 
   if (!text) {
     return null;
@@ -74,8 +79,14 @@ export function buildConceptSemanticRepresentation(
     conceptId: series.conceptId,
     representationVersion: CONCEPT_REPRESENTATION_VERSION,
     text,
+    identityText,
+    evidenceText,
     sourceHash: createEmbeddingSourceHash(
-      `concept-representation-v${CONCEPT_REPRESENTATION_VERSION}\n${text}`,
+      [
+        `concept-representation-v${CONCEPT_REPRESENTATION_VERSION}`,
+        identityText,
+        evidenceText,
+      ].join("\n"),
     ),
     evidenceNodeIds,
   };

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Context } from "@/domain/context/context";
 import type { NodeContextRelation } from "@/domain/context/node-context-relation";
 import type { Node } from "@/domain/node/node";
+import type { ConceptSuggestionTrace } from "@/features/associations/association-types";
 import { deriveKnowledgeSuggestions } from "@/features/cognition/knowledge-suggestions";
 
 const now = new Date("2026-08-01T12:00:00.000Z");
@@ -244,6 +245,54 @@ describe("Knowledge Suggestions v1", () => {
     ).toEqual([]);
   });
 
+  it("requires local support for relationship suggestions when local traces are provided", () => {
+    const contexts = [
+      context({ id: "actual-a", name: "Actual A" }),
+      context({ id: "actual-b", name: "Actual B" }),
+      context({ id: "personas", name: "Identificación de personas" }),
+      context({ id: "visibility", name: "Baja visibilidad" }),
+    ];
+    const nodes = [
+      node({
+        id: "memory",
+        content: "Memoria con trabajadores, baja visibilidad y maniobra.",
+        updatedAt: "2026-07-20T10:00:00.000Z",
+      }),
+    ];
+    const relations = [
+      ...relationsFor("memory", ["actual-a", "actual-b", "personas", "visibility"]),
+    ];
+    const withoutLocalContext = deriveKnowledgeSuggestions({
+      contexts,
+      nodes,
+      relations,
+      inputConceptIds: ["actual-a", "actual-b"],
+      now,
+    });
+    const withLocalContext = deriveKnowledgeSuggestions({
+      contexts,
+      nodes,
+      relations,
+      inputConceptIds: ["actual-a", "actual-b"],
+      localText: "exposición de peatones en maniobras",
+      localConceptTraces: [
+        conceptTrace(contexts[0], { directMatches: 1 }),
+        conceptTrace(contexts[1], { directMatches: 1 }),
+      ],
+      now,
+    });
+
+    expect(withoutLocalContext.map((suggestion) => suggestion.conceptId)).toContain(
+      "visibility",
+    );
+    expect(withLocalContext.map((suggestion) => suggestion.conceptId)).toContain(
+      "personas",
+    );
+    expect(withLocalContext.map((suggestion) => suggestion.conceptId)).not.toContain(
+      "visibility",
+    );
+  });
+
   it("handles a large deterministic dataset within a reasonable budget", () => {
     const contexts = [
       context({ id: "mitcom", name: "Mitcom" }),
@@ -379,4 +428,24 @@ function relationsFor(nodeId: string, contextIds: string[]): NodeContextRelation
     version: 1,
     createdAt: "2026-01-01T00:00:00.000Z",
   }));
+}
+
+function conceptTrace(
+  traceContext: Context,
+  overrides: Partial<ConceptSuggestionTrace> = {},
+): ConceptSuggestionTrace {
+  return {
+    context: traceContext,
+    queryTokens: [],
+    contextTokens: [],
+    relatedContentTokens: [],
+    relatedCaptureIds: [],
+    directMatches: 0,
+    relatedMatches: 0,
+    selectedBoost: 0,
+    score: 0,
+    threshold: 0.18,
+    included: false,
+    ...overrides,
+  };
 }

@@ -160,6 +160,8 @@ export function evaluateCaptureInput({
     contexts,
     nodes,
     relations,
+    localText: text,
+    localConceptTraces: conceptTraces,
   });
   const knowledgeConcepts = knowledgeSuggestions
     .filter((suggestion) => suggestion.confidence !== "LOW")

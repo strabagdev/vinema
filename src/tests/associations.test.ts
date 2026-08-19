@@ -276,6 +276,153 @@ describe("concept suggestions", () => {
     expect(evaluation.diagnostics.emergingConceptSuggestionCount).toBeGreaterThan(0);
   });
 
+  it("suggests at least one current-text emerging concept before saving with empty memory", () => {
+    const evaluation = evaluateCaptureInput({
+      text: "Durante la perforación de avance, una mala iluminación puede dificultar la identificación de personas u obstáculos en el frente de trabajo.",
+      nodes: [],
+      contexts: [],
+      relations: [],
+    });
+
+    expect(
+      evaluation.conceptSuggestions.filter(
+        (suggestion) => suggestion.kind === "emerging",
+      ).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("suggests current-text mobile equipment risk concepts before saving with empty memory", () => {
+    const evaluation = evaluateCaptureInput({
+      text: "Los equipos móviles presentan mayor riesgo de atropello cuando existen personas circulando dentro de su radio de operación.",
+      nodes: [],
+      contexts: [],
+      relations: [],
+    });
+    const emergingLabels = evaluation.conceptSuggestions
+      .filter((suggestion) => suggestion.kind === "emerging")
+      .map((suggestion) => suggestion.suggestedLabel);
+
+    expect(emergingLabels).toEqual(
+      expect.arrayContaining([
+        "Equipos móviles",
+        "Riesgo de atropello",
+        "Radio de operación",
+      ]),
+    );
+  });
+
+  it("suggests derived late detection concepts from current input before saving", () => {
+    const evaluation = evaluateCaptureInput({
+      text: "En sectores con baja visibilidad, el operador puede detectar tardíamente a trabajadores que ingresan al área de maniobra del equipo.",
+      nodes: [],
+      contexts: [],
+      relations: [],
+    });
+    const emergingLabels = evaluation.conceptSuggestions
+      .filter((suggestion) => suggestion.kind === "emerging")
+      .map((suggestion) => suggestion.suggestedLabel);
+
+    expect(emergingLabels).toEqual(expect.arrayContaining(["Detección tardía"]));
+  });
+
+  it("suggests segregation controls without conjugated verb article noise", () => {
+    const evaluation = evaluateCaptureInput({
+      text: "La segregación mediante barreras físicas disminuye la exposición de peatones a equipos móviles durante las maniobras.",
+      nodes: [],
+      contexts: [],
+      relations: [],
+    });
+    const emergingLabels = evaluation.conceptSuggestions
+      .filter((suggestion) => suggestion.kind === "emerging")
+      .map((suggestion) => suggestion.suggestedLabel);
+
+    expect(emergingLabels).toEqual(
+      expect.arrayContaining([
+        "Segregación",
+        "Barreras físicas",
+        "Equipos móviles",
+        "Exposición de peatones",
+      ]),
+    );
+    expect(emergingLabels).not.toContain("Disminuye la exposición");
+  });
+
+  it("requires local support before dragging related concepts from prior co-occurrence", () => {
+    const nodes = [
+      node({
+        id: "capture-1",
+        content:
+          "Durante la perforación de avance, una mala iluminación puede dificultar la identificación de personas u obstáculos en el frente de trabajo.",
+      }),
+      node({
+        id: "capture-2",
+        content:
+          "Los equipos móviles presentan mayor riesgo de atropello cuando existen personas circulando dentro de su radio de operación.",
+      }),
+      node({
+        id: "capture-3",
+        content:
+          "En sectores con baja visibilidad, el operador puede detectar tardíamente a trabajadores que ingresan al área de maniobra del equipo.",
+      }),
+    ];
+    const contexts = [
+      context({ id: "identificacion-personas", name: "Identificación de personas" }),
+      context({ id: "mala-iluminacion", name: "Mala iluminación" }),
+      context({ id: "perforacion-avance", name: "Perforación de avance" }),
+      context({ id: "equipos-moviles", name: "Equipos móviles" }),
+      context({ id: "radio-operacion", name: "Radio de operación" }),
+      context({ id: "riesgo-atropello", name: "Riesgo de atropello" }),
+      context({ id: "area-maniobra", name: "Área de maniobra" }),
+      context({ id: "baja-visibilidad", name: "Baja visibilidad" }),
+      context({ id: "maniobra-equipo", name: "Maniobra del equipo" }),
+      context({ id: "deteccion-tardia", name: "Detección tardía" }),
+    ];
+    const relations = [
+      contextRelation("capture-1", "identificacion-personas"),
+      contextRelation("capture-1", "mala-iluminacion"),
+      contextRelation("capture-1", "perforacion-avance"),
+      contextRelation("capture-2", "equipos-moviles"),
+      contextRelation("capture-2", "radio-operacion"),
+      contextRelation("capture-2", "riesgo-atropello"),
+      contextRelation("capture-3", "area-maniobra"),
+      contextRelation("capture-3", "baja-visibilidad"),
+      contextRelation("capture-3", "maniobra-equipo"),
+      contextRelation("capture-3", "deteccion-tardia"),
+      contextRelation("capture-3", "identificacion-personas"),
+      contextRelation("capture-3", "mala-iluminacion"),
+    ];
+    const evaluation = evaluateCaptureInput({
+      text: "La segregación mediante barreras físicas disminuye la exposición de peatones a equipos móviles durante las maniobras.",
+      nodes,
+      contexts,
+      relations,
+    });
+    const existingLabels = evaluation.conceptSuggestions
+      .filter((suggestion) => suggestion.kind === "existing")
+      .map((suggestion) => suggestion.label);
+    const emergingLabels = evaluation.conceptSuggestions
+      .filter((suggestion) => suggestion.kind === "emerging")
+      .map((suggestion) => suggestion.suggestedLabel);
+
+    expect(existingLabels).toEqual(
+      expect.arrayContaining([
+        "Equipos móviles",
+        "Área de maniobra",
+        "Maniobra del equipo",
+        "Identificación de personas",
+      ]),
+    );
+    expect(existingLabels).not.toContain("Baja visibilidad");
+    expect(existingLabels).not.toContain("Mala iluminación");
+    expect(emergingLabels).toEqual(
+      expect.arrayContaining([
+        "Segregación",
+        "Barreras físicas",
+        "Exposición de peatones",
+      ]),
+    );
+  });
+
   it("does not create current-input emerging noise for empty or generic text", () => {
     for (const text of ["", "   ", "re", "Necesito revisar esto despues"]) {
       const evaluation = evaluateCaptureInput({

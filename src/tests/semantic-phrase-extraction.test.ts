@@ -72,6 +72,98 @@ describe("semantic phrase extraction", () => {
     ]);
   });
 
+  it("extracts general noun phrases from current safety observations", () => {
+    expect(
+      labelsFor(
+        "Durante la perforación de avance, una mala iluminación puede dificultar la identificación de personas u obstáculos en el frente de trabajo.",
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        "Perforación de avance",
+        "Mala iluminación",
+        "Identificación de personas",
+      ]),
+    );
+
+    expect(
+      labelsFor(
+        "Los equipos móviles presentan mayor riesgo de atropello cuando existen personas circulando dentro de su radio de operación.",
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        "Equipos móviles",
+        "Riesgo de atropello",
+        "Radio de operación",
+      ]),
+    );
+  });
+
+  it("derives conservative concept labels from relevant verb and adverb constructions", () => {
+    const labels = labelsFor(
+      "En sectores con baja visibilidad, el operador puede detectar tardíamente a trabajadores que ingresan al área de maniobra del equipo.",
+    );
+
+    expect(labels).toEqual(expect.arrayContaining(["Detección tardía"]));
+  });
+
+  it("does not derive concepts from generic verb and adverb constructions", () => {
+    const labels = labelsFor(
+      "necesito trabajar rápidamente e ingresar correctamente al sistema.",
+    );
+
+    expect(labels).not.toEqual(
+      expect.arrayContaining([
+        "Trabajo rápido",
+        "Trabajación rápida",
+        "Ingreso correcto",
+        "Ingresación correcta",
+      ]),
+    );
+  });
+
+  it("extracts salient abstract nouns and suppresses conjugated verb article noise", () => {
+    const labels = labelsFor(
+      "La segregación mediante barreras físicas disminuye la exposición de peatones a equipos móviles durante las maniobras.",
+    );
+
+    expect(labels).toEqual(
+      expect.arrayContaining([
+        "Segregación",
+        "Barreras físicas",
+        "Equipos móviles",
+        "Exposición de peatones",
+      ]),
+    );
+    expect(labels).not.toContain("Disminuye la exposición");
+  });
+
+  it("keeps simple noun extraction structural instead of indiscriminate", () => {
+    expect(labelsFor("La planificación mediante acuerdos técnicos reduce el riesgo operacional.")).toEqual(
+      expect.arrayContaining(["Planificación", "Acuerdos técnicos", "Riesgo operacional"]),
+    );
+
+    const genericLabels = labelsFor(
+      "la mesa tiene documentos y personas durante la mañana",
+    );
+
+    expect(genericLabels).not.toEqual(
+      expect.arrayContaining(["Mesa", "Documentos", "Personas", "Mañana"]),
+    );
+  });
+
+  it("blocks conjugated verb article phrases while keeping the following noun phrase", () => {
+    const labels = labelsFor(
+      "aumenta la exposición de peatones y reduce el control de acceso",
+    );
+
+    expect(labels).not.toEqual(
+      expect.arrayContaining(["Aumenta la exposición", "Reduce el control"]),
+    );
+    expect(labels).toEqual(
+      expect.arrayContaining(["Exposición de peatones", "Control de acceso"]),
+    );
+  });
+
   it("suppresses contained terms and generic fragments", () => {
     const labels = labelsFor(
       "para continuar esta prueba quiero comprar Ombre Leather de Tom Ford",
