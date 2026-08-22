@@ -903,6 +903,50 @@ describe("semantic vector index and engine", () => {
     ]);
   });
 
+  it("deduplicates semantic recovery matches by full normalized content before limiting", () => {
+    const duplicateSemanticNode = makeNode({
+      id: "duplicate-semantic",
+      content:
+        "## Revisar los cruces\n\ndonde interactúa personal con equipos móviles.",
+      updatedAt: "2026-08-22T13:10:00.000Z",
+    });
+    const usefulSemanticNode = makeNode({
+      id: "useful-semantic",
+      content: "Evaluar barreras físicas para peatones cerca de equipos móviles.",
+    });
+    const results = mergeSemanticAssociationSuggestions(
+      [
+        {
+          node: makeNode({
+            id: "duplicate-literal",
+            content:
+              "Revisar los cruces donde interactúa personal con equipos móviles",
+            updatedAt: "2026-08-22T12:21:00.000Z",
+          }),
+          score: 0.3,
+          excerpt: "Revisar los cruces",
+          reasons: [{ type: "TERM_MATCH", terms: ["revisar"] }],
+        },
+      ],
+      [
+        {
+          node: duplicateSemanticNode,
+          evidence: makeSimilarityEvidence({ similarity: 0.9, rank: 1 }),
+        },
+        {
+          node: usefulSemanticNode,
+          evidence: makeSimilarityEvidence({ similarity: 0.82, rank: 2 }),
+        },
+      ],
+      2,
+    );
+
+    expect(results.map((result) => result.node.id)).toEqual([
+      "duplicate-semantic",
+      "useful-semantic",
+    ]);
+  });
+
   it("keeps discovery able to suggest pure semantic capture neighbors", () => {
     const semanticNode = makeNode({ id: "semantic", content: "viaje a Valparaíso" });
     const results = mergeSemanticAssociationSuggestions(
@@ -1052,6 +1096,26 @@ function baseEmbeddingRecord(
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     attempts: 0,
+  };
+}
+
+function makeSimilarityEvidence({
+  similarity,
+  rank,
+}: {
+  similarity: number;
+  rank: number;
+}) {
+  return {
+    source: "LOCAL_EMBEDDING" as const,
+    sourceType: "capture" as const,
+    targetType: "capture" as const,
+    modelId: model.modelId,
+    modelVersion: model.modelVersion,
+    dimensions: model.dimensions,
+    similarity,
+    rank,
+    marginToNext: null,
   };
 }
 

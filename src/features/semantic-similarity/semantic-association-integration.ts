@@ -1,6 +1,7 @@
 import type {
   AssociationSuggestion,
 } from "@/features/associations/association-types";
+import { dedupeAssociationSuggestionsByContent } from "@/features/associations/association-engine";
 import type {
   SemanticSimilarityMatch,
 } from "@/features/semantic-similarity/semantic-similarity-engine";
@@ -41,5 +42,7 @@ export function mergeSemanticAssociationSuggestions(
     });
   }
 
-  return Array.from(suggestions.values()).slice(0, Math.max(limit, existing.length));
+  return dedupeAssociationSuggestionsByContent(
+    Array.from(suggestions.values()),
+  ).slice(0, Math.max(limit, existing.length));
 }

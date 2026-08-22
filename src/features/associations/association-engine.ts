@@ -15,6 +15,7 @@ import {
   getSharedNeighbors,
   normalizeAssociationPair,
 } from "@/features/associations/graph-metrics";
+import { captureMarkdownToEmbeddingText } from "@/features/semantic-similarity/embedding-text";
 import type {
   AssociationIndexedCapture,
   AssociationReason,
@@ -25,6 +26,8 @@ const MIN_QUERY_TOKENS = 1;
 const MIN_QUERY_LENGTH = 4;
 const MIN_SUGGESTION_SCORE = 0.045;
 const MAX_SUGGESTIONS = 5;
+const SUPERFICIAL_BOUNDARY_PUNCTUATION =
+  /^[\s"'“”‘’.,;:!?¡¿()[\]{}]+|[\s"'“”‘’.,;:!?¡¿()[\]{}]+$/g;
 
 export type AssociationEngineInput = {
   nodes: Node[];
@@ -116,7 +119,9 @@ export function suggestAssociations(
   const suggestions = scoredSuggestions.filter(
     (suggestion) => suggestion.score >= MIN_SUGGESTION_SCORE,
   );
-  const visibleSuggestions = mergeSuggestions(selectedSuggestions, suggestions);
+  const visibleSuggestions = dedupeAssociationSuggestionsByContent(
+    mergeSuggestions(selectedSuggestions, suggestions),
+  );
   const result = visibleSuggestions.slice(
     0,
     Math.max(input.limit ?? MAX_SUGGESTIONS, selectedSuggestions.length),
@@ -403,6 +408,39 @@ function bySuggestionPriority(
   }
 
   return a.node.id.localeCompare(b.node.id);
+}
+
+export function createAssociationContentDeduplicationKey(content: unknown) {
+  return captureMarkdownToEmbeddingText(safeText(content))
+    .normalize("NFKC")
+    .toLocaleLowerCase("es")
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(SUPERFICIAL_BOUNDARY_PUNCTUATION, "")
+    .trim();
+}
+
+export function dedupeAssociationSuggestionsByContent(
+  suggestions: AssociationSuggestion[],
+) {
+  const suggestionsByContent = new Map<string, AssociationSuggestion>();
+
+  for (const suggestion of suggestions) {
+    const contentKey = createAssociationContentDeduplicationKey(
+      suggestion.node.content,
+    );
+    const deduplicationKey = contentKey || `capture:${suggestion.node.id}`;
+    const currentSuggestion = suggestionsByContent.get(deduplicationKey);
+
+    if (
+      !currentSuggestion ||
+      bySuggestionPriority(suggestion, currentSuggestion) < 0
+    ) {
+      suggestionsByContent.set(deduplicationKey, suggestion);
+    }
+  }
+
+  return Array.from(suggestionsByContent.values());
 }
 
 function mergeSuggestions(...groups: AssociationSuggestion[][]) {

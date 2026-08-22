@@ -6,6 +6,8 @@ import {
   buildAssociationIndex,
   calculateBm25,
   calculateTfIdfCosine,
+  createAssociationContentDeduplicationKey,
+  dedupeAssociationSuggestionsByContent,
   indexCapture,
   suggestAssociations,
 } from "@/features/associations/association-engine";
@@ -250,6 +252,306 @@ describe("association scoring", () => {
     expect(candidate?.reasons.map((reason) => reason.type)).toContain(
       "SHARED_RELATION",
     );
+  });
+
+  it("deduplicates exact equivalent captures in recovery suggestions", () => {
+    const suggestions = suggestAssociations(
+      buildAssociationIndex({
+        nodes: [
+          node({
+            id: "duplicate-a",
+            content:
+              "Revisar los cruces donde interactúa personal con equipos móviles.",
+          }),
+          node({
+            id: "duplicate-b",
+            content:
+              "Revisar los cruces donde interactúa personal con equipos móviles.",
+            updatedAt: "2026-08-22T13:10:00.000Z",
+          }),
+        ],
+      }),
+      {
+        text: "Revisar cruces con equipos móviles",
+        limit: 5,
+      },
+    );
+
+    expect(suggestions.map((suggestion) => suggestion.node.id)).toEqual([
+      "duplicate-b",
+    ]);
+  });
+
+  it("deduplicates markdown, whitespace, case and final superficial punctuation variants", () => {
+    expect(
+      createAssociationContentDeduplicationKey(
+        "**Revisar** los cruces donde _interactúa_ personal con equipos móviles.",
+      ),
+    ).toBe(
+      createAssociationContentDeduplicationKey(
+        "  revisar   los cruces\n\ndonde interactúa personal con equipos móviles  ",
+      ),
+    );
+
+    const suggestions = suggestAssociations(
+      buildAssociationIndex({
+        nodes: [
+          node({
+            id: "markdown",
+            content:
+              "**Revisar** los cruces donde _interactúa_ personal con equipos móviles.",
+          }),
+          node({
+            id: "plain",
+            content:
+              "revisar los cruces donde interactúa personal con equipos móviles",
+          }),
+        ],
+      }),
+      {
+        text: "Revisar cruces con equipos móviles",
+        limit: 5,
+      },
+    );
+
+    expect(suggestions).toHaveLength(1);
+  });
+
+  it("keeps meaningful symbols inside expressions, urls and technical conditions", () => {
+    expect(createAssociationContentDeduplicationKey("Calcular a + b")).not.toBe(
+      createAssociationContentDeduplicationKey("Calcular a - b"),
+    );
+    expect(
+      createAssociationContentDeduplicationKey(
+        "https://vinema.local/search?estado=abierto",
+      ),
+    ).not.toBe(
+      createAssociationContentDeduplicationKey(
+        "https://vinema.local/search?estado=cerrado",
+      ),
+    );
+    expect(
+      createAssociationContentDeduplicationKey("estado != cerrado"),
+    ).not.toBe(createAssociationContentDeduplicationKey("estado == cerrado"));
+    expect(
+      createAssociationContentDeduplicationKey(
+        "Revisar los cruces donde interactúa personal: aprobar control.",
+      ),
+    ).not.toBe(
+      createAssociationContentDeduplicationKey(
+        "Revisar los cruces donde interactúa personal: rechazar control.",
+      ),
+    );
+  });
+
+  it("does not merge suggestions that only differ by meaningful symbols", () => {
+    const suggestions = dedupeAssociationSuggestionsByContent([
+      associationSuggestion({
+        id: "sum",
+        content: "Calcular a + b",
+        score: 0.6,
+      }),
+      associationSuggestion({
+        id: "subtraction",
+        content: "Calcular a - b",
+        score: 0.6,
+      }),
+      associationSuggestion({
+        id: "not-equal",
+        content: "estado != cerrado",
+        score: 0.6,
+      }),
+      associationSuggestion({
+        id: "equal",
+        content: "estado == cerrado",
+        score: 0.6,
+      }),
+    ]);
+
+    expect(suggestions.map((suggestion) => suggestion.node.id)).toEqual([
+      "sum",
+      "subtraction",
+      "not-equal",
+      "equal",
+    ]);
+  });
+
+  it("keeps captures with the same beginning or concepts but different full content", () => {
+    const sameBeginningSuggestions = suggestAssociations(
+      buildAssociationIndex({
+        nodes: [
+          node({
+            id: "beginning-a",
+            content:
+              "Revisar los cruces donde interactúa personal con equipos móviles al inicio del turno.",
+          }),
+          node({
+            id: "beginning-b",
+            content:
+              "Revisar los cruces donde interactúa personal con equipos móviles durante maniobras nocturnas.",
+          }),
+        ],
+      }),
+      {
+        text: "Revisar cruces con equipos móviles",
+        limit: 5,
+      },
+    );
+
+    expect(sameBeginningSuggestions.map((suggestion) => suggestion.node.id)).toEqual([
+      "beginning-a",
+      "beginning-b",
+    ]);
+
+    const sameConceptSuggestions = suggestAssociations(
+      buildAssociationIndex({
+        nodes: [
+          node({
+            id: "concept-a",
+            content:
+              "Cruces peatonales requieren barreras físicas junto a equipos móviles.",
+          }),
+          node({
+            id: "concept-b",
+            content:
+              "Radio de operación exige señalización clara para equipos móviles.",
+          }),
+        ],
+      }),
+      {
+        text: "equipos móviles",
+        limit: 5,
+      },
+    );
+
+    expect(sameConceptSuggestions.map((suggestion) => suggestion.node.id)).toEqual(
+      expect.arrayContaining(["concept-a", "concept-b"]),
+    );
+    expect(sameConceptSuggestions).toHaveLength(2);
+  });
+
+  it("chooses a deterministic duplicate representative by score, date and id", () => {
+    const duplicateContent = "Revisar cruces de interacción con equipos móviles.";
+
+    expect(
+      dedupeAssociationSuggestionsByContent([
+        associationSuggestion({
+          id: "lower",
+          content: duplicateContent,
+          score: 0.2,
+          updatedAt: "2026-08-22T13:10:00.000Z",
+        }),
+        associationSuggestion({
+          id: "higher",
+          content: duplicateContent,
+          score: 0.7,
+          updatedAt: "2026-08-22T12:21:00.000Z",
+        }),
+      ]).map((suggestion) => suggestion.node.id),
+    ).toEqual(["higher"]);
+
+    expect(
+      dedupeAssociationSuggestionsByContent([
+        associationSuggestion({
+          id: "older",
+          content: duplicateContent,
+          score: 0.5,
+          updatedAt: "2026-08-22T12:21:00.000Z",
+        }),
+        associationSuggestion({
+          id: "newer",
+          content: duplicateContent,
+          score: 0.5,
+          updatedAt: "2026-08-22T13:10:00.000Z",
+        }),
+      ]).map((suggestion) => suggestion.node.id),
+    ).toEqual(["newer"]);
+
+    expect(
+      dedupeAssociationSuggestionsByContent([
+        associationSuggestion({
+          id: "b-id",
+          content: duplicateContent,
+          score: 0.5,
+        }),
+        associationSuggestion({
+          id: "a-id",
+          content: duplicateContent,
+          score: 0.5,
+        }),
+      ]).map((suggestion) => suggestion.node.id),
+    ).toEqual(["a-id"]);
+  });
+
+  it("deduplicates before applying the visual limit and keeps archived captures excluded", () => {
+    const suggestions = suggestAssociations(
+      buildAssociationIndex({
+        nodes: [
+          node({
+            id: "duplicate-new",
+            content:
+              "Revisar cruces donde interactúa personal con equipos móviles.",
+            updatedAt: "2026-08-22T13:10:00.000Z",
+          }),
+          node({
+            id: "duplicate-old",
+            content:
+              "Revisar cruces donde interactúa personal con equipos móviles.",
+            updatedAt: "2026-08-22T12:21:00.000Z",
+          }),
+          node({
+            id: "useful",
+            content:
+              "Evaluar barreras físicas para peatones cerca de equipos móviles.",
+          }),
+          node({
+            id: "archived",
+            content:
+              "Revisar cruces donde interactúa personal con equipos móviles.",
+            status: "ARCHIVED",
+          }),
+        ],
+      }),
+      {
+        text: "Revisar equipos móviles barreras físicas",
+        limit: 2,
+      },
+    );
+
+    expect(suggestions.map((suggestion) => suggestion.node.id)).toEqual(
+      expect.arrayContaining(["duplicate-new", "useful"]),
+    );
+    expect(suggestions).toHaveLength(2);
+  });
+
+  it("keeps recovery suggestion order deterministic across equivalent evaluations", () => {
+    const nodes = [
+      node({
+        id: "a",
+        content: "Revisar cruces de peatones con equipos móviles.",
+      }),
+      node({
+        id: "b",
+        content: "Evaluar barreras físicas para equipos móviles.",
+      }),
+      node({
+        id: "c",
+        content: "Radio de operación de equipos móviles en maniobras.",
+      }),
+    ];
+    const input = {
+      text: "equipos móviles barreras radio operación",
+      limit: 5,
+    };
+    const first = suggestAssociations(buildAssociationIndex({ nodes }), input).map(
+      (suggestion) => suggestion.node.id,
+    );
+    const second = suggestAssociations(
+      buildAssociationIndex({ nodes: [...nodes].reverse() }),
+      input,
+    ).map((suggestion) => suggestion.node.id);
+
+    expect(second).toEqual(first);
   });
 });
 
@@ -1271,10 +1573,12 @@ function node({
   id,
   content,
   status = "ACTIVE",
+  updatedAt = "2026-01-01T00:00:00.000Z",
 }: {
   id: string;
   content: string;
   status?: Node["status"];
+  updatedAt?: string;
 }): Node {
   return {
     id,
@@ -1286,14 +1590,33 @@ function node({
     metadata: {},
     version: 1,
     createdAt: "2026-01-01T00:00:00.000Z",
-    contentUpdatedAt: "2026-01-01T00:00:00.000Z",
+    contentUpdatedAt: updatedAt,
     archivedAt: status === "ARCHIVED" ? "2026-01-02T00:00:00.000Z" : null,
     restoredAt: null,
-    updatedAt: "2026-01-01T00:00:00.000Z",
+    updatedAt,
     deletedAt: null,
     createdByDeviceId: "device-1",
     lastModifiedByDeviceId: "device-1",
   };
+}
+
+function associationSuggestion({
+  id,
+  content,
+  score,
+  updatedAt = "2026-01-01T00:00:00.000Z",
+}: {
+  id: string;
+  content: string;
+  score: number;
+  updatedAt?: string;
+}) {
+  return {
+    node: node({ id, content, updatedAt }),
+    score,
+    excerpt: content,
+    reasons: [{ type: "TERM_MATCH", terms: ["revisar"] }],
+  } satisfies ReturnType<typeof suggestAssociations>[number];
 }
 
 function context({
