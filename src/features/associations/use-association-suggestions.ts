@@ -54,7 +54,6 @@ export function useAssociationSuggestions({
   workspaceId,
   currentNodeId,
   selectedCaptureIds,
-  selectedContextIds = [],
   contextRepository,
   nodeRepository,
   relationRepository,
@@ -82,7 +81,6 @@ export function useAssociationSuggestions({
     retry,
   });
   const selectedCaptureIdsKey = selectedCaptureIds.join("\u0001");
-  const selectedContextIdsKey = selectedContextIds.join("\u0001");
 
   useEffect(() => {
     const normalizedText = text.trim();
@@ -113,10 +111,6 @@ export function useAssociationSuggestions({
       };
     }
 
-    const selectedContextIdsForImmediateState = selectedContextIdsKey
-      ? selectedContextIdsKey.split("\u0001")
-      : [];
-
     queueMicrotask(() => {
       if (cancelled || requestId !== latestRequestId.current) {
         return;
@@ -126,11 +120,7 @@ export function useAssociationSuggestions({
         ...current,
         status: "loading",
         suggestions: [],
-        conceptSuggestions: current.conceptSuggestions.filter(
-          (suggestion) =>
-            suggestion.kind === "existing" &&
-            selectedContextIdsForImmediateState.includes(suggestion.conceptId),
-        ),
+        conceptSuggestions: current.conceptSuggestions,
         error: null,
         retry,
       }));
@@ -159,9 +149,6 @@ export function useAssociationSuggestions({
         const startedAt = performance.now();
         const selectedCaptureIdsForRequest = selectedCaptureIdsKey
           ? selectedCaptureIdsKey.split("\u0001")
-          : [];
-        const selectedContextIdsForRequest = selectedContextIdsKey
-          ? selectedContextIdsKey.split("\u0001")
           : [];
         let indexedCaptures = 0;
         let relationCount = 0;
@@ -213,7 +200,6 @@ export function useAssociationSuggestions({
             relations,
             currentNodeId,
             selectedCaptureIds: selectedCaptureIdsForRequest,
-            selectedContextIds: selectedContextIdsForRequest,
             requestId,
             debounceMs: Math.round(startedAt - effectStartedAt),
             timings: {
@@ -252,7 +238,6 @@ export function useAssociationSuggestions({
             { limit: 4 },
           );
           const explicitConceptIds = new Set([
-            ...selectedContextIdsForRequest,
             ...evaluation.diagnostics.conceptTraces
               .filter((trace) => trace.directMatches > 0)
               .map((trace) => trace.context.id),
@@ -360,7 +345,6 @@ export function useAssociationSuggestions({
     nodeRepository,
     relationRepository,
     selectedCaptureIdsKey,
-    selectedContextIdsKey,
     text,
     retryToken,
     retry,

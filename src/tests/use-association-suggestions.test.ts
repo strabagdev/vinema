@@ -3,6 +3,26 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Context } from "@/domain/context/context";
 import type { Node } from "@/domain/node/node";
+import type { ConceptSuggestion } from "@/features/associations/association-types";
+
+const evaluateCaptureInputSpy = vi.hoisted(() => vi.fn());
+
+vi.mock("@/features/associations/capture-input-evaluation", async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import("@/features/associations/capture-input-evaluation")
+  >();
+
+  return {
+    ...actual,
+    evaluateCaptureInput: (
+      ...args: Parameters<typeof actual.evaluateCaptureInput>
+    ) => {
+      evaluateCaptureInputSpy(...args);
+      return actual.evaluateCaptureInput(...args);
+    },
+  };
+});
+
 import { useAssociationSuggestions } from "@/features/associations/use-association-suggestions";
 import { InMemoryContextRepository } from "@/tests/fakes/in-memory-context-repository";
 import { InMemoryNodeContextRelationRepository } from "@/tests/fakes/in-memory-node-context-relation-repository";
@@ -41,6 +61,7 @@ describe("useAssociationSuggestions", () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    evaluateCaptureInputSpy.mockClear();
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -115,7 +136,87 @@ describe("useAssociationSuggestions", () => {
     expect(observedConcepts.at(-1)).toEqual(["railway"]);
     expect(observedConcepts).not.toContainEqual(["postgresql"]);
   });
+
+  it("keeps the concept suggestion snapshot stable when selecting a concept", async () => {
+    const text =
+      "La segregación mediante barreras físicas disminuye la exposición de peatones a equipos móviles durante las maniobras.";
+    const nodeRepository = new InMemoryNodeRepository();
+    const contextRepository = new InMemoryContextRepository([
+      context({ id: "segregacion-fisica", name: "Segregación física" }),
+    ]);
+    const relationRepository = new InMemoryNodeContextRelationRepository();
+    const observed: ConceptSuggestion[][] = [];
+
+    function Probe({ selectedContextIds }: { selectedContextIds: string[] }) {
+      const state = useAssociationSuggestions({
+        text,
+        workspaceId: "workspace-1",
+        selectedCaptureIds: [],
+        selectedContextIds,
+        contextRepository,
+        nodeRepository,
+        relationRepository,
+      });
+
+      useEffect(() => {
+        if (state.status === "ready") {
+          observed.push(state.conceptSuggestions);
+        }
+      }, [state]);
+
+      return null;
+    }
+
+    await act(async () => {
+      root.render(createElement(Probe, { selectedContextIds: [] }));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ASSOCIATION_TEST_DEBOUNCE_MS);
+    });
+
+    const initial = observed.at(-1) ?? [];
+    const initialLabels = initial.map(getConceptSuggestionLabel);
+
+    expect(initialLabels).toContain("Barreras físicas");
+    expect(evaluateCaptureInputSpy).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      root.render(
+        createElement(Probe, {
+          selectedContextIds: ["segregacion-fisica"],
+        }),
+      );
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ASSOCIATION_TEST_DEBOUNCE_MS);
+    });
+
+    const afterSelection = observed.at(-1) ?? [];
+
+    expect(evaluateCaptureInputSpy).toHaveBeenCalledTimes(1);
+    expect(afterSelection.map(getConceptSuggestionLabel)).toEqual(initialLabels);
+    expect(afterSelection.map(getConceptSuggestionKey)).toEqual(
+      initial.map(getConceptSuggestionKey),
+    );
+    expect(afterSelection.map(getConceptSuggestionLabel)).toContain("Barreras físicas");
+  });
 });
+
+const ASSOCIATION_TEST_DEBOUNCE_MS = 320;
+
+function getConceptSuggestionLabel(suggestion: ConceptSuggestion) {
+  return suggestion.kind === "existing"
+    ? suggestion.label
+    : suggestion.suggestedLabel;
+}
+
+function getConceptSuggestionKey(suggestion: ConceptSuggestion) {
+  return suggestion.kind === "existing"
+    ? `existing:${suggestion.conceptId}`
+    : `emerging:${suggestion.candidateId}`;
+}
 
 function context({
   id,
