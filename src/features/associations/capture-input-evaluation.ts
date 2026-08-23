@@ -12,6 +12,7 @@ import {
 } from "@/features/associations/concept-suggestions";
 import { deriveKnowledgeSuggestions } from "@/features/cognition/knowledge-suggestions";
 import { normalizeAssociationText } from "@/features/associations/normalize-text";
+import { hasDirectionalContradiction } from "@/features/associations/local-support";
 import {
   tokenizeAssociationText,
   uniqueTokens,
@@ -531,6 +532,10 @@ function collectExpressionCandidates({
   return Array.from(candidates.values())
     .filter((candidate) => candidate.frequency >= MIN_EMERGING_TERM_FREQUENCY)
     .filter((candidate) => candidate.representativeOverlap > 0)
+    .filter(
+      (candidate) =>
+        !hasDirectionalContradiction(queryText, candidate.displayLabel),
+    )
     .filter(
       (candidate) =>
         candidate.hasProperCase ||

@@ -225,6 +225,7 @@ export function useAssociationSuggestions({
             evaluation.recoveryMatches,
             semanticMatches,
             5,
+            text,
           );
           const evidenceModel = createMemoryEvidenceModel({
             contexts,
@@ -254,6 +255,7 @@ export function useAssociationSuggestions({
             existing: evaluation.conceptSuggestions,
             semanticMatches: semanticConceptMatches,
             limit: 8,
+            localText: text,
           });
 
           if (!cancelled && requestId === latestRequestId.current) {

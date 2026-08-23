@@ -18,6 +18,7 @@ import {
 import type {
   ConceptSuggestionTrace,
 } from "@/features/associations/association-types";
+import { HUMAN_ENTITY_TERMS } from "@/features/associations/local-support";
 import {
   tokenizeAssociationText,
   uniqueTokens,
@@ -65,17 +66,6 @@ const CONFIDENCE_HIGH_SCORE = 7;
 const CONFIDENCE_MEDIUM_SCORE = 3;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const REVISIT_INACTIVE_DAYS = 90;
-const HUMAN_ENTITY_TERMS = new Set([
-  "persona",
-  "personas",
-  "peaton",
-  "peatones",
-  "trabajador",
-  "trabajadores",
-  "usuario",
-  "usuarios",
-]);
-
 type LocalConceptSupport =
   | {
       required: false;
@@ -230,6 +220,10 @@ export function deriveKnowledgeSuggestions({
         continue;
       }
 
+      if (!hasLocalSupport(canonicalConceptId, localSupport)) {
+        continue;
+      }
+
       const context = model.recordsById.get(canonicalConceptId)?.context;
 
       if (!context) {
@@ -291,7 +285,8 @@ export function deriveKnowledgeSuggestions({
 
       if (
         !presentConceptIds.has(sourceConceptId) ||
-        !canSuggestConcept(targetConceptId, presentConceptIds, model)
+        !canSuggestConcept(targetConceptId, presentConceptIds, model) ||
+        !hasLocalSupport(targetConceptId, localSupport)
       ) {
         continue;
       }
@@ -314,6 +309,7 @@ export function deriveKnowledgeSuggestions({
 
     if (
       !canSuggestConcept(conceptId, presentConceptIds, model) ||
+      !hasLocalSupport(conceptId, localSupport) ||
       (signal.kind !== "DORMANT_CONCEPT" &&
         signal.kind !== "REVIVED_CONCEPT" &&
         signal.kind !== "DECLINING_CONCEPT")
@@ -351,7 +347,11 @@ export function deriveKnowledgeSuggestions({
     const conceptId = resolveCanonicalConceptId(candidateConceptId, model);
     const context = model.recordsById.get(conceptId)?.context;
 
-    if (!context || !canSuggestConcept(conceptId, presentConceptIds, model)) {
+    if (
+      !context ||
+      !canSuggestConcept(conceptId, presentConceptIds, model) ||
+      !hasLocalSupport(conceptId, localSupport)
+    ) {
       continue;
     }
 
@@ -517,8 +517,10 @@ function createLocalConceptSupport({
     }
   }
 
-  for (const conceptId of semanticRelatedConceptIds) {
-    supportedConceptIds.add(resolveCanonicalConceptId(conceptId, model));
+  if (!text) {
+    for (const conceptId of semanticRelatedConceptIds) {
+      supportedConceptIds.add(resolveCanonicalConceptId(conceptId, model));
+    }
   }
 
   for (const [conceptId, record] of model.recordsById) {

@@ -15,6 +15,10 @@ import {
   getSharedNeighbors,
   normalizeAssociationPair,
 } from "@/features/associations/graph-metrics";
+import {
+  hasDirectionalContradiction,
+  hasMeaningfulLocalTokenOverlap,
+} from "@/features/associations/local-support";
 import { captureMarkdownToEmbeddingText } from "@/features/semantic-similarity/embedding-text";
 import type {
   AssociationIndexedCapture,
@@ -213,8 +217,15 @@ function scoreCapture(
     selectedCaptureIds,
     sharedNeighbors,
   );
+  const contradiction = hasDirectionalContradiction(
+    query.node.content,
+    capture.node.content,
+  );
+  const localSupport =
+    commonPhrases.length > 0 ||
+    hasMeaningfulLocalTokenOverlap(query.node.content, capture.node.content);
 
-  if (reasons.length === 0) {
+  if (reasons.length === 0 || !localSupport || contradiction) {
     return null;
   }
 

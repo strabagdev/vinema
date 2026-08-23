@@ -2,6 +2,7 @@ import type {
   ConceptSuggestion,
   ExistingConceptSuggestion,
 } from "@/features/associations/association-types";
+import { hasLocalConceptIdentitySupport } from "@/features/associations/local-support";
 import type {
   SemanticConceptSimilarityMatch,
 } from "@/features/semantic-similarity/semantic-similarity-engine";
@@ -13,10 +14,12 @@ export function mergeSemanticConceptSuggestions({
   existing,
   semanticMatches,
   limit,
+  localText,
 }: {
   existing: ConceptSuggestion[];
   semanticMatches: SemanticConceptSimilarityMatch[];
   limit: number;
+  localText?: string;
 }) {
   if (semanticMatches.length === 0) {
     return existing;
@@ -29,6 +32,10 @@ export function mergeSemanticConceptSuggestions({
   }
 
   for (const match of semanticMatches) {
+    if (localText && !hasLocalSemanticConceptSupport(match, localText)) {
+      continue;
+    }
+
     const current = byConceptId.get(match.concept.id);
     const semanticSuggestion: ExistingConceptSuggestion = {
       kind: "existing",
@@ -67,6 +74,20 @@ export function mergeSemanticConceptSuggestions({
   }
 
   return Array.from(byConceptId.values()).slice(0, Math.max(limit, existing.length));
+}
+
+function hasLocalSemanticConceptSupport(
+  match: SemanticConceptSimilarityMatch,
+  localText: string,
+) {
+  return hasLocalConceptIdentitySupport({
+    localText,
+    labels: [
+      match.concept.name,
+      ...(match.concept.aliases ?? []),
+      ...(match.concept.normalizedAliases ?? []),
+    ],
+  });
 }
 
 function getConceptSuggestionId(suggestion: ConceptSuggestion) {

@@ -553,6 +553,62 @@ describe("association scoring", () => {
 
     expect(second).toEqual(first);
   });
+
+  it("does not recover memories whose directional claim contradicts the current text", () => {
+    const dustText =
+      "Durante la perforación de avance, el control del polvo requiere humectación continua y ventilación suficiente. La exposición a sílice respirable aumenta cuando el material se perfora en seco o la extracción de aire es insuficiente.";
+    const suggestions = suggestAssociations(
+      buildAssociationIndex({
+        nodes: [
+          node({
+            id: "perforacion",
+            content:
+              "Durante la perforación de avance, una mala iluminación puede dificultar la identificación de personas u obstáculos en el frente de trabajo.",
+          }),
+          node({
+            id: "segregacion",
+            content:
+              "La segregación mediante barreras físicas disminuye la exposición de peatones a equipos móviles durante las maniobras.",
+          }),
+        ],
+      }),
+      {
+        text: dustText,
+        limit: 5,
+      },
+    );
+
+    expect(suggestions.map((suggestion) => suggestion.node.id)).toEqual([
+      "perforacion",
+    ]);
+  });
+
+  it("does not use directional verbs or isolated generic control as thematic anchors", () => {
+    const suggestions = suggestAssociations(
+      buildAssociationIndex({
+        nodes: [
+          node({
+            id: "control-polvo",
+            content:
+              "El control del polvo requiere filtros limpios y revisión diaria.",
+          }),
+          node({
+            id: "control-acceso",
+            content:
+              "El control de acceso aumenta la seguridad del edificio.",
+          }),
+        ],
+      }),
+      {
+        text: "El control del polvo aumenta cuando la limpieza de filtros mejora.",
+        limit: 5,
+      },
+    );
+
+    expect(suggestions.map((suggestion) => suggestion.node.id)).toEqual([
+      "control-polvo",
+    ]);
+  });
 });
 
 describe("concept suggestions", () => {
@@ -723,6 +779,124 @@ describe("concept suggestions", () => {
         "Exposición de peatones",
       ]),
     );
+  });
+
+  it("keeps maneuver concepts while preventing dust and silica thematic contamination", () => {
+    const nodes = [
+      node({
+        id: "capture-1",
+        content:
+          "Durante la perforación de avance, una mala iluminación puede dificultar la identificación de personas u obstáculos en el frente de trabajo.",
+      }),
+      node({
+        id: "capture-2",
+        content:
+          "Los equipos móviles presentan mayor riesgo de atropello cuando existen personas circulando dentro de su radio de operación.",
+      }),
+      node({
+        id: "capture-3",
+        content:
+          "En sectores con baja visibilidad, el operador puede detectar tardíamente a trabajadores que ingresan al área de maniobra del equipo.",
+      }),
+      node({
+        id: "capture-4",
+        content:
+          "La segregación mediante barreras físicas disminuye la exposición de peatones a equipos móviles durante las maniobras.",
+      }),
+      node({
+        id: "archived",
+        content:
+          "La segregación mediante barreras físicas disminuye la exposición de peatones a equipos móviles durante las maniobras.",
+        status: "ARCHIVED",
+      }),
+    ];
+    const contexts = [
+      context({ id: "perforacion-avance", name: "Perforación de avance" }),
+      context({ id: "equipos-moviles", name: "Equipos móviles" }),
+      context({ id: "radio-operacion", name: "Radio de operación" }),
+      context({ id: "riesgo-atropello", name: "Riesgo de atropello" }),
+      context({ id: "baja-visibilidad", name: "Baja visibilidad" }),
+      context({ id: "segregacion", name: "Segregación" }),
+      context({ id: "disminuye-exposicion", name: "Disminuye la exposición" }),
+    ];
+    const relations = [
+      contextRelation("capture-1", "perforacion-avance"),
+      contextRelation("capture-2", "equipos-moviles"),
+      contextRelation("capture-2", "radio-operacion"),
+      contextRelation("capture-2", "riesgo-atropello"),
+      contextRelation("capture-3", "baja-visibilidad"),
+      contextRelation("capture-4", "segregacion"),
+      contextRelation("capture-4", "equipos-moviles"),
+      contextRelation("capture-4", "disminuye-exposicion"),
+      contextRelation("archived", "segregacion"),
+    ];
+    const maneuver = evaluateCaptureInput({
+      text: "Durante una maniobra en retroceso con equipos móviles existe riesgo de atropello cuando la baja visibilidad afecta al operador.",
+      nodes,
+      contexts,
+      relations,
+    });
+    const maneuverLabels = maneuver.conceptSuggestions.map((suggestion) =>
+      suggestion.kind === "existing" ? suggestion.label : suggestion.suggestedLabel,
+    );
+    const dust = evaluateCaptureInput({
+      text: "Durante la perforación de avance, el control del polvo requiere humectación continua y ventilación suficiente. La exposición a sílice respirable aumenta cuando el material se perfora en seco o la extracción de aire es insuficiente.",
+      nodes,
+      contexts,
+      relations,
+    });
+    const dustLabels = dust.conceptSuggestions.map((suggestion) =>
+      suggestion.kind === "existing" ? suggestion.label : suggestion.suggestedLabel,
+    );
+
+    expect(maneuverLabels).toEqual(
+      expect.arrayContaining([
+        "Equipos móviles",
+        "Riesgo de atropello",
+        "Baja visibilidad",
+      ]),
+    );
+    expect(dustLabels).toContain("Perforación de avance");
+    expect(dustLabels).not.toContain("Equipos móviles");
+    expect(dustLabels).not.toContain("Radio de operación");
+    expect(dustLabels).not.toContain("Riesgo de atropello");
+    expect(dustLabels).not.toContain("Segregación");
+    expect(dustLabels).not.toContain("Disminuye la exposición");
+    expect(dust.recoveryMatches.map((match) => match.node.id)).toEqual([
+      "capture-1",
+    ]);
+  });
+
+  it("does not create emerging concepts from evidence that contradicts local direction", () => {
+    const dustText =
+      "La exposición a sílice respirable aumenta cuando el material se perfora en seco.";
+    const evaluation = evaluateCaptureInput({
+      text: dustText,
+      nodes: [
+        node({
+          id: "exposure-1",
+          content:
+            "La barrera física disminuye la exposición de peatones a equipos móviles.",
+        }),
+        node({
+          id: "exposure-2",
+          content:
+            "La segregación disminuye la exposición durante maniobras con equipos móviles.",
+        }),
+        node({
+          id: "exposure-3",
+          content:
+            "El control operacional disminuye la exposición en el área de trabajo.",
+        }),
+      ],
+      contexts: [],
+      relations: [],
+    });
+    const labels = evaluation.conceptSuggestions.map((suggestion) =>
+      suggestion.kind === "existing" ? suggestion.label : suggestion.suggestedLabel,
+    );
+
+    expect(labels).not.toContain("Disminuye la exposición");
   });
 
   it("does not create current-input emerging noise for empty or generic text", () => {

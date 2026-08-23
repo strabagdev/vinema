@@ -947,6 +947,148 @@ describe("semantic vector index and engine", () => {
     ]);
   });
 
+  it("does not fill memory suggestion slots with weak same-domain semantic neighbors", () => {
+    const localText =
+      "Durante la perforación de avance, el control del polvo requiere humectación continua y ventilación suficiente. La exposición a sílice respirable aumenta cuando el material se perfora en seco o la extracción de aire es insuficiente.";
+    const results = mergeSemanticAssociationSuggestions(
+      [
+        {
+          node: makeNode({
+            id: "perforacion",
+            content:
+              "Durante la perforación de avance, una mala iluminación puede dificultar la identificación de personas u obstáculos en el frente de trabajo.",
+          }),
+          score: 0.14,
+          excerpt: "Durante la perforación de avance",
+          reasons: [{ type: "PHRASE_MATCH", phrases: ["perfor avance"] }],
+        },
+      ],
+      [
+        {
+          node: makeNode({
+            id: "equipos",
+            content:
+              "Los equipos móviles presentan mayor riesgo de atropello dentro del radio de operación.",
+          }),
+          evidence: makeSimilarityEvidence({ similarity: 0.5, rank: 1 }),
+        },
+        {
+          node: makeNode({
+            id: "segregacion",
+            content:
+              "La segregación mediante barreras físicas disminuye la exposición de peatones a equipos móviles durante las maniobras.",
+          }),
+          evidence: makeSimilarityEvidence({ similarity: 0.55, rank: 2 }),
+        },
+      ],
+      5,
+      localText,
+    );
+
+    expect(results.map((result) => result.node.id)).toEqual(["perforacion"]);
+  });
+
+  it("does not let high vector similarity create memory eligibility without local anchors", () => {
+    const localText =
+      "Durante la perforación de avance, el control del polvo requiere humectación continua y ventilación suficiente. La exposición a sílice respirable aumenta cuando el material se perfora en seco.";
+    const results = mergeSemanticAssociationSuggestions(
+      [],
+      [
+        {
+          node: makeNode({
+            id: "radio-operacion",
+            content:
+              "El radio de operación aumenta cuando se revisan equipos móviles.",
+          }),
+          evidence: makeSimilarityEvidence({ similarity: 0.81, rank: 1 }),
+        },
+        {
+          node: makeNode({
+            id: "maniobra-retroceso",
+            content:
+              "La maniobra en retroceso requiere señalización visual del operador.",
+          }),
+          evidence: makeSimilarityEvidence({ similarity: 0.808, rank: 2 }),
+        },
+        {
+          node: makeNode({
+            id: "revision-cruces",
+            content:
+              "Revisar los cruces donde interactúan peatones y equipos móviles.",
+          }),
+          evidence: makeSimilarityEvidence({ similarity: 0.804, rank: 3 }),
+        },
+      ],
+      5,
+      localText,
+    );
+
+    expect(results).toEqual([]);
+  });
+
+  it("keeps only anchored memories across non-mining domains", () => {
+    const scenarios = [
+      {
+        localText:
+          "El dolor cervical aumenta cuando el paciente suspende los ejercicios.",
+        anchored: "El seguimiento del dolor cervical mejora con ejercicios diarios.",
+        unanchored:
+          "El cliente aumenta la frecuencia de reuniones comerciales.",
+      },
+      {
+        localText:
+          "La caché reduce la latencia de consultas frecuentes en la API.",
+        anchored: "La caché compartida mejora la latencia de consultas.",
+        unanchored:
+          "El despliegue aumenta cuando se revisa la configuración visual.",
+      },
+      {
+        localText:
+          "La planificación semanal mejora la alimentación durante jornadas largas.",
+        anchored:
+          "La alimentación semanal requiere planificación de colaciones.",
+        unanchored:
+          "El control presupuestario aumenta con revisión de gastos.",
+      },
+      {
+        localText:
+          "Los estudiantes mejoran el rendimiento cuando repasan con práctica espaciada.",
+        anchored:
+          "La práctica espaciada mejora el rendimiento de estudiantes.",
+        unanchored:
+          "El usuario aumenta el uso de notificaciones en la aplicación.",
+      },
+    ];
+
+    for (const [index, scenario] of scenarios.entries()) {
+      const results = mergeSemanticAssociationSuggestions(
+        [],
+        [
+          {
+            node: makeNode({
+              id: `anchored-${index}`,
+              content: scenario.anchored,
+            }),
+            evidence: makeSimilarityEvidence({ similarity: 0.9, rank: 1 }),
+          },
+          {
+            node: makeNode({
+              id: `unanchored-${index}`,
+              content: scenario.unanchored,
+            }),
+            evidence: makeSimilarityEvidence({ similarity: 0.93, rank: 2 }),
+          },
+        ],
+        5,
+        scenario.localText,
+      );
+
+      expect(results.map((result) => result.node.id)).toEqual([
+        `anchored-${index}`,
+      ]);
+    }
+  });
+
   it("keeps discovery able to suggest pure semantic capture neighbors", () => {
     const semanticNode = makeNode({ id: "semantic", content: "viaje a Valparaíso" });
     const results = mergeSemanticAssociationSuggestions(
@@ -976,6 +1118,47 @@ describe("semantic vector index and engine", () => {
         reasons: [expect.objectContaining({ type: "VECTOR_SIMILARITY" })],
       },
     ]);
+  });
+
+  it("requires local identity support before merging semantic concept suggestions", () => {
+    const localText =
+      "Durante la perforación de avance, el control del polvo requiere humectación continua y ventilación suficiente. La exposición a sílice respirable aumenta cuando el material se perfora en seco.";
+    const results = mergeSemanticConceptSuggestions({
+      existing: [],
+      semanticMatches: [
+        {
+          concept: makeContext({ id: "equipos", name: "Equipos móviles" }),
+          representationText: "Nombre: Equipos móviles",
+          identityText: "Nombre: Equipos móviles",
+          evidenceText: "",
+          evidenceNodeIds: ["equipos-node"],
+          conceptSimilarity: 0.7,
+          evidenceSimilarity: null,
+          evidence: makeSimilarityEvidence({ similarity: 0.5, rank: 1 }),
+        },
+        {
+          concept: makeContext({
+            id: "perforacion",
+            name: "Perforación de avance",
+          }),
+          representationText: "Nombre: Perforación de avance",
+          identityText: "Nombre: Perforación de avance",
+          evidenceText: "",
+          evidenceNodeIds: ["perforacion-node"],
+          conceptSimilarity: 0.72,
+          evidenceSimilarity: null,
+          evidence: makeSimilarityEvidence({ similarity: 0.52, rank: 2 }),
+        },
+      ],
+      limit: 8,
+      localText,
+    });
+
+    expect(
+      results.map((suggestion) =>
+        suggestion.kind === "existing" ? suggestion.label : suggestion.suggestedLabel,
+      ),
+    ).toEqual(["Perforación de avance"]);
   });
 
   it("adds pure semantic concept suggestions as explained RELATED_NOW suggestions", () => {

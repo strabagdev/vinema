@@ -293,6 +293,57 @@ describe("Knowledge Suggestions v1", () => {
     );
   });
 
+  it("does not inject globally frequent patterns without local support", () => {
+    const contexts = [
+      context({ id: "perforacion", name: "Perforación de avance" }),
+      context({ id: "equipos", name: "Equipos móviles" }),
+      context({ id: "atropello", name: "Riesgo de atropello" }),
+      context({ id: "radio", name: "Radio de operación" }),
+    ];
+    const nodes = [
+      node({
+        id: "memory-a",
+        content: "Equipos móviles y riesgo de atropello.",
+        updatedAt: "2026-07-20T10:00:00.000Z",
+      }),
+      node({
+        id: "memory-b",
+        content: "Equipos móviles y radio de operación.",
+        updatedAt: "2026-07-21T10:00:00.000Z",
+      }),
+      node({
+        id: "memory-c",
+        content: "Equipos móviles, atropello y radio.",
+        updatedAt: "2026-07-22T10:00:00.000Z",
+      }),
+    ];
+    const relations = [
+      ...relationsFor("memory-a", ["perforacion", "equipos", "atropello"]),
+      ...relationsFor("memory-b", ["perforacion", "equipos", "radio"]),
+      ...relationsFor("memory-c", ["perforacion", "equipos", "atropello", "radio"]),
+    ];
+    const suggestions = deriveKnowledgeSuggestions({
+      contexts,
+      nodes,
+      relations,
+      inputConceptIds: ["perforacion"],
+      localText:
+        "Durante la perforación de avance, el control del polvo requiere humectación continua.",
+      localConceptTraces: [conceptTrace(contexts[0], { directMatches: 1 })],
+      now,
+    });
+
+    expect(suggestions.map((suggestion) => suggestion.conceptId)).not.toContain(
+      "equipos",
+    );
+    expect(suggestions.map((suggestion) => suggestion.conceptId)).not.toContain(
+      "atropello",
+    );
+    expect(suggestions.map((suggestion) => suggestion.conceptId)).not.toContain(
+      "radio",
+    );
+  });
+
   it("handles a large deterministic dataset within a reasonable budget", () => {
     const contexts = [
       context({ id: "mitcom", name: "Mitcom" }),

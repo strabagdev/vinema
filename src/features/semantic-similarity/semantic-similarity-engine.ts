@@ -13,6 +13,7 @@ import type {
 import { captureMarkdownToEmbeddingText } from "@/features/semantic-similarity/embedding-text";
 import { SemanticVectorIndex } from "@/features/semantic-similarity/semantic-vector-index";
 import { normalizeConceptIdentityLabel } from "@/features/concepts/concept-identity";
+import { HUMAN_ENTITY_TERMS } from "@/features/associations/local-support";
 
 const DEFAULT_TOP_K = 5;
 const MIN_INTERNAL_SIMILARITY = 0.18;
@@ -24,16 +25,6 @@ const EVIDENCE_DOMINANCE_MARGIN = 0.05;
 const MAX_EVIDENCE_DOMINATED_MATCHES_PER_SOURCE = 2;
 const CONTEXTUAL_EVIDENCE_DRAG_PENALTY = 0.65;
 const CLEAR_LOCAL_IDENTITY_MARGIN = 0.025;
-const HUMAN_ENTITY_TERMS = new Set([
-  "persona",
-  "personas",
-  "peaton",
-  "peatones",
-  "trabajador",
-  "trabajadores",
-  "usuario",
-  "usuarios",
-]);
 const LOCAL_SUPPORT_STOPWORDS = new Set([
   "de",
   "del",

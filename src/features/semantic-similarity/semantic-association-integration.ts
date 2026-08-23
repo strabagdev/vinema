@@ -2,6 +2,10 @@ import type {
   AssociationSuggestion,
 } from "@/features/associations/association-types";
 import { dedupeAssociationSuggestionsByContent } from "@/features/associations/association-engine";
+import {
+  hasDirectionalContradiction,
+  hasMeaningfulLocalTokenOverlap,
+} from "@/features/associations/local-support";
 import type {
   SemanticSimilarityMatch,
 } from "@/features/semantic-similarity/semantic-similarity-engine";
@@ -11,6 +15,7 @@ export function mergeSemanticAssociationSuggestions(
   existing: AssociationSuggestion[],
   semanticMatches: SemanticSimilarityMatch[],
   limit: number,
+  localText?: string,
 ) {
   if (semanticMatches.length === 0) {
     return existing;
@@ -24,6 +29,10 @@ export function mergeSemanticAssociationSuggestions(
 
   for (const match of semanticMatches) {
     if (suggestions.has(match.node.id)) {
+      continue;
+    }
+
+    if (!hasLocalSemanticMemorySupport(match, localText)) {
       continue;
     }
 
@@ -42,7 +51,25 @@ export function mergeSemanticAssociationSuggestions(
     });
   }
 
-  return dedupeAssociationSuggestionsByContent(
-    Array.from(suggestions.values()),
-  ).slice(0, Math.max(limit, existing.length));
+  const mergedSuggestions = Array.from(suggestions.values());
+  const deduplicatedSuggestions = dedupeAssociationSuggestionsByContent(
+    mergedSuggestions,
+  );
+
+  return deduplicatedSuggestions.slice(0, Math.max(limit, existing.length));
+}
+
+function hasLocalSemanticMemorySupport(
+  match: SemanticSimilarityMatch,
+  localText?: string,
+) {
+  if (!localText) {
+    return true;
+  }
+
+  if (hasDirectionalContradiction(localText, match.node.content)) {
+    return false;
+  }
+
+  return hasMeaningfulLocalTokenOverlap(localText, match.node.content);
 }
