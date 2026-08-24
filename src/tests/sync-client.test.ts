@@ -159,6 +159,47 @@ describe("sync client", () => {
     );
   });
 
+  it("loads a paginated sync inventory with authorization and the expected endpoint", async () => {
+    const fetchFn = mockFetch(jsonResponse({
+      items: [
+        {
+          workspaceId,
+          entityType: "capture",
+          entityId: captureId,
+          version: 1,
+          updatedAt: now,
+          archivedAt: null,
+        },
+      ],
+      nextCursor: "1",
+      hasMore: false,
+      remoteCursor: "12",
+      counts: {
+        captures: { active: 1, archived: 0, total: 1 },
+        concepts: { active: 0, archived: 0, total: 0 },
+        captureConcepts: { active: 0, archived: 0, total: 0 },
+      },
+    }));
+    const client = createSyncClient({ baseUrl, accessToken, fetchFn });
+
+    await expect(
+      client.inventory({ workspaceId, cursor: "0", limit: 25 }),
+    ).resolves.toMatchObject({
+      remoteCursor: "12",
+      counts: { captures: { active: 1, total: 1 } },
+    });
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      new URL(
+        "https://api.example.test/api/sync/inventory?workspaceId=11111111-1111-4111-8111-111111111111&cursor=0&limit=25",
+      ),
+      expect.objectContaining({
+        method: "GET",
+        headers: { Authorization: "Bearer test-token" },
+      }),
+    );
+  });
+
   it("omits cursor when pulling without one", async () => {
     const fetchFn = mockFetch(jsonResponse({
       changes: [],

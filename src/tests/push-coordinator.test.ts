@@ -488,6 +488,9 @@ function createSetup(input: {
     getEntity: async () => {
       throw new Error("getEntity is not used by push coordinator tests.");
     },
+    inventory: async () => {
+      throw new Error("inventory is not used by push coordinator tests.");
+    },
     pull: async () => ({ changes: [], nextCursor: "0", hasMore: false }),
     push,
   };

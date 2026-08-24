@@ -4,12 +4,16 @@ import {
   pullResponseSchema,
   pushRequestSchema,
   pushResponseSchema,
+  syncInventoryRequestSchema,
+  syncInventoryResponseSchema,
   syncEntityResponseSchema,
   syncErrorSchema,
   type PullRequest,
   type PullResponse,
   type PushRequest,
   type PushResponse,
+  type SyncInventoryRequest,
+  type SyncInventoryResponse,
   type CaptureEntityResponse,
   type SyncEntityResponse,
   type SyncError,
@@ -62,6 +66,7 @@ export type SyncClient = {
   health(input?: SyncClientRequestOptions): Promise<SyncHealthResponse>;
   getCapture(input: SyncClientCaptureInput): Promise<CaptureEntityResponse>;
   getEntity(input: SyncClientEntityInput): Promise<SyncEntityResponse>;
+  inventory(input: SyncClientInventoryInput): Promise<SyncInventoryResponse>;
   push(input: SyncClientPushInput): Promise<PushResponse>;
   pull(input: SyncClientPullInput): Promise<PullResponse>;
 };
@@ -90,6 +95,11 @@ export type SyncClientPullInput = {
   workspaceId: PullRequest["workspaceId"];
   cursor?: PullRequest["cursor"];
   limit?: PullRequest["limit"];
+} & SyncClientRequestOptions;
+export type SyncClientInventoryInput = {
+  workspaceId: SyncInventoryRequest["workspaceId"];
+  cursor?: SyncInventoryRequest["cursor"];
+  limit?: SyncInventoryRequest["limit"];
 } & SyncClientRequestOptions;
 
 type RequestOptions = RequestInit & {
@@ -162,6 +172,40 @@ export function createSyncClient({
       });
       const body = await readJson(response);
       const parsed = syncEntityResponseSchema.safeParse(body);
+
+      if (!parsed.success) {
+        throw invalidResponse(parsed.error.issues);
+      }
+
+      return parsed.data;
+    },
+
+    async inventory(input) {
+      const token = resolveAccessToken(accessToken, accessTokenProvider);
+      const { signal, ...queryInput } = input;
+      const parsedInput = syncInventoryRequestSchema.safeParse(queryInput);
+
+      if (!parsedInput.success) {
+        throw new SyncClientError({
+          code: "INVALID_REQUEST",
+          message: "La solicitud de inventario no cumple el contrato de sincronizacion.",
+          details: parsedInput.error.issues,
+        });
+      }
+
+      const url = buildInventoryUrl(normalizedBaseUrl, queryInput);
+      const response = await request({
+        fetchFn,
+        timeoutMs,
+        url,
+        signal,
+        init: {
+          method: "GET",
+          headers: authorizationHeaders(token),
+        },
+      });
+      const body = await readJson(response);
+      const parsed = syncInventoryResponseSchema.safeParse(body);
 
       if (!parsed.success) {
         throw invalidResponse(parsed.error.issues);
@@ -447,6 +491,24 @@ function buildPullUrl(
   input: Omit<SyncClientPullInput, "signal">,
 ) {
   const url = buildUrl(baseUrl, "/api/sync/pull");
+  url.searchParams.set("workspaceId", input.workspaceId);
+
+  if (input.cursor !== undefined) {
+    url.searchParams.set("cursor", input.cursor);
+  }
+
+  if (input.limit !== undefined) {
+    url.searchParams.set("limit", String(input.limit));
+  }
+
+  return url;
+}
+
+function buildInventoryUrl(
+  baseUrl: string,
+  input: Omit<SyncClientInventoryInput, "signal">,
+) {
+  const url = buildUrl(baseUrl, "/api/sync/inventory");
   url.searchParams.set("workspaceId", input.workspaceId);
 
   if (input.cursor !== undefined) {

@@ -250,6 +250,11 @@ describe("Vinema auth API", () => {
       url: `/api/sync/pull?workspaceId=${userB.json().workspaceId}&cursor=0&limit=10`,
       headers: authHeaders(userA.json().accessToken),
     });
+    const forbiddenInventory = await setup.app.inject({
+      method: "GET",
+      url: `/api/sync/inventory?workspaceId=${userB.json().workspaceId}&cursor=0&limit=10`,
+      headers: authHeaders(userA.json().accessToken),
+    });
     const pullB = await setup.app.inject({
       method: "GET",
       url: `/api/sync/pull?workspaceId=${userB.json().workspaceId}&cursor=0&limit=10`,
@@ -260,6 +265,7 @@ describe("Vinema auth API", () => {
     expect(pullA.json().changes).toHaveLength(1);
     expect(forbiddenPush.statusCode).toBe(403);
     expect(forbiddenPull.statusCode).toBe(403);
+    expect(forbiddenInventory.statusCode).toBe(403);
     expect(pullB.json().changes).toHaveLength(0);
   });
 

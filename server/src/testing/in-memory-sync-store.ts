@@ -3,6 +3,8 @@ import type {
   CaptureEntity,
   ConceptEntity,
   PushResponse,
+  SyncInventoryItem,
+  SyncInventoryResponse,
   SyncMutation,
 } from "@vinema/sync-contracts";
 import type {
@@ -194,6 +196,42 @@ export class InMemorySyncStore implements SyncStore {
       .slice(0, input.limit);
   }
 
+  async listInventory(input: {
+    workspaceId: string;
+    cursor: string;
+    limit: number;
+  }): Promise<SyncInventoryResponse> {
+    const offset = Number(input.cursor);
+    const captures = Array.from(this.captures.values()).filter(
+      (capture) => capture.workspaceId === input.workspaceId,
+    );
+    const concepts = Array.from(this.concepts.values()).filter(
+      (concept) => concept.workspaceId === input.workspaceId,
+    );
+    const captureConcepts = Array.from(this.captureConcepts.values()).filter(
+      (relation) => relation.workspaceId === input.workspaceId,
+    );
+    const items: SyncInventoryItem[] = [
+      ...captures.map((capture) => toInventoryItem("capture", capture)),
+      ...concepts.map((concept) => toInventoryItem("concept", concept)),
+      ...captureConcepts.map((relation) => toInventoryItem("captureConcept", relation)),
+    ].sort(compareInventoryItems);
+    const page = items.slice(offset, offset + input.limit);
+    const nextOffset = offset + page.length;
+
+    return {
+      items: page,
+      nextCursor: String(nextOffset),
+      hasMore: nextOffset < items.length,
+      remoteCursor: await this.getLatestCursor(input.workspaceId),
+      counts: {
+        captures: countInventory(captures),
+        concepts: countInventory(concepts),
+        captureConcepts: countInventory(captureConcepts),
+      },
+    };
+  }
+
   async resetKnowledge(input: {
     workspaceId: string;
     occurredAt?: Date;
@@ -272,4 +310,31 @@ export class InMemorySyncStore implements SyncStore {
   private entityWorkspace(entityType: SyncEntityType, entityId: string) {
     return this.getMap(entityType).get(entityId)?.workspaceId ?? null;
   }
+}
+
+function toInventoryItem(
+  entityType: SyncInventoryItem["entityType"],
+  entity: CaptureEntity | ConceptEntity | CaptureConceptEntity,
+): SyncInventoryItem {
+  return {
+    workspaceId: entity.workspaceId,
+    entityType,
+    entityId: entity.id,
+    version: entity.version,
+    updatedAt: entity.updatedAt,
+    archivedAt: entity.archivedAt ?? null,
+  };
+}
+
+function countInventory(
+  entities: Array<CaptureEntity | ConceptEntity | CaptureConceptEntity>,
+) {
+  const archived = entities.filter((entity) => entity.archivedAt !== null).length;
+  const active = entities.length - archived;
+  return { active, archived, total: entities.length };
+}
+
+function compareInventoryItems(left: SyncInventoryItem, right: SyncInventoryItem) {
+  const byType = left.entityType.localeCompare(right.entityType);
+  return byType === 0 ? left.entityId.localeCompare(right.entityId) : byType;
 }

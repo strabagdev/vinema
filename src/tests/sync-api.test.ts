@@ -67,6 +67,12 @@ describe("Vinema sync API", () => {
     await expect(
       app.inject({
         method: "GET",
+        url: `/api/sync/inventory?workspaceId=${workspaceId}`,
+      }),
+    ).resolves.toMatchObject({ statusCode: 401 });
+    await expect(
+      app.inject({
+        method: "GET",
         url: `/api/sync/entities/capture/55555555-5555-4555-8555-555555555555?workspaceId=${workspaceId}`,
       }),
     ).resolves.toMatchObject({ statusCode: 401 });
@@ -650,6 +656,84 @@ describe("Vinema sync API", () => {
             : change.entity.workspaceId === workspaceId,
         ),
     ).toBe(true);
+  });
+
+  it("returns a paginated sync inventory with counts and workspace isolation", async () => {
+    const store = new InMemorySyncStore([workspaceId, otherWorkspaceId]);
+    const app = createVinemaApiServer({ store, apiKey });
+    const captureId = "55555555-5555-4555-8555-555555555555";
+    const conceptId = "66666666-6666-4666-8666-666666666666";
+    const relationId = "77777777-7777-4777-8777-777777777777";
+    await processPush(store, {
+      workspaceId,
+      deviceId,
+      mutations: [
+        captureMutation({
+          mutationId: "11111111-ffff-4fff-8fff-111111111111",
+          entityId: captureId,
+          baseVersion: null,
+        }),
+        conceptMutation({
+          mutationId: "22222222-ffff-4fff-8fff-222222222222",
+          entityId: conceptId,
+          baseVersion: null,
+        }),
+        relationMutation({
+          mutationId: "33333333-ffff-4fff-8fff-333333333333",
+          entityId: relationId,
+          captureId,
+          conceptId,
+          baseVersion: null,
+        }),
+      ],
+    });
+    await processPush(store, {
+      workspaceId: otherWorkspaceId,
+      deviceId,
+      mutations: [
+        captureMutation({
+          mutationId: "44444444-ffff-4fff-8fff-444444444444",
+          entityId: "88888888-8888-4888-8888-888888888888",
+          baseVersion: null,
+        }),
+      ],
+    });
+
+    const firstPage = await app.inject({
+      method: "GET",
+      url: `/api/sync/inventory?workspaceId=${workspaceId}&cursor=0&limit=2`,
+      headers: authHeaders(),
+    });
+    const secondPage = await app.inject({
+      method: "GET",
+      url: `/api/sync/inventory?workspaceId=${workspaceId}&cursor=${firstPage.json().nextCursor}&limit=2`,
+      headers: authHeaders(),
+    });
+    const otherWorkspace = await app.inject({
+      method: "GET",
+      url: `/api/sync/inventory?workspaceId=${otherWorkspaceId}`,
+      headers: authHeaders(),
+    });
+
+    expect(firstPage.statusCode).toBe(200);
+    expect(firstPage.json()).toMatchObject({
+      hasMore: true,
+      counts: {
+        captures: { active: 1, archived: 0, total: 1 },
+        concepts: { active: 1, archived: 0, total: 1 },
+        captureConcepts: { active: 1, archived: 0, total: 1 },
+      },
+    });
+    expect(secondPage.json().items).toHaveLength(1);
+    expect(
+      [firstPage.json(), secondPage.json()]
+        .flatMap((response) => response.items)
+        .every((item) => item.workspaceId === workspaceId),
+    ).toBe(true);
+    expect(otherWorkspace.json().items).toHaveLength(1);
+    expect(otherWorkspace.json().items[0]).toMatchObject({
+      workspaceId: otherWorkspaceId,
+    });
   });
 
   it("resets workspace knowledge behind auth, keeps workspace, and emits pull reset event", async () => {

@@ -3,6 +3,7 @@ import type {
   CaptureEntity,
   ConceptEntity,
   PushResponse,
+  SyncInventoryResponse,
   SyncMutation,
 } from "@vinema/sync-contracts";
 
@@ -70,4 +71,9 @@ export interface SyncStore {
     cursor: string;
     limit: number;
   }): Promise<StoredSyncChange[]>;
+  listInventory(input: {
+    workspaceId: string;
+    cursor: string;
+    limit: number;
+  }): Promise<SyncInventoryResponse>;
 }

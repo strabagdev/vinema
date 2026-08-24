@@ -452,6 +452,13 @@ function createControllableSyncClient(
 
       return stored;
     },
+    async inventory(input) {
+      return remoteStore.listInventory({
+        workspaceId: input.workspaceId,
+        cursor: input.cursor ?? "0",
+        limit: input.limit ?? 100,
+      });
+    },
     async push(input: PushRequest & { signal?: AbortSignal }): Promise<PushResponse> {
       await maybeBlockUntilAbort(input.signal, blockPush);
       blockPush = false;

@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   offline: vi.fn(),
   recordMemoryVerificationResult: vi.fn(),
   reconcile: vi.fn(),
+  reconcileServerAuthoritativeMemory: vi.fn(),
   syncNow: vi.fn(),
   synced: vi.fn(),
   syncing: vi.fn(),
@@ -22,6 +23,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/features/auth/auth-provider", () => ({
   useAuth: mocks.useAuth,
+}));
+
+vi.mock("@/features/auth/public-api-url", () => ({
+  getPublicApiUrl: () => "https://api.example.test",
 }));
 
 vi.mock("@/features/feedback/visual-feedback-provider", () => ({
@@ -52,6 +57,10 @@ vi.mock("@/features/sync/reconciliation", () => ({
   }),
 }));
 
+vi.mock("@/features/sync/server-authoritative-memory-reconciliation", () => ({
+  reconcileServerAuthoritativeMemory: mocks.reconcileServerAuthoritativeMemory,
+}));
+
 vi.mock("@/features/sync/conflict-resolution", () => ({
   listCaptureConflicts: mocks.listCaptureConflicts,
   resolveCaptureConflict: vi.fn(),
@@ -70,6 +79,7 @@ describe("MemorySyncStatusPanel", () => {
     mocks.recordMemoryVerificationResult.mockResolvedValue(null);
     mocks.listCaptureConflicts.mockResolvedValue([captureConflictFixture()]);
     mocks.reconcile.mockResolvedValue(reconciliationFixture());
+    mocks.reconcileServerAuthoritativeMemory.mockResolvedValue(serverCompletenessFixture());
   });
 
   afterEach(async () => {
@@ -291,6 +301,12 @@ describe("MemorySyncStatusPanel", () => {
     await click(getButton(screen, "Verificar memoria"));
 
     expect(mocks.reconcile).toHaveBeenCalledTimes(1);
+    expect(mocks.reconcileServerAuthoritativeMemory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: "workspace-1",
+        deviceId: "device-1",
+      }),
+    );
     expect(mocks.dismissKind).toHaveBeenCalledWith("error");
     expect(mocks.error).not.toHaveBeenCalledWith("Hay capturas que requieren atencion.");
     expect(screen.querySelector("[data-memory-sync-panel]")?.textContent).toContain(
@@ -449,6 +465,55 @@ describe("MemorySyncStatusPanel", () => {
       "La verificacion detecto divergencia de memoria.",
     );
     expect(screen.textContent).not.toContain("Memoria integra");
+  });
+
+  it("does not persist integral memory when the server inventory remains incomplete", async () => {
+    let persistedSnapshot = snapshotFixture({
+      status: "SYNCED",
+      lastVerificationStatus: "PASSED",
+    });
+    mocks.reconcileServerAuthoritativeMemory.mockResolvedValue(serverCompletenessFixture({
+      status: "INCOMPLETE",
+      remoteCursor: "1057",
+      localCursor: "1057",
+      remoteCounts: inventoryCounts({ captures: { active: 11, total: 11 } }),
+      localCounts: inventoryCounts({ captures: { active: 4, total: 4 } }),
+      missing: inventoryCounts({ captures: { active: 7, total: 7 } }),
+      errors: [
+        {
+          code: "INVENTORY_REPAIR_INCOMPLETE",
+          message: "No fue posible completar la memoria local frente al inventario remoto.",
+        },
+      ],
+    }));
+    mocks.loadMemorySyncSnapshot.mockImplementation(async () => persistedSnapshot);
+    mocks.recordMemoryVerificationResult.mockImplementation(async (input) => {
+      if (input.status === "FAILED") {
+        persistedSnapshot = snapshotFixture({
+          status: "ERROR",
+          lastVerificationAt: new Date("2026-08-03T12:01:00.000Z"),
+          lastVerificationStatus: "FAILED",
+          lastVerificationError: input.errorMessage,
+        });
+      }
+      return null;
+    });
+    const screen = await renderPanel();
+
+    await click(screen.querySelector("button[aria-label='Abrir Estado de la memoria']"));
+    await click(getButton(screen, "Verificar memoria"));
+
+    expect(mocks.recordMemoryVerificationResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "FAILED",
+        errorMessage: expect.stringContaining("Local 4/4 capturas"),
+      }),
+    );
+    expect(mocks.recordMemoryVerificationResult).not.toHaveBeenCalledWith(
+      expect.objectContaining({ status: "PASSED" }),
+    );
+    expect(screen.textContent).toContain("La memoria requiere atencion");
+    expect(screen.textContent).toContain("remoto 1057");
   });
 
   it("shows a conflict diagnostic export action only when real conflicts exist", async () => {
@@ -843,6 +908,43 @@ function reconciliationFixtureBase() {
     generatedMutations: [],
     convergence: { status: "CONFIRMED", reason: "MATCHING_SIGNATURES" },
     localSignature: { generation: "42", hash: "abcdef12", items: 0 },
+  };
+}
+
+function serverCompletenessFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    status: "COMPLETE",
+    remoteCursor: "42",
+    localCursor: "42",
+    localCounts: inventoryCounts(),
+    remoteCounts: inventoryCounts(),
+    missing: inventoryCounts(),
+    outdated: inventoryCounts(),
+    extraLocal: inventoryCounts(),
+    recovered: inventoryCounts(),
+    blockedByLocalMutations: 0,
+    conflicts: 0,
+    errors: [],
+    ...overrides,
+  };
+}
+
+function inventoryCounts(
+  overrides: {
+    captures?: Partial<{ active: number; archived: number; total: number }>;
+    concepts?: Partial<{ active: number; archived: number; total: number }>;
+    captureConcepts?: Partial<{ active: number; archived: number; total: number }>;
+  } = {},
+) {
+  return {
+    captures: { active: 0, archived: 0, total: 0, ...overrides.captures },
+    concepts: { active: 0, archived: 0, total: 0, ...overrides.concepts },
+    captureConcepts: {
+      active: 0,
+      archived: 0,
+      total: 0,
+      ...overrides.captureConcepts,
+    },
   };
 }
 

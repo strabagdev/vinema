@@ -30,6 +30,10 @@ import {
   createMemoryReconciliationEngine,
   type MemoryReconciliationResult,
 } from "@/features/sync/reconciliation";
+import {
+  reconcileServerAuthoritativeMemory,
+  type ServerAuthoritativeMemoryReconciliationResult,
+} from "@/features/sync/server-authoritative-memory-reconciliation";
 import { cn } from "@/lib/cn";
 
 export function MemorySyncStatusPanel({
@@ -48,6 +52,8 @@ export function MemorySyncStatusPanel({
   const [verifyingMemory, setVerifyingMemory] = useState(false);
   const [reconciliation, setReconciliation] =
     useState<MemoryReconciliationResult | null>(null);
+  const [serverCompleteness, setServerCompleteness] =
+    useState<ServerAuthoritativeMemoryReconciliationResult | null>(null);
   const [exportingConflicts, setExportingConflicts] = useState(false);
   const [captureConflicts, setCaptureConflicts] = useState<CaptureConflictSummary[]>([]);
   const [resolvingConflict, setResolvingConflict] = useState(false);
@@ -171,6 +177,7 @@ export function MemorySyncStatusPanel({
     setVerifyingMemory(true);
     setLastVerificationMessage("Verificando memoria...");
     setLocalError(null);
+    setServerCompleteness(null);
     feedback.dismissKind("error");
     feedback.syncing();
     try {
@@ -188,6 +195,26 @@ export function MemorySyncStatusPanel({
       });
       setReconciliation(result);
       if (result.status === "MEMORY_INTEGRAL") {
+        setLastVerificationMessage("Comparando con servidor...");
+        const completeness = await runServerAuthoritativeReconciliation({
+          workspaceId: auth.workspaceId,
+          deviceId: auth.deviceId,
+          accessToken: auth.accessToken,
+        });
+        setServerCompleteness(completeness);
+        if (completeness.status === "INCOMPLETE") {
+          const errorMessage = formatServerCompletenessFailure(completeness);
+          await recordMemoryVerificationResult({
+            workspaceId: auth.workspaceId,
+            deviceId: auth.deviceId,
+            status: "FAILED",
+            errorMessage,
+          });
+          feedback.dismissKind("syncing");
+          await refreshSnapshot();
+          return;
+        }
+
         await recordMemoryVerificationResult({
           workspaceId: auth.workspaceId,
           deviceId: auth.deviceId,
@@ -378,6 +405,7 @@ export function MemorySyncStatusPanel({
           verifyingMemory={verifyingMemory}
           presentation={presentation}
           reconciliation={reconciliation}
+          serverCompleteness={serverCompleteness}
           localError={localError}
           lastVerificationMessage={lastVerificationMessage}
           exportingConflicts={exportingConflicts}
@@ -411,6 +439,7 @@ function MemorySyncPanelContent({
   verifyingMemory,
   presentation,
   reconciliation,
+  serverCompleteness,
   localError,
   lastVerificationMessage,
   exportingConflicts,
@@ -436,6 +465,7 @@ function MemorySyncPanelContent({
   verifyingMemory: boolean;
   presentation: MemoryHealthPresentation;
   reconciliation: MemoryReconciliationResult | null;
+  serverCompleteness: ServerAuthoritativeMemoryReconciliationResult | null;
   localError: string | null;
   lastVerificationMessage: string | null;
   exportingConflicts: boolean;
@@ -604,7 +634,12 @@ function MemorySyncPanelContent({
                   </Button>
                 </div>
               ) : null}
-              {reconciliation ? <ReconciliationSummary reconciliation={reconciliation} /> : null}
+              {reconciliation ? (
+                <ReconciliationSummary
+                  reconciliation={reconciliation}
+                  serverCompleteness={serverCompleteness}
+                />
+              ) : null}
               <RecentEvents events={health.recentEvents} />
             </div>
           </details>
@@ -825,8 +860,10 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 function ReconciliationSummary({
   reconciliation,
+  serverCompleteness,
 }: {
   reconciliation: MemoryReconciliationResult;
+  serverCompleteness: ServerAuthoritativeMemoryReconciliationResult | null;
 }) {
   return (
     <div className="rounded-md bg-zinc-50 px-3 py-2 text-xs text-zinc-700">
@@ -836,8 +873,115 @@ function ReconciliationSummary({
           Se prepararon {reconciliation.generatedMutations.length} cambios.
         </p>
       ) : null}
+      {serverCompleteness ? (
+        <p className="mt-1">
+          Local {formatInventoryCounts(serverCompleteness.localCounts)} · Remoto{" "}
+          {formatInventoryCounts(serverCompleteness.remoteCounts)} · Cursor local{" "}
+          {serverCompleteness.localCursor ?? "sin registro"} · remoto{" "}
+          {serverCompleteness.remoteCursor ?? "sin registro"}
+        </p>
+      ) : null}
+      {serverCompleteness && serverCompleteness.status === "REPAIRED" ? (
+        <p className="mt-1">
+          Recuperadas {formatInventoryCounts(serverCompleteness.recovered)}
+        </p>
+      ) : null}
+      {serverCompleteness && serverCompleteness.conflicts > 0 ? (
+        <p className="mt-1">
+          Conflictos de inventario {serverCompleteness.conflicts}
+        </p>
+      ) : null}
     </div>
   );
+}
+
+async function runServerAuthoritativeReconciliation({
+  workspaceId,
+  deviceId,
+  accessToken,
+}: {
+  workspaceId: string;
+  deviceId: string;
+  accessToken: string | undefined;
+}) {
+  try {
+    const apiBaseUrl = getPublicApiUrl();
+
+    if (!apiBaseUrl) {
+      return incompleteServerCompleteness(
+        workspaceId,
+        "SYNC_API_UNAVAILABLE",
+        "No hay API de sincronizacion configurada para comparar la memoria.",
+      );
+    }
+
+    const syncClient = createSyncClient({
+      baseUrl: apiBaseUrl,
+      accessToken,
+    });
+    return await reconcileServerAuthoritativeMemory({
+      workspaceId,
+      deviceId,
+      syncClient,
+    });
+  } catch {
+    return incompleteServerCompleteness(
+      workspaceId,
+      "SERVER_INVENTORY_UNAVAILABLE",
+      "No fue posible comparar la memoria local con el inventario del servidor.",
+    );
+  }
+}
+
+function incompleteServerCompleteness(
+  workspaceId: string,
+  code: string,
+  message: string,
+): ServerAuthoritativeMemoryReconciliationResult {
+  return {
+    status: "INCOMPLETE",
+    remoteCursor: null,
+    localCursor: null,
+    localCounts: emptyInventoryCounts(),
+    remoteCounts: emptyInventoryCounts(),
+    missing: emptyInventoryCounts(),
+    outdated: emptyInventoryCounts(),
+    extraLocal: emptyInventoryCounts(),
+    recovered: emptyInventoryCounts(),
+    blockedByLocalMutations: 0,
+    conflicts: 0,
+    errors: [{ code, message: `${message} Workspace ${workspaceId}.` }],
+  };
+}
+
+function formatServerCompletenessFailure(
+  result: ServerAuthoritativeMemoryReconciliationResult,
+) {
+  const error = result.errors[0]?.message ??
+    "La memoria local no esta completa frente al servidor.";
+  return `${error} Local ${formatInventoryCounts(result.localCounts)}; remoto ${
+    formatInventoryCounts(result.remoteCounts)
+  }; cursor local ${result.localCursor ?? "sin registro"}; remoto ${
+    result.remoteCursor ?? "sin registro"
+  }.`;
+}
+
+function formatInventoryCounts(
+  counts: ServerAuthoritativeMemoryReconciliationResult["localCounts"],
+) {
+  return `${counts.captures.active}/${counts.captures.total} capturas, ${
+    counts.concepts.active
+  }/${counts.concepts.total} conceptos, ${counts.captureConcepts.active}/${
+    counts.captureConcepts.total
+  } relaciones`;
+}
+
+function emptyInventoryCounts(): ServerAuthoritativeMemoryReconciliationResult["localCounts"] {
+  return {
+    captures: { active: 0, archived: 0, total: 0 },
+    concepts: { active: 0, archived: 0, total: 0 },
+    captureConcepts: { active: 0, archived: 0, total: 0 },
+  };
 }
 
 function RecentEvents({ events }: { events: MemorySyncSnapshot["health"]["recentEvents"] }) {

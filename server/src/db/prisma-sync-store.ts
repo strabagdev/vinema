@@ -3,6 +3,8 @@ import type {
   CaptureEntity,
   ConceptEntity,
   PushResponse,
+  SyncInventoryItem,
+  SyncInventoryResponse,
   SyncMutation,
 } from "@vinema/sync-contracts";
 import type {
@@ -229,6 +231,131 @@ export class PrismaSyncStore implements SyncStore {
     });
   }
 
+  async listInventory(input: {
+    workspaceId: string;
+    cursor: string;
+    limit: number;
+  }): Promise<SyncInventoryResponse> {
+    const offset = Number(input.cursor);
+    const [
+      captures,
+      concepts,
+      captureConcepts,
+      remoteCursor,
+      activeCaptures,
+      archivedCaptures,
+      activeConcepts,
+      archivedConcepts,
+      activeCaptureConcepts,
+      archivedCaptureConcepts,
+    ] = await Promise.all([
+      this.prisma.capture.findMany({
+        where: { workspaceId: input.workspaceId },
+        select: {
+          id: true,
+          workspaceId: true,
+          version: true,
+          updatedAt: true,
+          archivedAt: true,
+        },
+      }),
+      this.prisma.concept.findMany({
+        where: { workspaceId: input.workspaceId },
+        select: {
+          id: true,
+          workspaceId: true,
+          version: true,
+          updatedAt: true,
+          archivedAt: true,
+        },
+      }),
+      this.prisma.captureConcept.findMany({
+        where: { capture: { workspaceId: input.workspaceId } },
+        select: {
+          id: true,
+          version: true,
+          updatedAt: true,
+          archivedAt: true,
+          capture: { select: { workspaceId: true } },
+        },
+      }),
+      this.getLatestCursor(input.workspaceId),
+      this.prisma.capture.count({
+        where: { workspaceId: input.workspaceId, archivedAt: null },
+      }),
+      this.prisma.capture.count({
+        where: { workspaceId: input.workspaceId, archivedAt: { not: null } },
+      }),
+      this.prisma.concept.count({
+        where: { workspaceId: input.workspaceId, archivedAt: null },
+      }),
+      this.prisma.concept.count({
+        where: { workspaceId: input.workspaceId, archivedAt: { not: null } },
+      }),
+      this.prisma.captureConcept.count({
+        where: { capture: { workspaceId: input.workspaceId }, archivedAt: null },
+      }),
+      this.prisma.captureConcept.count({
+        where: {
+          capture: { workspaceId: input.workspaceId },
+          archivedAt: { not: null },
+        },
+      }),
+    ]);
+    const items: SyncInventoryItem[] = [
+      ...captures.map((capture) => ({
+        workspaceId: capture.workspaceId,
+        entityType: "capture" as const,
+        entityId: capture.id,
+        version: capture.version,
+        updatedAt: capture.updatedAt.toISOString(),
+        archivedAt: capture.archivedAt?.toISOString() ?? null,
+      })),
+      ...concepts.map((concept) => ({
+        workspaceId: concept.workspaceId,
+        entityType: "concept" as const,
+        entityId: concept.id,
+        version: concept.version,
+        updatedAt: concept.updatedAt.toISOString(),
+        archivedAt: concept.archivedAt?.toISOString() ?? null,
+      })),
+      ...captureConcepts.map((relation) => ({
+        workspaceId: relation.capture.workspaceId,
+        entityType: "captureConcept" as const,
+        entityId: relation.id,
+        version: relation.version,
+        updatedAt: relation.updatedAt.toISOString(),
+        archivedAt: relation.archivedAt?.toISOString() ?? null,
+      })),
+    ].sort(compareInventoryItems);
+    const page = items.slice(offset, offset + input.limit);
+    const nextOffset = offset + page.length;
+
+    return {
+      items: page,
+      nextCursor: String(nextOffset),
+      hasMore: nextOffset < items.length,
+      remoteCursor,
+      counts: {
+        captures: {
+          active: activeCaptures,
+          archived: archivedCaptures,
+          total: activeCaptures + archivedCaptures,
+        },
+        concepts: {
+          active: activeConcepts,
+          archived: archivedConcepts,
+          total: activeConcepts + archivedConcepts,
+        },
+        captureConcepts: {
+          active: activeCaptureConcepts,
+          archived: archivedCaptureConcepts,
+          total: activeCaptureConcepts + archivedCaptureConcepts,
+        },
+      },
+    };
+  }
+
   async resetKnowledge(input: {
     workspaceId: string;
     occurredAt?: Date;
@@ -278,6 +405,11 @@ export class PrismaSyncStore implements SyncStore {
       };
     });
   }
+}
+
+function compareInventoryItems(left: SyncInventoryItem, right: SyncInventoryItem) {
+  const byType = left.entityType.localeCompare(right.entityType);
+  return byType === 0 ? left.entityId.localeCompare(right.entityId) : byType;
 }
 
 async function applyEntityMutation(

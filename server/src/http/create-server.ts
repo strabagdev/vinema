@@ -21,6 +21,8 @@ import {
   refreshSessionResponseSchema,
   registerRequestSchema,
   registerResponseSchema,
+  syncInventoryRequestSchema,
+  syncInventoryResponseSchema,
   syncEntityResponseSchema,
 } from "@vinema/sync-contracts";
 import { AuthError, authErrorResponse } from "../auth/auth-errors";
@@ -263,6 +265,45 @@ export function createVinemaApiServer({
 
     const response = await processPull(store, parsed.data);
     return reply.send(response);
+  });
+
+  app.get("/api/sync/inventory", async (request, reply) => {
+    const parsed = syncInventoryRequestSchema.safeParse(request.query);
+
+    if (!parsed.success) {
+      return reply.status(400).send(
+        syncError(
+          "INVALID_REQUEST",
+          "La solicitud no es valida.",
+          parsed.error.issues,
+        ),
+      );
+    }
+
+    const authContext = authorizeSyncRequest({
+      request,
+      workspaceId: parsed.data.workspaceId,
+      tokenConfig,
+      apiKey,
+    });
+    if (authContext instanceof AuthError) {
+      return sendAuthError(reply, authContext);
+    }
+
+    if (parsed.data.workspaceId !== authContext.workspaceId) {
+      return reply
+        .status(403)
+        .send(authErrorResponse("WORKSPACE_FORBIDDEN", "Workspace no permitido."));
+    }
+
+    if (!(await store.workspaceExists(parsed.data.workspaceId))) {
+      return reply
+        .status(404)
+        .send(syncError("WORKSPACE_NOT_FOUND", "El workspace no existe."));
+    }
+
+    const response = await store.listInventory(parsed.data);
+    return reply.send(syncInventoryResponseSchema.parse(response));
   });
 
   app.get("/api/sync/entities/capture/:entityId", async (request, reply) => {

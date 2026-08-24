@@ -4,6 +4,7 @@ export const MAX_CAPTURE_CONTENT_LENGTH = 50_000;
 export const MAX_CONCEPT_LABEL_LENGTH = 200;
 export const MAX_PUSH_MUTATIONS = 100;
 export const MAX_PULL_LIMIT = 500;
+export const MAX_INVENTORY_LIMIT = 500;
 export const MIN_AUTH_PASSWORD_LENGTH = 8;
 export const MAX_AUTH_PASSWORD_LENGTH = 512;
 
@@ -194,6 +195,56 @@ export const pullResponseSchema = z.object({
   changes: z.array(pullChangeSchema),
   nextCursor: z.string(),
   hasMore: z.boolean(),
+});
+
+export const syncInventoryEntityTypeSchema = z.enum([
+  "capture",
+  "concept",
+  "captureConcept",
+]);
+
+export const syncInventoryRequestSchema = z.object({
+  workspaceId: uuidSchema,
+  cursor: z
+    .string()
+    .regex(/^\d+$/)
+    .default("0"),
+  limit: z.coerce.number().int().positive().max(MAX_INVENTORY_LIMIT).default(100),
+});
+
+export const syncInventoryItemSchema = z.object({
+  workspaceId: uuidSchema,
+  entityType: syncInventoryEntityTypeSchema,
+  entityId: uuidSchema,
+  version: z.number().int().positive(),
+  updatedAt: isoDateSchema,
+  archivedAt: nullableIsoDateSchema,
+});
+
+export const syncInventoryCountsSchema = z.object({
+  captures: z.object({
+    active: z.number().int().nonnegative(),
+    archived: z.number().int().nonnegative(),
+    total: z.number().int().nonnegative(),
+  }),
+  concepts: z.object({
+    active: z.number().int().nonnegative(),
+    archived: z.number().int().nonnegative(),
+    total: z.number().int().nonnegative(),
+  }),
+  captureConcepts: z.object({
+    active: z.number().int().nonnegative(),
+    archived: z.number().int().nonnegative(),
+    total: z.number().int().nonnegative(),
+  }),
+});
+
+export const syncInventoryResponseSchema = z.object({
+  items: z.array(syncInventoryItemSchema),
+  nextCursor: z.string(),
+  hasMore: z.boolean(),
+  remoteCursor: z.string(),
+  counts: syncInventoryCountsSchema,
 });
 
 export const knowledgeResetRequestSchema = z.object({
@@ -397,6 +448,10 @@ export type PushRequest = z.infer<typeof pushRequestSchema>;
 export type PushResponse = z.infer<typeof pushResponseSchema>;
 export type PullRequest = z.infer<typeof pullRequestSchema>;
 export type PullResponse = z.infer<typeof pullResponseSchema>;
+export type SyncInventoryRequest = z.infer<typeof syncInventoryRequestSchema>;
+export type SyncInventoryResponse = z.infer<typeof syncInventoryResponseSchema>;
+export type SyncInventoryItem = z.infer<typeof syncInventoryItemSchema>;
+export type SyncInventoryCounts = z.infer<typeof syncInventoryCountsSchema>;
 export type CaptureEntityResponse = z.infer<typeof captureEntityResponseSchema>;
 export type SyncEntityResponse = z.infer<typeof syncEntityResponseSchema>;
 export type KnowledgeResetRequest = z.infer<typeof knowledgeResetRequestSchema>;
