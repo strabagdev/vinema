@@ -7,6 +7,8 @@ import {
 
 const LOCAL_SUPPORT_STOPWORDS = new Set([
   ...SPANISH_STOPWORDS,
+  "ante",
+  "antes",
   "actual",
   "captura",
   "capturas",
@@ -19,6 +21,8 @@ const LOCAL_SUPPORT_STOPWORDS = new Set([
   "general",
   "mayor",
   "menor",
+  "manten",
+  "mantener",
   "memoria",
   "memorias",
   "nuevo",

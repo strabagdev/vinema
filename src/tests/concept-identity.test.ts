@@ -112,6 +112,27 @@ describe("concept identity resolution", () => {
     });
   });
 
+  it("requires explicit uppercase surface for two-letter derived acronyms", () => {
+    const contexts = [
+      context({ id: "inteligencia-artificial", name: "Inteligencia Artificial" }),
+      context({ id: "maniobra-equipo", name: "Maniobra del equipo" }),
+    ];
+
+    expect(resolveConceptIdentity("IA", contexts)).toMatchObject({
+      status: "ALIAS",
+      conceptId: "inteligencia-artificial",
+      matchedAlias: "IA",
+    });
+    expect(resolveConceptIdentity("ia", contexts)).toEqual({
+      status: "NEW",
+      matchedText: "ia",
+    });
+    expect(resolveConceptIdentity("me", contexts)).toEqual({
+      status: "NEW",
+      matchedText: "me",
+    });
+  });
+
   it("does not auto-fuse concepts that only share words", () => {
     expect(
       resolveConceptIdentity("Operational Excellence", [

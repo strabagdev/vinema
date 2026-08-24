@@ -164,6 +164,48 @@ describe("semantic phrase extraction", () => {
     );
   });
 
+  it("does not cross structural boundaries or accept verb-led fragments", () => {
+    const labels = labelsFor(
+      [
+        "Durante las últimas semanas me cuesta conciliar el sueño cuando uso el teléfono justo antes de acostarme.",
+        "Dejar la pantalla una hora antes y mantener un horario regular parece mejorar mi descanso al día siguiente.",
+      ].join("\n"),
+    );
+
+    expect(labels).toEqual(
+      expect.arrayContaining([
+        "Conciliar el sueño",
+        "Horario regular",
+        "Pantalla",
+        "Descanso",
+      ]),
+    );
+    expect(labels).not.toEqual(
+      expect.arrayContaining([
+        "Dejar",
+        "Antes de acostarme",
+        "acostarme Dejar",
+        "Cuesta conciliar",
+        "Parece mejorar",
+        "descanso Parece",
+      ]),
+    );
+  });
+
+  it("extracts infinitive actions with explicit objects without keeping auxiliary fragments", () => {
+    const labels = labelsFor(
+      "Cuesta priorizar el trabajo cuando parece mejorar la agenda. Resolver el problema ayuda al equipo.",
+    );
+
+    expect(labels).toContain("Resolver el problema");
+    expect(labels).not.toEqual(
+      expect.arrayContaining([
+        "Cuesta priorizar",
+        "Parece mejorar",
+      ]),
+    );
+  });
+
   it("suppresses contained terms and generic fragments", () => {
     const labels = labelsFor(
       "para continuar esta prueba quiero comprar Ombre Leather de Tom Ford",

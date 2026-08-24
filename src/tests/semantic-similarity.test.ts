@@ -1026,6 +1026,65 @@ describe("semantic vector index and engine", () => {
     expect(results).toEqual([]);
   });
 
+  it("does not let isolated generic verbs create semantic memory eligibility", () => {
+    const localText =
+      "Durante las últimas semanas me cuesta conciliar el sueño cuando uso el teléfono justo antes de acostarme. Dejar la pantalla una hora antes y mantener un horario regular parece mejorar mi descanso al día siguiente.";
+    const results = mergeSemanticAssociationSuggestions(
+      [],
+      [
+        {
+          node: makeNode({
+            id: "cruces-senalizacion",
+            content:
+              "Mantener señalización clara en cruces donde interactúan peatones y equipos móviles.",
+          }),
+          evidence: makeSimilarityEvidence({ similarity: 0.91, rank: 1 }),
+        },
+        {
+          node: makeNode({
+            id: "interaccion-equipos",
+            content:
+              "Mantener distancia operacional entre trabajadores y equipos móviles durante la circulación.",
+          }),
+          evidence: makeSimilarityEvidence({ similarity: 0.9, rank: 2 }),
+        },
+      ],
+      5,
+      localText,
+    );
+
+    expect(results).toEqual([]);
+  });
+
+  it("keeps semantic memory eligibility when a generic verb shares its object", () => {
+    const localText = "Mantener horario regular mejora la planificación semanal.";
+    const results = mergeSemanticAssociationSuggestions(
+      [],
+      [
+        {
+          node: makeNode({
+            id: "horario",
+            content:
+              "Mantener horario regular ayuda a ordenar la rutina diaria.",
+          }),
+          evidence: makeSimilarityEvidence({ similarity: 0.91, rank: 1 }),
+        },
+        {
+          node: makeNode({
+            id: "senalizacion",
+            content:
+              "Mantener señalización clara en cruces operacionales.",
+          }),
+          evidence: makeSimilarityEvidence({ similarity: 0.92, rank: 2 }),
+        },
+      ],
+      5,
+      localText,
+    );
+
+    expect(results.map((result) => result.node.id)).toEqual(["horario"]);
+  });
+
   it("keeps only anchored memories across non-mining domains", () => {
     const scenarios = [
       {

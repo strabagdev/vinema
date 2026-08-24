@@ -45,7 +45,9 @@ const GENERIC_VERBS = new Set([
   "consolidar",
   "debe",
   "dificultar",
+  "dejar",
   "hacer",
+  "mantener",
   "necesita",
   "necesitamos",
   "necesito",
@@ -138,6 +140,20 @@ const STRUCTURAL_SINGLE_NOUN_PRECEDERS = new Set([
   "la",
   "los",
   "las",
+  "mi",
+  "mis",
+  "su",
+  "sus",
+  "un",
+  "una",
+  "unos",
+  "unas",
+]);
+
+const TEMPORAL_COMPLEMENT_HEADS = new Set([
+  "antes",
+  "despues",
+  "durante",
 ]);
 
 const STRUCTURAL_SINGLE_NOUN_FOLLOWERS = new Set([
@@ -182,6 +198,11 @@ export function extractSemanticPhraseCandidates(text: string) {
   for (const size of [2, 3, 4]) {
     for (let index = 0; index <= tokens.length - size; index += 1) {
       const phraseTokens = tokens.slice(index, index + size);
+
+      if (!isWithinSingleSegment(phraseTokens)) {
+        continue;
+      }
+
       const candidate = createPhraseCandidate(phraseTokens);
       if (candidate) {
         upsertCandidate(candidates, candidate);
@@ -216,7 +237,7 @@ function createSingleTokenCandidate({
   const isProper =
     token.start > 0 &&
     hasSemanticUppercase(token.text) &&
-    !isLikelySentenceInitialOnly(token);
+    !isLikelySentenceInitialOnly(token, previousToken);
 
   const isSalientSingleNoun = isSalientAbstractSingleNoun({
     token,
@@ -288,7 +309,15 @@ function createPhraseCandidate(
     return null;
   }
 
+  if (isTemporalComplementFragment(normalizedValues)) {
+    return null;
+  }
+
   if (isConjugatedVerbArticleNounPhrase(normalizedValues)) {
+    return null;
+  }
+
+  if (isConjugatedVerbInfinitivePhrase(normalizedValues)) {
     return null;
   }
 
@@ -316,8 +345,14 @@ function createPhraseCandidate(
     .every(isStrongProperPhraseToken);
   const nounPhrase = isNounPhrase(normalizedValues);
   const generalNounPhrase = isGeneralNounPhrase(normalizedValues);
+  const actionObjectPhrase = isActionObjectPhrase(normalizedValues);
 
-  if (!allMeaningfulCapitalized && !nounPhrase && !generalNounPhrase) {
+  if (
+    !allMeaningfulCapitalized &&
+    !nounPhrase &&
+    !generalNounPhrase &&
+    !actionObjectPhrase
+  ) {
     return null;
   }
 
@@ -337,7 +372,7 @@ function createPhraseCandidate(
   const source: SemanticPhraseCandidate["source"] =
     nounPhrase && properCount === 0
       ? "NOUN_PHRASE"
-      : generalNounPhrase && properCount === 0
+      : (generalNounPhrase || actionObjectPhrase) && properCount === 0
         ? "GENERAL_NOUN_PHRASE"
         : hasConnectorInside
           ? "PROPER_NOUN_PHRASE"
@@ -374,6 +409,10 @@ function createDerivedVerbAdverbCandidates(tokens: SemanticToken[]) {
     const adverb = tokens[index + 1];
 
     if (!verb || !adverb) {
+      continue;
+    }
+
+    if (!isWithinSingleSegment([verb, adverb])) {
       continue;
     }
 
@@ -600,15 +639,48 @@ function isSalientAbstractSingleNoun({
     isGenericTerm(normalized) ||
     isLikelyAdjective(normalized) ||
     isLikelyGerund(normalized) ||
-    !isNominalConceptTerm(normalized)
+    (!isNominalConceptTerm(normalized) && !hasStructuralSimpleNounEvidence({
+      normalized,
+      previous,
+      next,
+    }))
   ) {
     return false;
   }
 
   return (
+    hasStructuralSimpleNounEvidence({
+      normalized,
+      previous,
+      next,
+    }) ||
     (index === 1 && STRUCTURAL_SINGLE_NOUN_PRECEDERS.has(previous)) ||
     STRUCTURAL_SINGLE_NOUN_FOLLOWERS.has(previous) ||
     STRUCTURAL_SINGLE_NOUN_FOLLOWERS.has(next)
+  );
+}
+
+function hasStructuralSimpleNounEvidence({
+  normalized,
+  previous,
+  next,
+}: {
+  normalized: string;
+  previous: string;
+  next: string;
+}) {
+  if (
+    next &&
+    !isSemanticStopword(next) &&
+    (isLikelyNoun(next) || isLikelyModifier(next))
+  ) {
+    return false;
+  }
+
+  return (
+    normalized.length >= 7 &&
+    STRUCTURAL_SINGLE_NOUN_PRECEDERS.has(previous) &&
+    !isLikelyInfinitive(normalized)
   );
 }
 
@@ -625,11 +697,50 @@ function isConjugatedVerbArticleNounPhrase(normalizedValues: string[]) {
   );
 }
 
+function isConjugatedVerbInfinitivePhrase(normalizedValues: string[]) {
+  const meaningfulValues = normalizedValues.filter(
+    (value) => !SEMANTIC_CONNECTORS.has(value),
+  );
+  const [first, second] = meaningfulValues;
+
+  return Boolean(
+    first &&
+      second &&
+      isLikelyPresentVerb(first) &&
+      isLikelyInfinitive(second),
+  );
+}
+
+function isTemporalComplementFragment(normalizedValues: string[]) {
+  const [first] = normalizedValues;
+
+  return Boolean(first && TEMPORAL_COMPLEMENT_HEADS.has(first));
+}
+
+function isActionObjectPhrase(normalizedValues: string[]) {
+  const [first, second, third] = normalizedValues;
+
+  return Boolean(
+    first &&
+      second &&
+      third &&
+      normalizedValues.length === 3 &&
+      isLikelyInfinitive(first) &&
+      !isGenericTerm(first) &&
+      ["el", "la", "los", "las", "un", "una", "unos", "unas"].includes(second) &&
+      isLikelyNoun(third),
+  );
+}
+
 function isLikelyPresentVerb(value: string) {
   return /^[a-zñ]{5,}(a|e|an|en)$/u.test(value) &&
     !isNominalConceptTerm(value) &&
     !isLikelyAdjective(value) &&
     !isLikelyGerund(value);
+}
+
+function isLikelyInfinitive(value: string) {
+  return /^[a-zñ]{5,}(ar|er|ir)$/u.test(value);
 }
 
 function nominalizeEligibleVerb(token: SemanticToken) {
@@ -723,8 +834,14 @@ function isGenericTerm(value: string) {
   return GENERIC_TERMS.has(value) || GENERIC_VERBS.has(value);
 }
 
-function isLikelySentenceInitialOnly(token: SemanticToken) {
-  return token.start === 0 && /^[\p{Lu}][\p{Ll}]+$/u.test(token.text);
+function isLikelySentenceInitialOnly(
+  token: SemanticToken,
+  previousToken?: SemanticToken,
+) {
+  return (
+    (!previousToken || previousToken.segmentId !== token.segmentId) &&
+    /^[\p{Lu}][\p{Ll}]+$/u.test(token.text)
+  );
 }
 
 function formatSemanticPhraseLabel(
@@ -750,4 +867,14 @@ function preserveVisibleToken(value: string) {
 
 function stemSemanticToken(value: string) {
   return stemSpanishToken(value);
+}
+
+function isWithinSingleSegment(tokens: SemanticToken[]) {
+  const [first] = tokens;
+
+  if (!first) {
+    return true;
+  }
+
+  return tokens.every((token) => token.segmentId === first.segmentId);
 }

@@ -15,6 +15,7 @@ import {
   createCompactConceptIdentityKey,
   createConceptIdentity,
   deriveConceptAcronym,
+  isDerivedAcronymLookupCandidate,
   isConceptIdentityLookupCandidate,
   normalizeConceptIdentityLabel,
 } from "@/features/concepts/concept-identity";
@@ -440,7 +441,7 @@ function resolveIdentityCandidate(
     candidate.text,
     "ALIAS",
   ) ?? resolveIndexedIdentity(
-    candidate.normalizedKey.length > 1
+    isDerivedAcronymLookupCandidate(candidate.text)
       ? index.acronym.get(candidate.acronymKey) ?? []
       : [],
     candidate.text,

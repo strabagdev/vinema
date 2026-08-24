@@ -29,6 +29,19 @@ export type ConceptResolutionResult =
     };
 
 const CONNECTOR_WORDS = new Set(["de", "del", "la", "las", "el", "los", "y", "and"]);
+const ACRONYM_PRONOUN_BLOCKLIST = new Set([
+  "me",
+  "te",
+  "se",
+  "lo",
+  "la",
+  "le",
+  "nos",
+  "os",
+  "mi",
+  "tu",
+  "su",
+]);
 
 export function createConceptIdentity(context: Context): ConceptIdentity {
   const aliases = normalizeAliasList(context.aliases ?? []);
@@ -264,10 +277,23 @@ function normalizeAliasList(values: string[]) {
   return result;
 }
 
-function isDerivedAcronymLookupCandidate(value: string) {
+export function isDerivedAcronymLookupCandidate(value: string) {
+  const text = value.trim();
   const normalizedText = normalizeConceptIdentityLabel(value);
 
-  return normalizedText.length > 1 && !isSingleStopword(normalizedText);
+  if (
+    normalizedText.length <= 1 ||
+    isSingleStopword(normalizedText) ||
+    ACRONYM_PRONOUN_BLOCKLIST.has(normalizedText)
+  ) {
+    return false;
+  }
+
+  if (normalizedText.length === 2) {
+    return /^[A-ZÑ0-9]{2}$/u.test(text);
+  }
+
+  return true;
 }
 
 function isSingleStopword(value: string) {

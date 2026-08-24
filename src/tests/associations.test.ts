@@ -609,6 +609,63 @@ describe("association scoring", () => {
       "control-polvo",
     ]);
   });
+
+  it("does not recover memories from isolated temporal words or generic verbs", () => {
+    const suggestions = suggestAssociations(
+      buildAssociationIndex({
+        nodes: [
+          node({
+            id: "maniobra-retroceso",
+            content:
+              "Antes de iniciar una maniobra en retroceso con equipos móviles se revisa la visibilidad del operador.",
+          }),
+          node({
+            id: "cruces-senalizacion",
+            content:
+              "Mantener señalización clara en cruces donde interactúan peatones y equipos móviles.",
+          }),
+          node({
+            id: "interaccion-equipos",
+            content:
+              "Mantener distancia operacional entre trabajadores y equipos móviles durante la circulación.",
+          }),
+        ],
+      }),
+      {
+        text: "Durante las últimas semanas me cuesta conciliar el sueño cuando uso el teléfono justo antes de acostarme. Dejar la pantalla una hora antes y mantener un horario regular parece mejorar mi descanso al día siguiente.",
+        limit: 5,
+      },
+    );
+
+    expect(suggestions).toEqual([]);
+  });
+
+  it("allows generic verbs only when their object or phrase is shared", () => {
+    const suggestions = suggestAssociations(
+      buildAssociationIndex({
+        nodes: [
+          node({
+            id: "horario",
+            content:
+              "Mantener horario regular ayuda a ordenar la rutina diaria.",
+          }),
+          node({
+            id: "senalizacion",
+            content:
+              "Mantener señalización clara en cruces operacionales.",
+          }),
+        ],
+      }),
+      {
+        text: "Mantener horario regular mejora la planificación semanal.",
+        limit: 5,
+      },
+    );
+
+    expect(suggestions.map((suggestion) => suggestion.node.id)).toEqual([
+      "horario",
+    ]);
+  });
 });
 
 describe("concept suggestions", () => {
@@ -897,6 +954,56 @@ describe("concept suggestions", () => {
     );
 
     expect(labels).not.toContain("Disminuye la exposición");
+  });
+
+  it("keeps sleep capture concepts and memories isolated from mining vocabulary", () => {
+    const evaluation = evaluateCaptureInput({
+      text: "Durante las últimas semanas me cuesta conciliar el sueño cuando uso el teléfono justo antes de acostarme. Dejar la pantalla una hora antes y mantener un horario regular parece mejorar mi descanso al día siguiente.",
+      nodes: [
+        node({
+          id: "maniobra-retroceso",
+          content:
+            "Antes de iniciar una maniobra en retroceso con equipos móviles se revisa la visibilidad del operador.",
+        }),
+        node({
+          id: "cruces-senalizacion",
+          content:
+            "Mantener señalización clara en cruces donde interactúan peatones y equipos móviles.",
+        }),
+        node({
+          id: "interaccion-equipos",
+          content:
+            "Mantener distancia operacional entre trabajadores y equipos móviles durante la circulación.",
+        }),
+      ],
+      contexts: [
+        context({ id: "maniobra-equipo", name: "Maniobra del equipo" }),
+      ],
+      relations: [],
+    });
+    const labels = evaluation.conceptSuggestions.map((suggestion) =>
+      suggestion.kind === "existing" ? suggestion.label : suggestion.suggestedLabel,
+    );
+
+    expect(labels).toEqual(
+      expect.arrayContaining([
+        "Conciliar el sueño",
+        "Horario regular",
+        "Pantalla",
+        "Descanso",
+      ]),
+    );
+    expect(labels).not.toEqual(
+      expect.arrayContaining([
+        "Maniobra del equipo",
+        "Dejar",
+        "Antes de acostarme",
+        "acostarme Dejar",
+        "Cuesta conciliar",
+        "Parece mejorar",
+      ]),
+    );
+    expect(evaluation.recoveryMatches).toEqual([]);
   });
 
   it("does not create current-input emerging noise for empty or generic text", () => {
