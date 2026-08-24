@@ -130,9 +130,9 @@ export function mapRemoteConceptToLocalContext(concept: ConceptEntity): Context 
     version: concept.version,
     createdAt: concept.createdAt,
     updatedAt: concept.updatedAt,
-    archivedAt: null,
     aliases: concept.aliases,
     normalizedAliases: concept.normalizedAliases,
+    archivedAt: concept.archivedAt ?? null,
   });
 }
 

@@ -46,6 +46,7 @@ export function normalizeStoredContext(value: unknown): Context | null {
   }
 
   const record = value as Partial<Context>;
+  const archivedAt = typeof record.archivedAt === "string" ? record.archivedAt : null;
 
   if (
     typeof record.id !== "string" ||
@@ -84,7 +85,7 @@ export function normalizeStoredContext(value: unknown): Context | null {
         : 1,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
-    archivedAt: null,
+    archivedAt,
   });
 }
 

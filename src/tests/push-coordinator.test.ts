@@ -485,6 +485,9 @@ function createSetup(input: {
     getCapture: async () => {
       throw new Error("getCapture is not used by push coordinator tests.");
     },
+    getEntity: async () => {
+      throw new Error("getEntity is not used by push coordinator tests.");
+    },
     pull: async () => ({ changes: [], nextCursor: "0", hasMore: false }),
     push,
   };

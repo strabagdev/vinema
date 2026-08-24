@@ -1,4 +1,8 @@
-import type { PullResponse } from "@vinema/sync-contracts";
+import type {
+  CaptureConceptEntity,
+  PullResponse,
+  SyncEntityResponse,
+} from "@vinema/sync-contracts";
 import {
   SyncClientError,
   type SyncClient,
@@ -6,6 +10,7 @@ import {
 import {
   createRemoteChangeApplier,
   type RemoteChangeApplierResult,
+  type RemoteSyncChange,
   type RemoteChangeApplierTransaction,
 } from "@/features/sync/remote-change-applier";
 import {
@@ -75,7 +80,7 @@ export type PullCoordinatorConfig = {
 export type CreatePullCoordinatorInput = {
   workspaceId: string;
   deviceId: string;
-  syncClient: Pick<SyncClient, "pull">;
+  syncClient: Pick<SyncClient, "pull" | "getEntity">;
   config?: PullCoordinatorConfig;
   clock?: () => string;
   logger?: PullCoordinatorLogger;
@@ -89,6 +94,8 @@ type RunState = {
   controller: AbortController;
   result: PullCoordinatorResult;
 };
+
+type PullCoordinatorSyncClient = Pick<SyncClient, "pull" | "getEntity">;
 
 const sharedRunRegistry = createPullCoordinatorRunRegistry();
 
@@ -218,7 +225,7 @@ export function createPullCoordinatorRunRegistry(): PullCoordinatorRunRegistry {
 async function processPullBatches(input: {
   workspaceId: string;
   deviceId: string;
-  syncClient: Pick<SyncClient, "pull">;
+  syncClient: PullCoordinatorSyncClient;
   config: NormalizedConfig;
   clock: () => string;
   logger?: PullCoordinatorLogger;
@@ -263,6 +270,7 @@ async function processPullBatches(input: {
       deviceId: input.deviceId,
       response,
       appliedAt: input.clock(),
+      syncClient: input.syncClient,
       remoteChangeApplier: input.remoteChangeApplier,
     });
     if (applied.applied > 0) {
@@ -317,15 +325,23 @@ async function applyBatchAtomically({
   deviceId,
   response,
   appliedAt,
+  syncClient,
   remoteChangeApplier,
 }: {
   workspaceId: string;
   deviceId: string;
   response: PullResponse;
   appliedAt: string;
+  syncClient: Pick<SyncClient, "getEntity">;
   remoteChangeApplier: ReturnType<typeof createRemoteChangeApplier>;
 }) {
   const db = await getVinemaDb();
+  const recoveredResponse = await recoverMissingRelationDependencies({
+    db,
+    workspaceId,
+    response,
+    syncClient,
+  });
   const transaction = db.transaction(
     [
       NODES_STORE,
@@ -341,7 +357,7 @@ async function applyBatchAtomically({
   try {
     const result = await remoteChangeApplier.applyChanges({
       transaction: transaction as unknown as RemoteChangeApplierTransaction,
-      changes: response.changes,
+      changes: recoveredResponse.changes,
       workspaceId,
       deviceId,
     });
@@ -349,7 +365,7 @@ async function applyBatchAtomically({
       store: transaction.objectStore(SYNC_METADATA_STORE),
       workspaceId,
       deviceId,
-      cursor: response.nextCursor,
+      cursor: recoveredResponse.nextCursor,
       at: appliedAt,
     });
     await transaction.done;
@@ -359,6 +375,189 @@ async function applyBatchAtomically({
     await transaction.done.catch(() => undefined);
     throw error;
   }
+}
+
+async function recoverMissingRelationDependencies({
+  db,
+  workspaceId,
+  response,
+  syncClient,
+}: {
+  db: Awaited<ReturnType<typeof getVinemaDb>>;
+  workspaceId: string;
+  response: PullResponse;
+  syncClient: Pick<SyncClient, "getEntity">;
+}): Promise<PullResponse> {
+  const required = collectRequiredRelationDependencies(response);
+
+  if (required.captures.size === 0 && required.concepts.size === 0) {
+    return response;
+  }
+
+  const presentInBatch = collectEntityIdsInBatch(response);
+  const recovered: RemoteSyncChange[] = [];
+
+  for (const captureId of required.captures) {
+    if (presentInBatch.captures.has(captureId)) {
+      continue;
+    }
+
+    const existing = await db.get(NODES_STORE, captureId);
+    if (existing) {
+      continue;
+    }
+
+    const entity = await fetchRecoverableDependency({
+      syncClient,
+      workspaceId,
+      entityType: "capture",
+      entityId: captureId,
+    });
+    if (entity) {
+      recovered.push(toDependencyRecoveryChange(entity));
+    }
+  }
+
+  for (const conceptId of required.concepts) {
+    if (presentInBatch.concepts.has(conceptId)) {
+      continue;
+    }
+
+    const existing = await db.get(CONTEXTS_STORE, conceptId);
+    if (existing) {
+      continue;
+    }
+
+    const entity = await fetchRecoverableDependency({
+      syncClient,
+      workspaceId,
+      entityType: "concept",
+      entityId: conceptId,
+    });
+    if (entity) {
+      recovered.push(toDependencyRecoveryChange(entity));
+    }
+  }
+
+  if (recovered.length === 0) {
+    return response;
+  }
+
+  return {
+    ...response,
+    changes: [...recovered, ...response.changes],
+  };
+}
+
+function collectRequiredRelationDependencies(response: PullResponse) {
+  const captures = new Set<string>();
+  const concepts = new Set<string>();
+
+  for (const change of response.changes) {
+    if (
+      change.entityType !== "captureConcept" ||
+      change.operation === "archive" ||
+      change.entity.archivedAt != null
+    ) {
+      continue;
+    }
+
+    const entity = change.entity as CaptureConceptEntity;
+    captures.add(entity.captureId);
+    concepts.add(entity.conceptId);
+  }
+
+  return { captures, concepts };
+}
+
+function collectEntityIdsInBatch(response: PullResponse) {
+  const captures = new Set<string>();
+  const concepts = new Set<string>();
+
+  for (const change of response.changes) {
+    if (change.entityType === "capture") {
+      captures.add(change.entity.id);
+    } else if (change.entityType === "concept") {
+      concepts.add(change.entity.id);
+    }
+  }
+
+  return { captures, concepts };
+}
+
+async function fetchRecoverableDependency({
+  syncClient,
+  workspaceId,
+  entityType,
+  entityId,
+}: {
+  syncClient: Pick<SyncClient, "getEntity">;
+  workspaceId: string;
+  entityType: "capture" | "concept";
+  entityId: string;
+}) {
+  try {
+    const response = await syncClient.getEntity({
+      workspaceId,
+      entityType,
+      entityId,
+    });
+
+    assertRecoveredDependencyMatches({
+      response,
+      workspaceId,
+      entityType,
+      entityId,
+    });
+
+    return response;
+  } catch (error) {
+    if (error instanceof SyncClientError && error.status === 404) {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+function assertRecoveredDependencyMatches({
+  response,
+  workspaceId,
+  entityType,
+  entityId,
+}: {
+  response: SyncEntityResponse;
+  workspaceId: string;
+  entityType: "capture" | "concept";
+  entityId: string;
+}) {
+  if (
+    response.entityType !== entityType ||
+    response.entity.id !== entityId ||
+    response.entity.workspaceId !== workspaceId
+  ) {
+    throw new SyncClientError({
+      code: "INVALID_RESPONSE",
+      message: "La dependencia remota recuperada no coincide con la solicitud de sincronizacion.",
+      details: {
+        expected: { workspaceId, entityType, entityId },
+        actual: {
+          workspaceId: response.entity.workspaceId,
+          entityType: response.entityType,
+          entityId: response.entity.id,
+        },
+      },
+    });
+  }
+}
+
+function toDependencyRecoveryChange(entity: SyncEntityResponse): RemoteSyncChange {
+  return {
+    sequence: "0",
+    entityType: entity.entityType,
+    operation: entity.entity.archivedAt ? "archive" : "upsert",
+    entity: entity.entity,
+  };
 }
 
 async function readPullCursor(workspaceId: string, deviceId: string) {

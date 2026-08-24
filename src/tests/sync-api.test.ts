@@ -70,6 +70,12 @@ describe("Vinema sync API", () => {
         url: `/api/sync/entities/capture/55555555-5555-4555-8555-555555555555?workspaceId=${workspaceId}`,
       }),
     ).resolves.toMatchObject({ statusCode: 401 });
+    await expect(
+      app.inject({
+        method: "GET",
+        url: `/api/sync/entities/concept/55555555-5555-4555-8555-555555555555?workspaceId=${workspaceId}`,
+      }),
+    ).resolves.toMatchObject({ statusCode: 401 });
   });
 
   it("allows the deployed web origin and auth headers through CORS", async () => {
@@ -255,6 +261,117 @@ describe("Vinema sync API", () => {
     });
     expect(response.body).not.toContain(workspaceId);
     expect(response.body).not.toContain(apiKey);
+  });
+
+  it("returns a generic sync entity for dependency recovery", async () => {
+    const store = new InMemorySyncStore([workspaceId]);
+    const app = createVinemaApiServer({ store, apiKey });
+    const conceptId = "55555555-5555-4555-8555-555555555555";
+    await push(app, [
+      conceptMutation({
+        mutationId: "44444444-4444-4444-8444-444444444444",
+        entityId: conceptId,
+        baseVersion: null,
+      }),
+    ]);
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/sync/entities/concept/${conceptId}?workspaceId=${workspaceId}`,
+      headers: authHeaders(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      entityType: "concept",
+      entity: {
+        id: conceptId,
+        workspaceId,
+        label: "Rare Carbon",
+        version: 1,
+      },
+    });
+    expect(response.body).not.toContain(apiKey);
+  });
+
+  it("validates generic sync entity type and id before reading the store", async () => {
+    const store = new InMemorySyncStore([workspaceId]);
+    const app = createVinemaApiServer({ store, apiKey });
+
+    const invalidType = await app.inject({
+      method: "GET",
+      url: `/api/sync/entities/user/55555555-5555-4555-8555-555555555555?workspaceId=${workspaceId}`,
+      headers: authHeaders(),
+    });
+    const invalidId = await app.inject({
+      method: "GET",
+      url: `/api/sync/entities/concept/not-a-uuid?workspaceId=${workspaceId}`,
+      headers: authHeaders(),
+    });
+
+    expect(invalidType.statusCode).toBe(400);
+    expect(invalidType.json()).toMatchObject({ error: { code: "INVALID_REQUEST" } });
+    expect(invalidId.statusCode).toBe(400);
+    expect(invalidId.json()).toMatchObject({ error: { code: "INVALID_REQUEST" } });
+  });
+
+  it("does not reveal generic sync entities from another workspace", async () => {
+    const store = new InMemorySyncStore([workspaceId, otherWorkspaceId]);
+    const app = createVinemaApiServer({ store, apiKey });
+    const foreignConceptId = "55555555-5555-4555-8555-555555555555";
+    await processPush(store, {
+      workspaceId: otherWorkspaceId,
+      deviceId,
+      mutations: [
+        conceptMutation({
+          mutationId: "44444444-4444-4444-8444-444444444444",
+          entityId: foreignConceptId,
+          baseVersion: null,
+        }),
+      ],
+    });
+
+    const foreign = await app.inject({
+      method: "GET",
+      url: `/api/sync/entities/concept/${foreignConceptId}?workspaceId=${workspaceId}`,
+      headers: authHeaders(),
+    });
+    const missing = await app.inject({
+      method: "GET",
+      url: `/api/sync/entities/concept/77777777-7777-4777-8777-777777777777?workspaceId=${workspaceId}`,
+      headers: authHeaders(),
+    });
+
+    expect(foreign.statusCode).toBe(404);
+    expect(missing.statusCode).toBe(404);
+    expect(foreign.json()).toEqual(missing.json());
+  });
+
+  it("returns archived generic sync entities with their archivedAt state", async () => {
+    const store = new InMemorySyncStore([workspaceId]);
+    const app = createVinemaApiServer({ store, apiKey });
+    const archivedAt = "2026-07-26T19:00:00.000Z";
+    const conceptId = "55555555-5555-4555-8555-555555555555";
+    await push(app, [
+      conceptMutation({
+        mutationId: "44444444-4444-4444-8444-444444444444",
+        entityId: conceptId,
+        baseVersion: null,
+        archivedAt,
+      }),
+    ]);
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/sync/entities/concept/${conceptId}?workspaceId=${workspaceId}`,
+      headers: authHeaders(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      entityType: "concept",
+      entity: { id: conceptId, archivedAt },
+    });
   });
 
   it("rejects wrong workspaces and missing captures from the conflict entity endpoint", async () => {

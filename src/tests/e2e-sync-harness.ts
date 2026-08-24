@@ -433,6 +433,22 @@ function createControllableSyncClient(
         updatedAt: stored.entity.updatedAt,
       };
     },
+    async getEntity(input) {
+      const stored = await remoteStore.getEntity(
+        input.workspaceId,
+        input.entityType,
+        input.entityId,
+      );
+      if (!stored) {
+        throw new SyncClientError({
+          code: "UNKNOWN_ERROR",
+          status: 404,
+          message: "La entidad no existe.",
+        });
+      }
+
+      return stored;
+    },
     async push(input: PushRequest & { signal?: AbortSignal }): Promise<PushResponse> {
       await maybeBlockUntilAbort(input.signal, blockPush);
       blockPush = false;

@@ -4,12 +4,14 @@ import {
   pullResponseSchema,
   pushRequestSchema,
   pushResponseSchema,
+  syncEntityResponseSchema,
   syncErrorSchema,
   type PullRequest,
   type PullResponse,
   type PushRequest,
   type PushResponse,
   type CaptureEntityResponse,
+  type SyncEntityResponse,
   type SyncError,
 } from "@vinema/sync-contracts";
 import type { AccessTokenProvider } from "@/features/auth/access-token-provider";
@@ -59,6 +61,7 @@ export type SyncHealthResponse = {
 export type SyncClient = {
   health(input?: SyncClientRequestOptions): Promise<SyncHealthResponse>;
   getCapture(input: SyncClientCaptureInput): Promise<CaptureEntityResponse>;
+  getEntity(input: SyncClientEntityInput): Promise<SyncEntityResponse>;
   push(input: SyncClientPushInput): Promise<PushResponse>;
   pull(input: SyncClientPullInput): Promise<PullResponse>;
 };
@@ -80,6 +83,9 @@ export type SyncClientCaptureInput = {
   workspaceId: PullRequest["workspaceId"];
   entityId: string;
 } & SyncClientRequestOptions;
+export type SyncClientEntityInput = SyncClientCaptureInput & {
+  entityType: SyncEntityResponse["entityType"];
+};
 export type SyncClientPullInput = {
   workspaceId: PullRequest["workspaceId"];
   cursor?: PullRequest["cursor"];
@@ -128,6 +134,34 @@ export function createSyncClient({
       });
       const body = await readJson(response);
       const parsed = captureEntityResponseSchema.safeParse(body);
+
+      if (!parsed.success) {
+        throw invalidResponse(parsed.error.issues);
+      }
+
+      return parsed.data;
+    },
+
+    async getEntity(input) {
+      const token = resolveAccessToken(accessToken, accessTokenProvider);
+      const { signal, workspaceId, entityId, entityType } = input;
+      const url = buildEntityUrl(normalizedBaseUrl, {
+        workspaceId,
+        entityId,
+        entityType,
+      });
+      const response = await request({
+        fetchFn,
+        timeoutMs,
+        url,
+        signal,
+        init: {
+          method: "GET",
+          headers: authorizationHeaders(token),
+        },
+      });
+      const body = await readJson(response);
+      const parsed = syncEntityResponseSchema.safeParse(body);
 
       if (!parsed.success) {
         throw invalidResponse(parsed.error.issues);
@@ -433,6 +467,18 @@ function buildCaptureUrl(
   const url = buildUrl(
     baseUrl,
     `/api/sync/entities/capture/${encodeURIComponent(input.entityId)}`,
+  );
+  url.searchParams.set("workspaceId", input.workspaceId);
+  return url;
+}
+
+function buildEntityUrl(
+  baseUrl: string,
+  input: Pick<SyncClientEntityInput, "workspaceId" | "entityId" | "entityType">,
+) {
+  const url = buildUrl(
+    baseUrl,
+    `/api/sync/entities/${encodeURIComponent(input.entityType)}/${encodeURIComponent(input.entityId)}`,
   );
   url.searchParams.set("workspaceId", input.workspaceId);
   return url;

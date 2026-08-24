@@ -4,6 +4,7 @@ import Fastify, {
   type FastifyReply,
   type FastifyRequest,
 } from "fastify";
+import { z } from "zod";
 import {
   captureEntityResponseSchema,
   currentSessionResponseSchema,
@@ -20,6 +21,7 @@ import {
   refreshSessionResponseSchema,
   registerRequestSchema,
   registerResponseSchema,
+  syncEntityResponseSchema,
 } from "@vinema/sync-contracts";
 import { AuthError, authErrorResponse } from "../auth/auth-errors";
 import type { AuthTokenConfig } from "../auth/auth-config";
@@ -322,6 +324,61 @@ export function createVinemaApiServer({
     }));
   });
 
+  app.get("/api/sync/entities/:entityType/:entityId", async (request, reply) => {
+    const parsedParams = syncEntityParamsSchema.safeParse(request.params);
+    const query = request.query as { workspaceId?: unknown };
+    const parsed = pullRequestSchema.pick({ workspaceId: true }).safeParse(query);
+
+    if (!parsed.success || !parsedParams.success) {
+      return reply.status(400).send(
+        syncError(
+          "INVALID_REQUEST",
+          "La solicitud no es valida.",
+          [
+            ...(parsed.success ? [] : parsed.error.issues),
+            ...(parsedParams.success ? [] : parsedParams.error.issues),
+          ],
+        ),
+      );
+    }
+
+    const authContext = authorizeSyncRequest({
+      request,
+      workspaceId: parsed.data.workspaceId,
+      tokenConfig,
+      apiKey,
+    });
+    if (authContext instanceof AuthError) {
+      return sendAuthError(reply, authContext);
+    }
+
+    if (parsed.data.workspaceId !== authContext.workspaceId) {
+      return reply
+        .status(403)
+        .send(authErrorResponse("WORKSPACE_FORBIDDEN", "Workspace no permitido."));
+    }
+
+    if (!(await store.workspaceExists(parsed.data.workspaceId))) {
+      return reply
+        .status(404)
+        .send(syncError("WORKSPACE_NOT_FOUND", "El workspace no existe."));
+    }
+
+    const stored = await store.getEntity(
+      parsed.data.workspaceId,
+      parsedParams.data.entityType,
+      parsedParams.data.entityId,
+    );
+
+    if (!stored) {
+      return reply
+        .status(404)
+        .send(syncError("ENTITY_NOT_FOUND", "La entidad no existe."));
+    }
+
+    return reply.send(syncEntityResponseSchema.parse(stored));
+  });
+
   app.post("/api/knowledge/reset", async (request, reply) => {
     const parsed = knowledgeResetRequestSchema.safeParse(request.body);
 
@@ -371,6 +428,11 @@ export function createVinemaApiServer({
 
   return app;
 }
+
+const syncEntityParamsSchema = z.object({
+  entityType: z.enum(["capture", "concept", "captureConcept"]),
+  entityId: z.uuid(),
+});
 
 function authorizeSyncRequest({
   request,
