@@ -41,6 +41,9 @@ export function deriveMemoryHealthPresentation({
     ? health.pendingMutations + health.processingMutations
     : syncState.pendingMutations + syncState.processingMutations;
   const failedCount = health?.failedMutations ?? syncState.failedMutations;
+  const syncErrorCoveredByVerification =
+    health ? isSyncErrorCoveredByVerification(syncState, health) : false;
+  const hasSyncError = Boolean(syncState.lastError && !syncErrorCoveredByVerification);
 
   if (syncState.authentication === "AUTHENTICATED_LOCAL") {
     return createPresentation({
@@ -52,7 +55,7 @@ export function deriveMemoryHealthPresentation({
     });
   }
 
-  if (localError || failedCount > 0 || health?.status === "ERROR" || syncState.lastError) {
+  if (localError || failedCount > 0 || health?.status === "ERROR" || hasSyncError) {
     const headline = localError
       ? "No se pudo verificar la memoria"
       : failedCount === 1
@@ -129,6 +132,21 @@ export function deriveMemoryHealthPresentation({
     conflictCount,
     pendingCount,
   });
+}
+
+function isSyncErrorCoveredByVerification(
+  syncState: SyncState,
+  health: MemorySyncHealth,
+) {
+  if (!syncState.lastError) {
+    return false;
+  }
+
+  if (health.lastVerificationStatus !== "PASSED" || !health.lastVerificationAt) {
+    return false;
+  }
+
+  return health.lastVerificationAt.getTime() >= Date.parse(syncState.lastError.occurredAt);
 }
 
 function createPresentation({

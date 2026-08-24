@@ -130,6 +130,29 @@ export async function loadMemorySyncSnapshot({
   };
 }
 
+export async function recordMemoryVerificationResult({
+  workspaceId,
+  deviceId,
+  status,
+  errorMessage = null,
+  at = new Date().toISOString(),
+}: {
+  workspaceId: string;
+  deviceId: string;
+  status: "PASSED" | "FAILED";
+  errorMessage?: string | null;
+  at?: string;
+}) {
+  const metadataRepository = new IndexedDbSyncMetadataRepository();
+  return metadataRepository.recordMemoryVerification({
+    workspaceId,
+    deviceId,
+    status,
+    errorMessage,
+    at,
+  });
+}
+
 export async function verifyCurrentMemoryConvergence({
   workspaceId,
   deviceId,

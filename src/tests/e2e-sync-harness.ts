@@ -237,6 +237,9 @@ export async function setPullCursor(
     lastSyncAttemptAt: existing?.lastSyncAttemptAt ?? null,
     lastSyncErrorCode: existing?.lastSyncErrorCode ?? null,
     lastSyncErrorMessage: existing?.lastSyncErrorMessage ?? null,
+    lastMemoryVerificationAt: existing?.lastMemoryVerificationAt ?? null,
+    lastMemoryVerificationStatus: existing?.lastMemoryVerificationStatus ?? null,
+    lastMemoryVerificationError: existing?.lastMemoryVerificationError ?? null,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   });

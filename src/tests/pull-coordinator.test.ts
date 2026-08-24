@@ -1022,6 +1022,9 @@ async function setMetadataCursor(cursor: string) {
     lastSyncAttemptAt: null,
     lastSyncErrorCode: null,
     lastSyncErrorMessage: null,
+    lastMemoryVerificationAt: null,
+    lastMemoryVerificationStatus: null,
+    lastMemoryVerificationError: null,
     createdAt: now,
     updatedAt: now,
   });

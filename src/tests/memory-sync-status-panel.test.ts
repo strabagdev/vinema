@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   loadMemorySyncSnapshot: vi.fn(),
   listCaptureConflicts: vi.fn(),
   offline: vi.fn(),
+  recordMemoryVerificationResult: vi.fn(),
   reconcile: vi.fn(),
   syncNow: vi.fn(),
   synced: vi.fn(),
@@ -40,6 +41,7 @@ vi.mock("@/features/sync/observability/memory-sync-observability", () => ({
   abbreviate: (value: string | null | undefined) => value ?? "no disponible",
   diagnoseCurrentCaptureSync: vi.fn(),
   loadMemorySyncSnapshot: mocks.loadMemorySyncSnapshot,
+  recordMemoryVerificationResult: mocks.recordMemoryVerificationResult,
   toSafeMemorySyncSummary: vi.fn(() => "safe summary"),
   verifyCurrentMemoryConvergence: vi.fn(),
 }));
@@ -65,6 +67,7 @@ describe("MemorySyncStatusPanel", () => {
     vi.clearAllMocks();
     mocks.useAuth.mockReturnValue(authValue());
     mocks.loadMemorySyncSnapshot.mockResolvedValue(snapshotFixture());
+    mocks.recordMemoryVerificationResult.mockResolvedValue(null);
     mocks.listCaptureConflicts.mockResolvedValue([captureConflictFixture()]);
     mocks.reconcile.mockResolvedValue(reconciliationFixture());
   });
@@ -307,6 +310,145 @@ describe("MemorySyncStatusPanel", () => {
     expect(screen.querySelector("[data-memory-sync-status-dot]")?.getAttribute("title")).toBe(
       "memoria integra",
     );
+  });
+
+  it("persists successful memory verification and restores it after close, reopen, and remount", async () => {
+    const verifiedAt = new Date("2026-08-03T12:01:00.000Z");
+    let persistedSnapshot = snapshotFixture({
+      status: "ERROR",
+      lastVerificationAt: null,
+      lastVerificationStatus: null,
+      lastVerificationError: null,
+    });
+    mocks.useAuth.mockReturnValue(authValue({
+      syncState: {
+        ...initialSyncState,
+        lastError: {
+          source: "PULL",
+          code: "MISSING_RELATION_DEPENDENCY",
+          message: "La relacion remota requiere captura y concepto locales.",
+          occurredAt: "2026-08-03T12:00:00.000Z",
+        },
+      },
+    }));
+    mocks.loadMemorySyncSnapshot.mockImplementation(async () => persistedSnapshot);
+    mocks.recordMemoryVerificationResult.mockImplementation(async () => {
+      persistedSnapshot = snapshotFixture({
+        status: "SYNCED",
+        lastVerificationAt: verifiedAt,
+        lastVerificationStatus: "PASSED",
+        lastVerificationError: null,
+      });
+      return null;
+    });
+    const screen = await renderPanel();
+
+    await click(screen.querySelector("button[aria-label='Abrir Estado de la memoria']"));
+    expect(screen.textContent).toContain("La memoria requiere atencion");
+    expect(screen.textContent).toContain("Ultima verificacion sin registro");
+
+    await click(getButton(screen, "Verificar memoria"));
+
+    expect(mocks.recordMemoryVerificationResult).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      deviceId: "device-1",
+      status: "PASSED",
+    });
+    expect(screen.textContent).toContain("Memoria integra");
+    expect(screen.textContent).not.toContain("La memoria requiere atencion");
+    expect(screen.textContent).not.toContain("Ultima verificacion sin registro");
+
+    await click(screen.querySelector("button[aria-label='Cerrar Estado de la memoria']"));
+    await click(screen.querySelector("button[aria-label='Abrir Estado de la memoria']"));
+    expect(screen.textContent).toContain("Memoria integra");
+    expect(screen.textContent).not.toContain("Ultima verificacion sin registro");
+
+    await act(async () => {
+      mountedRoot?.unmount();
+      mountedRoot = null;
+      await flushPromises();
+    });
+    const reloaded = await renderPanel();
+    await click(reloaded.querySelector("button[aria-label='Abrir Estado de la memoria']"));
+    expect(reloaded.textContent).toContain("Memoria integra");
+    expect(reloaded.textContent).not.toContain("Ultima verificacion sin registro");
+  });
+
+  it("keeps a persisted successful verification when stale sync events refresh the snapshot", async () => {
+    const verifiedAt = new Date("2026-08-03T12:01:00.000Z");
+    mocks.useAuth.mockReturnValue(authValue({
+      syncState: {
+        ...initialSyncState,
+        lastError: {
+          source: "PULL",
+          code: "STALE_ERROR",
+          message: "Error anterior a la verificacion.",
+          occurredAt: "2026-08-03T12:00:00.000Z",
+        },
+      },
+    }));
+    mocks.loadMemorySyncSnapshot.mockResolvedValue(snapshotFixture({
+      status: "SYNCED",
+      lastVerificationAt: verifiedAt,
+      lastVerificationStatus: "PASSED",
+      lastVerificationError: null,
+    }));
+    const screen = await renderPanel();
+
+    await click(screen.querySelector("button[aria-label='Abrir Estado de la memoria']"));
+    expect(screen.textContent).toContain("Memoria integra");
+
+    await act(async () => {
+      const { syncEventBuffer } = await import(
+        "@/features/sync/observability/sync-event-buffer"
+      );
+      syncEventBuffer.append({
+        type: "PULL_SUCCEEDED",
+        workspaceId: "workspace-1",
+        deviceId: "device-1",
+        count: 1,
+      });
+      await flushPromises();
+    });
+
+    expect(screen.textContent).toContain("Memoria integra");
+    expect(screen.textContent).not.toContain("La memoria requiere atencion");
+  });
+
+  it("persists failed verification causes and does not present memory as integral", async () => {
+    let persistedSnapshot = snapshotFixture({
+      status: "SYNCED",
+      lastVerificationStatus: "PASSED",
+    });
+    mocks.reconcile.mockResolvedValue(reconciliationFixture({
+      status: "DIVERGENCE_DETECTED",
+    }));
+    mocks.loadMemorySyncSnapshot.mockImplementation(async () => persistedSnapshot);
+    mocks.recordMemoryVerificationResult.mockImplementation(async () => {
+      persistedSnapshot = snapshotFixture({
+        status: "ERROR",
+        lastVerificationAt: new Date("2026-08-03T12:01:00.000Z"),
+        lastVerificationStatus: "FAILED",
+        lastVerificationError: "La verificacion detecto divergencia de memoria.",
+      });
+      return null;
+    });
+    const screen = await renderPanel();
+
+    await click(screen.querySelector("button[aria-label='Abrir Estado de la memoria']"));
+    await click(getButton(screen, "Verificar memoria"));
+
+    expect(mocks.recordMemoryVerificationResult).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      deviceId: "device-1",
+      status: "FAILED",
+      errorMessage: "La verificacion detecto divergencia de memoria.",
+    });
+    expect(screen.textContent).toContain("La memoria requiere atencion");
+    expect(screen.textContent).toContain(
+      "La verificacion detecto divergencia de memoria.",
+    );
+    expect(screen.textContent).not.toContain("Memoria integra");
   });
 
   it("shows a conflict diagnostic export action only when real conflicts exist", async () => {
@@ -660,6 +802,9 @@ function baseHealthFixture(): MemorySyncHealth {
       captureConcepts: 0,
     },
     lastSuccessfulSyncAt: new Date("2026-08-03T12:00:00.000Z"),
+    lastVerificationAt: new Date("2026-08-03T12:00:00.000Z"),
+    lastVerificationStatus: "PASSED",
+    lastVerificationError: null,
     lastPushAt: new Date("2026-08-03T12:00:00.000Z"),
     lastPullAt: new Date("2026-08-03T12:00:00.000Z"),
     localCursor: "42",
@@ -672,7 +817,14 @@ function baseHealthFixture(): MemorySyncHealth {
   };
 }
 
-function reconciliationFixture() {
+function reconciliationFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    ...reconciliationFixtureBase(),
+    ...overrides,
+  };
+}
+
+function reconciliationFixtureBase() {
   return {
     status: "MEMORY_INTEGRAL",
     phases: ["HEALTH_CHECK", "VERIFYING_CONVERGENCE", "MEMORY_INTEGRAL"],

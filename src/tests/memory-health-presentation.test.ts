@@ -160,6 +160,107 @@ describe("deriveMemoryHealthPresentation", () => {
       conflictCount: 2,
     });
   });
+
+  it("lets a newer successful memory verification cover a stale sync error", () => {
+    const presentation = deriveMemoryHealthPresentation({
+      health: healthFixture({
+        status: "SYNCED",
+        lastVerificationAt: new Date("2026-08-03T12:01:00.000Z"),
+        lastVerificationStatus: "PASSED",
+      }),
+      syncState: {
+        ...initialSyncState,
+        lastError: {
+          source: "PULL",
+          code: "STALE_ERROR",
+          message: "Error anterior a la verificacion.",
+          occurredAt: "2026-08-03T12:00:00.000Z",
+        },
+      },
+      verifying: false,
+      localError: null,
+    });
+
+    expect(presentation).toMatchObject({
+      status: "INTEGRAL",
+      headline: "Memoria integra",
+      severity: "success",
+    });
+  });
+
+  it("lets a newer sync error override a previous successful memory verification", () => {
+    const presentation = deriveMemoryHealthPresentation({
+      health: healthFixture({
+        status: "ERROR",
+        lastVerificationAt: new Date("2026-08-03T12:00:00.000Z"),
+        lastVerificationStatus: "PASSED",
+      }),
+      syncState: {
+        ...initialSyncState,
+        lastError: {
+          source: "PULL",
+          code: "NEW_ERROR",
+          message: "Error posterior a la verificacion.",
+          occurredAt: "2026-08-03T12:01:00.000Z",
+        },
+      },
+      verifying: false,
+      localError: null,
+    });
+
+    expect(presentation).toMatchObject({
+      status: "ERROR",
+      headline: "La memoria requiere atencion",
+      severity: "error",
+    });
+  });
+
+  it("returns to integral after a new successful verification covers the latest sync error", () => {
+    const presentation = deriveMemoryHealthPresentation({
+      health: healthFixture({
+        status: "SYNCED",
+        lastVerificationAt: new Date("2026-08-03T12:02:00.000Z"),
+        lastVerificationStatus: "PASSED",
+      }),
+      syncState: {
+        ...initialSyncState,
+        lastError: {
+          source: "PULL",
+          code: "RECOVERED_ERROR",
+          message: "Error previo a la nueva verificacion.",
+          occurredAt: "2026-08-03T12:01:00.000Z",
+        },
+      },
+      verifying: false,
+      localError: null,
+    });
+
+    expect(presentation).toMatchObject({
+      status: "INTEGRAL",
+      headline: "Memoria integra",
+      severity: "success",
+    });
+  });
+
+  it("keeps failed memory verification as requiring attention", () => {
+    const presentation = deriveMemoryHealthPresentation({
+      health: healthFixture({
+        status: "ERROR",
+        lastVerificationAt: new Date("2026-08-03T12:01:00.000Z"),
+        lastVerificationStatus: "FAILED",
+        lastVerificationError: "La verificacion detecto divergencia de memoria.",
+      }),
+      syncState: initialSyncState,
+      verifying: false,
+      localError: null,
+    });
+
+    expect(presentation).toMatchObject({
+      status: "ERROR",
+      headline: "La memoria requiere atencion",
+      severity: "error",
+    });
+  });
 });
 
 function healthFixture(overrides: Partial<MemorySyncHealth> = {}): MemorySyncHealth {
@@ -177,6 +278,9 @@ function healthFixture(overrides: Partial<MemorySyncHealth> = {}): MemorySyncHea
       captureConcepts: 0,
     },
     lastSuccessfulSyncAt: new Date("2026-08-03T12:00:00.000Z"),
+    lastVerificationAt: new Date("2026-08-03T12:00:00.000Z"),
+    lastVerificationStatus: "PASSED",
+    lastVerificationError: null,
     lastPushAt: new Date("2026-08-03T12:00:00.000Z"),
     lastPullAt: new Date("2026-08-03T12:00:00.000Z"),
     localCursor: "42",

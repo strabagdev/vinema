@@ -65,9 +65,14 @@ export type SyncMetadataRecord = {
   lastSyncAttemptAt: string | null;
   lastSyncErrorCode: string | null;
   lastSyncErrorMessage: string | null;
+  lastMemoryVerificationAt: string | null;
+  lastMemoryVerificationStatus: SyncMemoryVerificationStatus | null;
+  lastMemoryVerificationError: string | null;
   createdAt: string;
   updatedAt: string;
 };
+
+export type SyncMemoryVerificationStatus = "PASSED" | "FAILED";
 
 export type SyncMetadataUpsertInput = {
   workspaceId: string;
@@ -79,6 +84,9 @@ export type SyncMetadataUpsertInput = {
   lastSyncAttemptAt?: string | null;
   lastSyncErrorCode?: string | null;
   lastSyncErrorMessage?: string | null;
+  lastMemoryVerificationAt?: string | null;
+  lastMemoryVerificationStatus?: SyncMemoryVerificationStatus | null;
+  lastMemoryVerificationError?: string | null;
   at?: string;
 };
 
@@ -444,6 +452,21 @@ export class IndexedDbSyncMetadataRepository {
         "lastSyncErrorMessage",
         existing?.lastSyncErrorMessage ?? null,
       ),
+      lastMemoryVerificationAt: pickInput(
+        input,
+        "lastMemoryVerificationAt",
+        existing?.lastMemoryVerificationAt ?? null,
+      ),
+      lastMemoryVerificationStatus: pickInput(
+        input,
+        "lastMemoryVerificationStatus",
+        existing?.lastMemoryVerificationStatus ?? null,
+      ),
+      lastMemoryVerificationError: pickInput(
+        input,
+        "lastMemoryVerificationError",
+        existing?.lastMemoryVerificationError ?? null,
+      ),
       createdAt: existing?.createdAt ?? at,
       updatedAt: at,
     };
@@ -535,6 +558,28 @@ export class IndexedDbSyncMetadataRepository {
       deviceId,
       lastSyncErrorCode: null,
       lastSyncErrorMessage: null,
+    });
+  }
+
+  async recordMemoryVerification(
+    input: {
+      workspaceId: string;
+      deviceId: string;
+      status: SyncMemoryVerificationStatus;
+      errorMessage?: string | null;
+      at: string;
+    },
+  ): Promise<SyncMetadataRecord> {
+    assertIsoDate("at", input.at);
+    assertValidMemoryVerificationStatus(input.status);
+    return this.upsert({
+      workspaceId: input.workspaceId,
+      deviceId: input.deviceId,
+      lastMemoryVerificationAt: input.at,
+      lastMemoryVerificationStatus: input.status,
+      lastMemoryVerificationError:
+        input.status === "FAILED" ? input.errorMessage ?? "Verificacion fallida." : null,
+      at: input.at,
     });
   }
 }
@@ -642,6 +687,20 @@ function validateMetadata(record: SyncMetadataRecord) {
   assertNullableIsoDate("lastSuccessfulPushAt", record.lastSuccessfulPushAt);
   assertNullableIsoDate("lastSuccessfulPullAt", record.lastSuccessfulPullAt);
   assertNullableIsoDate("lastSyncAttemptAt", record.lastSyncAttemptAt);
+  assertNullableIsoDate("lastMemoryVerificationAt", record.lastMemoryVerificationAt);
+  if (record.lastMemoryVerificationStatus !== null) {
+    assertValidMemoryVerificationStatus(record.lastMemoryVerificationStatus);
+  }
+}
+
+function assertValidMemoryVerificationStatus(status: string) {
+  if (status !== "PASSED" && status !== "FAILED") {
+    throw new SyncOutboxError(
+      "INVALID_MUTATION",
+      "El estado de verificacion de memoria no es valido.",
+      { status },
+    );
+  }
 }
 
 function assertNonEmpty(field: string, value: string) {

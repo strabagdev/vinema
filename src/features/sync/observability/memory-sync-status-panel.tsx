@@ -10,6 +10,7 @@ import { useAuth } from "@/features/auth/auth-provider";
 import { getPublicApiUrl } from "@/features/auth/public-api-url";
 import {
   loadMemorySyncSnapshot,
+  recordMemoryVerificationResult,
   type MemorySyncSnapshot,
 } from "@/features/sync/observability/memory-sync-observability";
 import {
@@ -187,16 +188,39 @@ export function MemorySyncStatusPanel({
       });
       setReconciliation(result);
       if (result.status === "MEMORY_INTEGRAL") {
+        await recordMemoryVerificationResult({
+          workspaceId: auth.workspaceId,
+          deviceId: auth.deviceId,
+          status: "PASSED",
+        });
         feedback.synced();
       } else if (result.status === "OFFLINE") {
         feedback.offline();
       } else if (result.status === "CONFLICT" || result.status === "DIVERGENCE_DETECTED") {
+        await recordMemoryVerificationResult({
+          workspaceId: auth.workspaceId,
+          deviceId: auth.deviceId,
+          status: "FAILED",
+          errorMessage: getReconciliationStatusMessage(result.status),
+        });
         feedback.dismissKind("syncing");
       } else {
+        await recordMemoryVerificationResult({
+          workspaceId: auth.workspaceId,
+          deviceId: auth.deviceId,
+          status: "FAILED",
+          errorMessage: getReconciliationStatusMessage(result.status),
+        });
         feedback.success("Verificacion completada");
       }
       await refreshSnapshot();
     } catch {
+      await recordMemoryVerificationResult({
+        workspaceId: auth.workspaceId,
+        deviceId: auth.deviceId,
+        status: "FAILED",
+        errorMessage: "No fue posible verificar la memoria.",
+      }).catch(() => undefined);
       feedback.error("No fue posible verificar la memoria.");
       setLocalError("No fue posible verificar la memoria.");
     } finally {
@@ -477,7 +501,7 @@ function MemorySyncPanelContent({
         data-memory-sync-panel-body=""
       >
         <p className="text-xs text-zinc-500">
-          Ultima verificacion {formatRelativeDate(health.lastSuccessfulSyncAt)}
+          Ultima verificacion {formatRelativeDate(health.lastVerificationAt)}
         </p>
 
         {localError ? (
@@ -485,6 +509,13 @@ function MemorySyncPanelContent({
             className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800"
           >
             {localError}
+          </p>
+        ) : null}
+        {!localError && health.lastVerificationStatus === "FAILED" && health.lastVerificationError ? (
+          <p
+            className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800"
+          >
+            {health.lastVerificationError}
           </p>
         ) : null}
         {verifyingMemory && lastVerificationMessage ? (
@@ -871,6 +902,21 @@ function getReconciliationStatusLabel(status: MemoryReconciliationResult["status
       return "Requiere atencion";
     case "OFFLINE":
       return "Sin conexion";
+  }
+}
+
+function getReconciliationStatusMessage(status: MemoryReconciliationResult["status"]) {
+  switch (status) {
+    case "MEMORY_INTEGRAL":
+      return "Memoria integra.";
+    case "PENDING_CHANGES":
+      return "La verificacion encontro cambios pendientes.";
+    case "DIVERGENCE_DETECTED":
+      return "La verificacion detecto divergencia de memoria.";
+    case "CONFLICT":
+      return "La verificacion encontro conflictos de memoria.";
+    case "OFFLINE":
+      return "No fue posible verificar la memoria sin conexion.";
   }
 }
 

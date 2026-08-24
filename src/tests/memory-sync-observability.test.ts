@@ -93,6 +93,56 @@ describe("memory sync observability", () => {
     expect(result.status).toBe("SYNCED");
   });
 
+  it("uses persisted memory verification as the durable panel health source", () => {
+    const result = deriveMemorySyncHealth({
+      syncState: {
+        ...initialSyncState,
+        lastError: {
+          source: "PULL",
+          code: "MISSING_RELATION_DEPENDENCY",
+          message: "Error anterior a la verificacion.",
+          occurredAt: "2026-08-03T11:59:00.000Z",
+        },
+      },
+      metadata: metadata({
+        lastMemoryVerificationAt: now,
+        lastMemoryVerificationStatus: "PASSED",
+        lastMemoryVerificationError: null,
+      }),
+      mutations: [],
+      recentEvents: [],
+      workspaceId,
+      deviceId,
+    });
+
+    expect(result.status).toBe("SYNCED");
+    expect(result.lastVerificationAt?.toISOString()).toBe(now);
+    expect(result.lastVerificationStatus).toBe("PASSED");
+    expect(result.lastVerificationError).toBeNull();
+  });
+
+  it("keeps failed memory verification visible after reload", () => {
+    const result = deriveMemorySyncHealth({
+      syncState: initialSyncState,
+      metadata: metadata({
+        lastMemoryVerificationAt: now,
+        lastMemoryVerificationStatus: "FAILED",
+        lastMemoryVerificationError: "La verificacion detecto divergencia de memoria.",
+      }),
+      mutations: [],
+      recentEvents: [],
+      workspaceId,
+      deviceId,
+    });
+
+    expect(result.status).toBe("ERROR");
+    expect(result.lastVerificationAt?.toISOString()).toBe(now);
+    expect(result.lastVerificationStatus).toBe("FAILED");
+    expect(result.lastVerificationError).toBe(
+      "La verificacion detecto divergencia de memoria.",
+    );
+  });
+
   it("uses authoritative outbox counts when the listed mutation snapshot is bounded", () => {
     const result = deriveMemorySyncHealth({
       syncState: initialSyncState,
@@ -602,7 +652,7 @@ function event(type: Parameters<typeof appendMemorySyncEvent>[0]["type"], count:
   };
 }
 
-function metadata(): SyncMetadataRecord {
+function metadata(overrides: Partial<SyncMetadataRecord> = {}): SyncMetadataRecord {
   return {
     workspaceId,
     deviceId,
@@ -613,8 +663,12 @@ function metadata(): SyncMetadataRecord {
     lastSyncAttemptAt: now,
     lastSyncErrorCode: null,
     lastSyncErrorMessage: null,
+    lastMemoryVerificationAt: null,
+    lastMemoryVerificationStatus: null,
+    lastMemoryVerificationError: null,
     createdAt: now,
     updatedAt: now,
+    ...overrides,
   };
 }
 

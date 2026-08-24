@@ -34,6 +34,9 @@ export type MemorySyncHealth = {
     captureConcepts: number;
   };
   lastSuccessfulSyncAt: Date | null;
+  lastVerificationAt: Date | null;
+  lastVerificationStatus: SyncMetadataRecord["lastMemoryVerificationStatus"];
+  lastVerificationError: string | null;
   lastPushAt: Date | null;
   lastPullAt: Date | null;
   localCursor: string | null;
@@ -80,12 +83,16 @@ export function deriveMemorySyncHealth({
     mutationCounts?.conflictMutations ?? countStatus(mutations, "CONFLICT");
   const conflictEntityCounts =
     mutationCounts?.conflictEntityCounts ?? countConflictEntityTypes(mutations);
+  const verificationStatus = metadata?.lastMemoryVerificationStatus ?? null;
+  const lastVerificationAt = metadata?.lastMemoryVerificationAt ?? null;
   const status = deriveStatus({
     syncState,
     pendingMutations,
     processingMutations,
     failedMutations,
     conflictMutations,
+    verificationStatus,
+    lastVerificationAt,
     workspaceId,
     deviceId,
   });
@@ -107,7 +114,15 @@ export function deriveMemorySyncHealth({
     failedMutations,
     conflictMutations,
     conflictEntityCounts,
-    lastSuccessfulSyncAt: toDate(syncState.lastSuccessfulSyncAt),
+    lastSuccessfulSyncAt: toDate(
+      syncState.lastSuccessfulSyncAt ??
+        metadata?.lastSuccessfulPullAt ??
+        metadata?.lastSuccessfulPushAt ??
+        (verificationStatus === "PASSED" ? lastVerificationAt : null),
+    ),
+    lastVerificationAt: toDate(lastVerificationAt),
+    lastVerificationStatus: verificationStatus,
+    lastVerificationError: metadata?.lastMemoryVerificationError ?? null,
     lastPushAt: toDate(metadata?.lastSuccessfulPushAt ?? null),
     lastPullAt: toDate(metadata?.lastSuccessfulPullAt ?? null),
     localCursor: metadata?.pullCursor ?? null,
@@ -177,6 +192,8 @@ function deriveStatus(input: {
   processingMutations: number;
   failedMutations: number;
   conflictMutations: number;
+  verificationStatus: SyncMetadataRecord["lastMemoryVerificationStatus"];
+  lastVerificationAt: string | null;
   workspaceId: string | null;
   deviceId: string | null;
 }): MemorySyncStatus {
@@ -192,7 +209,11 @@ function deriveStatus(input: {
     return "DIVERGED";
   }
 
-  if (input.failedMutations > 0 || input.syncState.lastError) {
+  if (
+    input.failedMutations > 0 ||
+    input.verificationStatus === "FAILED" ||
+    isActiveSyncError(input.syncState.lastError, input.verificationStatus, input.lastVerificationAt)
+  ) {
     return "ERROR";
   }
 
@@ -204,11 +225,33 @@ function deriveStatus(input: {
     return "PENDING";
   }
 
-  if (input.syncState.lastSuccessfulSyncAt) {
+  if (input.syncState.lastSuccessfulSyncAt || input.verificationStatus === "PASSED") {
     return "SYNCED";
   }
 
   return "UNKNOWN";
+}
+
+function isActiveSyncError(
+  lastError: SyncState["lastError"],
+  verificationStatus: SyncMetadataRecord["lastMemoryVerificationStatus"],
+  lastVerificationAt: string | null,
+) {
+  if (!lastError) {
+    return false;
+  }
+
+  if (verificationStatus !== "PASSED" || !lastVerificationAt) {
+    return true;
+  }
+
+  const verificationTime = Date.parse(lastVerificationAt);
+  const errorTime = Date.parse(lastError.occurredAt);
+  if (Number.isNaN(verificationTime) || Number.isNaN(errorTime)) {
+    return true;
+  }
+
+  return verificationTime < errorTime;
 }
 
 function deriveConvergence(input: {

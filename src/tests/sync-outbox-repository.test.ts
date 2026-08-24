@@ -440,6 +440,39 @@ describe("sync outbox repository", () => {
     expect(JSON.stringify(outboxRecord)).not.toContain("accessToken");
     expect(JSON.stringify(metadataRecord)).not.toContain("VINEMA_SYNC_API_KEY");
   });
+
+  it("persists memory verification results in sync metadata", async () => {
+    const metadata = new IndexedDbSyncMetadataRepository(() => now);
+
+    await metadata.recordMemoryVerification({
+      workspaceId,
+      deviceId,
+      status: "PASSED",
+      at: now,
+    });
+    const passed = await metadata.get(workspaceId, deviceId);
+
+    expect(passed).toMatchObject({
+      lastMemoryVerificationAt: now,
+      lastMemoryVerificationStatus: "PASSED",
+      lastMemoryVerificationError: null,
+    });
+
+    await metadata.recordMemoryVerification({
+      workspaceId,
+      deviceId,
+      status: "FAILED",
+      errorMessage: "La verificacion detecto divergencia de memoria.",
+      at: later,
+    });
+    const failed = await metadata.get(workspaceId, deviceId);
+
+    expect(failed).toMatchObject({
+      lastMemoryVerificationAt: later,
+      lastMemoryVerificationStatus: "FAILED",
+      lastMemoryVerificationError: "La verificacion detecto divergencia de memoria.",
+    });
+  });
 });
 
 function makeMutation({
