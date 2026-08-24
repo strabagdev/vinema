@@ -21,7 +21,6 @@ import {
   Minus,
   Pilcrow,
   Quote,
-  X,
 } from "lucide-react";
 import type {
   CSSProperties,
@@ -650,10 +649,6 @@ function RichFormatToolbar({
           onClick={openLinkPopover}
         >
           <Link2 className="h-4 w-4" />
-        </ToolbarButton>
-        <ToolbarSeparator />
-        <ToolbarButton label="Cerrar barra de formato" onClick={onClose}>
-          <X className="h-4 w-4" />
         </ToolbarButton>
       </div>
       {linkPopoverOpen ? (

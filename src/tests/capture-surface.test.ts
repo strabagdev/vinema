@@ -1342,10 +1342,10 @@ describe("CaptureSurface", () => {
       "Codigo inline",
       "Separador",
       "Enlace",
-      "Cerrar barra de formato",
     ]) {
       expect(getButtonByLabel(document.body, label)).toBeDefined();
     }
+    expect(getButtonByLabel(document.body, "Cerrar barra de formato")).toBeUndefined();
     expect(document.body.querySelector("input[placeholder='Enlace']")).toBeNull();
     expect(document.body.querySelector("input[placeholder='URL']")).toBeNull();
     expect(document.body.querySelector("[data-canvas-link-popover]")).toBeNull();
@@ -1355,9 +1355,6 @@ describe("CaptureSurface", () => {
         (button) => button.textContent?.trim() === "Cerrar",
       ),
     ).toBeUndefined();
-    expect(
-      getButtonByLabel(document.body, "Cerrar barra de formato")?.querySelector("svg"),
-    ).toBeDefined();
 
     await click(getButtonByLabel(document.body, "Enlace")!);
     const linkPopover = document.body.querySelector("[data-canvas-link-popover]");
