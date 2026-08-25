@@ -175,16 +175,14 @@ describe("MemorySyncStatusPanel", () => {
     expect(screen.querySelector("[data-memory-sync-panel]")).toBeTruthy();
   });
 
-  it("closes only with Escape, outside click, or the explicit close button", async () => {
+  it("closes with Escape or outside click", async () => {
     const screen = await renderPanel();
     const trigger = screen.querySelector<HTMLButtonElement>(
       "button[aria-label='Abrir Estado de la memoria']",
     );
 
     await click(trigger);
-    expect(document.activeElement).toBe(
-      screen.querySelector("button[aria-label='Cerrar Estado de la memoria']"),
-    );
+    expect(document.activeElement).toBe(screen.querySelector("[data-memory-sync-panel]"));
 
     await keyDownWindow({ key: "Escape" });
     expect(screen.querySelector("[data-memory-sync-panel]")).toBeNull();
@@ -193,25 +191,17 @@ describe("MemorySyncStatusPanel", () => {
     await click(trigger);
     await pointerDown(document.body);
     expect(screen.querySelector("[data-memory-sync-panel]")).toBeNull();
-
-    await click(trigger);
-    await click(screen.querySelector("button[aria-label='Cerrar Estado de la memoria']"));
-    expect(screen.querySelector("[data-memory-sync-panel]")).toBeNull();
-    expect(document.activeElement).toBe(trigger);
   });
 
   it("keeps focus inside the dialog while tabbing", async () => {
     const screen = await renderPanel();
 
     await click(screen.querySelector("button[aria-label='Abrir Estado de la memoria']"));
-    const closeButton = screen.querySelector<HTMLButtonElement>(
-      "button[aria-label='Cerrar Estado de la memoria']",
-    );
     const verifyButton = getButton(screen, "Verificar memoria");
 
     verifyButton.focus();
     await keyDownWindow({ key: "Tab" });
-    expect(document.activeElement).toBe(closeButton);
+    expect(document.activeElement).toBe(verifyButton);
 
     await keyDownWindow({ key: "Tab", shiftKey: true });
     expect(document.activeElement).toBe(verifyButton);
@@ -374,7 +364,7 @@ describe("MemorySyncStatusPanel", () => {
     expect(screen.textContent).not.toContain("La memoria requiere atencion");
     expect(screen.textContent).not.toContain("Ultima verificacion sin registro");
 
-    await click(screen.querySelector("button[aria-label='Cerrar Estado de la memoria']"));
+    await pointerDown(document.body);
     await click(screen.querySelector("button[aria-label='Abrir Estado de la memoria']"));
     expect(screen.textContent).toContain("Memoria integra");
     expect(screen.textContent).not.toContain("Ultima verificacion sin registro");

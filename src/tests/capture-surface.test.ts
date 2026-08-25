@@ -356,10 +356,8 @@ vi.mock("@/app/concepts/detail/concept-exploration-client", () => ({
 vi.mock("@/features/sync/observability/memory-sync-status-panel", () => ({
   MemorySyncStatusPanel: ({
     variant,
-    onClose,
   }: {
     variant?: string;
-    onClose?: () => void;
   }) =>
     createElement(
       "section",
@@ -369,15 +367,6 @@ vi.mock("@/features/sync/observability/memory-sync-status-panel", () => ({
         "data-memory-sync-panel": "",
         "data-memory-sync-status-panel-variant": variant,
       },
-      createElement(
-        "button",
-        {
-          type: "button",
-          onClick: onClose,
-          "aria-label": "Cerrar Estado de la memoria",
-        },
-        "Cerrar",
-      ),
       "Estado de la memoria",
     ),
 }));

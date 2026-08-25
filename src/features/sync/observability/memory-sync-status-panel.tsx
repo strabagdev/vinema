@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { RefreshCw, X } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { VisualFeedbackWordmark, useVisualFeedback } from "@/features/feedback/visual-feedback-provider";
 import { useAuth } from "@/features/auth/auth-provider";
@@ -64,7 +64,6 @@ export function MemorySyncStatusPanel({
   const panelRef = useRef<HTMLDivElement | null>(null);
   const dialogRef = useRef<HTMLElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const canOpen = auth.isAuthenticated && Boolean(auth.workspaceId && auth.deviceId);
   const presentation = deriveMemoryHealthPresentation({
     health: snapshot?.health ?? null,
@@ -124,7 +123,7 @@ export function MemorySyncStatusPanel({
     }
 
     queueMicrotask(() => {
-      closeButtonRef.current?.focus();
+      dialogRef.current?.focus();
     });
   }, [open, snapshot]);
 
@@ -399,7 +398,6 @@ export function MemorySyncStatusPanel({
         <MemorySyncPanelContent
           variant={variant}
           dialogRef={dialogRef}
-          closeButtonRef={closeButtonRef}
           snapshot={snapshot}
           loading={loading}
           verifyingMemory={verifyingMemory}
@@ -413,7 +411,6 @@ export function MemorySyncStatusPanel({
           resolvingConflict={resolvingConflict}
           mergeContent={mergeContent}
           showMergeEditor={showMergeEditor}
-          onClose={closePanel}
           onVerifyMemory={() => void handleVerifyMemory()}
           onExportConflictDiagnostic={() => void handleExportConflictDiagnostic()}
           onOpenConflictResolver={() => void handleOpenConflictResolver()}
@@ -433,7 +430,6 @@ export function MemorySyncStatusPanel({
 function MemorySyncPanelContent({
   variant = "standalone",
   dialogRef,
-  closeButtonRef,
   snapshot,
   loading,
   verifyingMemory,
@@ -447,7 +443,6 @@ function MemorySyncPanelContent({
   resolvingConflict,
   mergeContent,
   showMergeEditor,
-  onClose,
   onVerifyMemory,
   onExportConflictDiagnostic,
   onOpenConflictResolver,
@@ -459,7 +454,6 @@ function MemorySyncPanelContent({
 }: {
   variant?: "standalone" | "rail-panel";
   dialogRef: RefObject<HTMLElement | null>;
-  closeButtonRef: RefObject<HTMLButtonElement | null>;
   snapshot: MemorySyncSnapshot;
   loading: boolean;
   verifyingMemory: boolean;
@@ -473,7 +467,6 @@ function MemorySyncPanelContent({
   resolvingConflict: boolean;
   mergeContent: string;
   showMergeEditor: boolean;
-  onClose: () => void;
   onVerifyMemory: () => void;
   onExportConflictDiagnostic: () => void;
   onOpenConflictResolver: () => void;
@@ -508,22 +501,11 @@ function MemorySyncPanelContent({
       tabIndex={-1}
       data-memory-sync-panel=""
     >
-      <div className="flex items-start justify-between gap-3 px-4 pt-4">
-        <div>
-          <h2 className="font-medium text-zinc-950">Estado de la memoria</h2>
-          <p className="mt-1 text-sm text-zinc-700">
-            {presentation.headline}
-          </p>
-        </div>
-        <button
-          ref={closeButtonRef}
-          type="button"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100"
-          aria-label="Cerrar Estado de la memoria"
-          onClick={onClose}
-        >
-          <X className="h-4 w-4" aria-hidden="true" />
-        </button>
+      <div className="px-4 pt-4">
+        <h2 className="font-medium text-zinc-950">Estado de la memoria</h2>
+        <p className="mt-1 text-sm text-zinc-700">
+          {presentation.headline}
+        </p>
       </div>
 
       <div
