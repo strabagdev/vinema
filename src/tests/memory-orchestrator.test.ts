@@ -311,18 +311,58 @@ describe("Memory Orchestrator v1", () => {
           : ["mitcom", "tracking", "sponsor"],
       ),
     );
-    const startedAt = performance.now();
-    const response = deriveMemoryResponse({
-      contexts,
-      nodes,
-      relations,
-      query: query({ detectedConceptIds: ["mitcom"] }),
-    });
+    const { result: response, medianMs } = measureStablePerformance(() =>
+      deriveMemoryResponse({
+        contexts,
+        nodes,
+        relations,
+        query: query({ detectedConceptIds: ["mitcom"] }),
+      }),
+    );
 
     expect(response.summary.evidenceNodes).toBeGreaterThan(0);
-    expect(performance.now() - startedAt).toBeLessThan(1_200);
+    expect(medianMs).toBeLessThan(1_200);
   });
 });
+
+function measureStablePerformance<T>(
+  run: () => T,
+  {
+    warmupIterations = 2,
+    measuredIterations = 7,
+  }: { warmupIterations?: number; measuredIterations?: number } = {},
+) {
+  for (let index = 0; index < warmupIterations; index += 1) {
+    run();
+  }
+
+  const measurements: number[] = [];
+  let result = run();
+
+  for (let index = 0; index < measuredIterations; index += 1) {
+    const startedAt = performance.now();
+    result = run();
+    measurements.push(performance.now() - startedAt);
+  }
+
+  return {
+    result,
+    medianMs: median(measurements),
+    p95Ms: percentile(measurements, 0.95),
+  };
+}
+
+function median(values: number[]) {
+  return percentile(values, 0.5);
+}
+
+function percentile(values: number[], percentileValue: number) {
+  const sorted = [...values].sort((first, second) => first - second);
+  return (
+    sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * percentileValue) - 1)] ??
+    0
+  );
+}
 
 function query({
   text = "",

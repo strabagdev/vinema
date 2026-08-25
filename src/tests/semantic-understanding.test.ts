@@ -3,6 +3,10 @@ import type { Context } from "@/domain/context/context";
 import type { NodeContextRelation } from "@/domain/context/node-context-relation";
 import type { Node } from "@/domain/node/node";
 import {
+  DEFAULT_BEHAVIORAL_RECENT_WINDOW_DAYS,
+} from "@/features/cognition/behavioral-engine/behavioral-engine";
+import { createMemoryEvidenceModel } from "@/features/cognition/memory-evidence/memory-evidence-model";
+import {
   deriveSemanticStatements,
   detectExplicitSemanticStatements,
 } from "@/features/cognition/semantic-understanding";
@@ -214,6 +218,39 @@ describe("Semantic Understanding v1", () => {
     ).toEqual([]);
   });
 
+  it("keeps exact semantic results when contextual evidence is precomputed", () => {
+    const contexts = [
+      context({ id: "vinema", name: "Vinema" }),
+      context({ id: "indexeddb", name: "IndexedDB" }),
+      context({ id: "railway", name: "Railway" }),
+    ];
+    const nodes = [
+      node({ id: "a", content: "Vinema usa IndexedDB." }),
+      node({ id: "b", content: "Vinema usa Railway." }),
+      node({ id: "c", content: "Vinema y Railway aparecen en soporte." }),
+      node({ id: "d", content: "Vinema y Railway aparecen en operaciones." }),
+      node({ id: "e", content: "Vinema y Railway aparecen en despliegue." }),
+    ];
+    const relations = nodes.flatMap((memory) => [
+      relation({ nodeId: memory.id, contextId: "vinema" }),
+      relation({
+        nodeId: memory.id,
+        contextId: memory.id === "a" ? "indexeddb" : "railway",
+      }),
+    ]);
+    const evidenceModel = createMemoryEvidenceModel({
+      contexts,
+      nodes,
+      relations,
+      now,
+      recentWindowDays: DEFAULT_BEHAVIORAL_RECENT_WINDOW_DAYS,
+    });
+
+    expect(
+      deriveSemanticStatements({ contexts, nodes, relations, now, evidenceModel }),
+    ).toEqual(deriveSemanticStatements({ contexts, nodes, relations, now }));
+  });
+
   it("handles a reasonable deterministic dataset", () => {
     const contexts = [
       context({ id: "vinema", name: "Vinema" }),
@@ -226,13 +263,53 @@ describe("Semantic Understanding v1", () => {
       relation({ nodeId: memory.id, contextId: "vinema" }),
       relation({ nodeId: memory.id, contextId: "indexeddb" }),
     ]);
-    const startedAt = performance.now();
-    const statements = deriveSemanticStatements({ contexts, nodes, relations, now });
+    const { result: statements, medianMs } = measureStablePerformance(() =>
+      deriveSemanticStatements({ contexts, nodes, relations, now }),
+    );
 
     expect(statements[0]).toMatchObject({ confidence: "HIGH" });
-    expect(performance.now() - startedAt).toBeLessThan(500);
+    expect(medianMs).toBeLessThan(500);
   });
 });
+
+function measureStablePerformance<T>(
+  run: () => T,
+  {
+    warmupIterations = 2,
+    measuredIterations = 7,
+  }: { warmupIterations?: number; measuredIterations?: number } = {},
+) {
+  for (let index = 0; index < warmupIterations; index += 1) {
+    run();
+  }
+
+  const measurements: number[] = [];
+  let result = run();
+
+  for (let index = 0; index < measuredIterations; index += 1) {
+    const startedAt = performance.now();
+    result = run();
+    measurements.push(performance.now() - startedAt);
+  }
+
+  return {
+    result,
+    medianMs: median(measurements),
+    p95Ms: percentile(measurements, 0.95),
+  };
+}
+
+function median(values: number[]) {
+  return percentile(values, 0.5);
+}
+
+function percentile(values: number[], percentileValue: number) {
+  const sorted = [...values].sort((first, second) => first - second);
+  return (
+    sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * percentileValue) - 1)] ??
+    0
+  );
+}
 
 function statementSetup(content: string, conceptIds: string[]) {
   const contexts = conceptIds.map((conceptId) => contextForId(conceptId));

@@ -94,6 +94,7 @@ export function deriveMemoryResponse({
       relations,
       nodes,
       now: query.now,
+      evidenceModel: behavioralEvidenceModel,
     }),
   );
   const evolutionSignals = dedupeEvolutionSignals(

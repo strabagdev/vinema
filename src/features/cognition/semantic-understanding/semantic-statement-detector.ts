@@ -6,6 +6,7 @@ import {
   deriveBehavioralPatterns,
   type BehavioralPattern,
 } from "@/features/cognition/behavioral-engine/behavioral-engine";
+import type { MemoryEvidenceModel } from "@/features/cognition/memory-evidence/memory-evidence-model";
 import {
   EXPLICIT_SEMANTIC_PATTERNS,
   type SemanticRelationKind,
@@ -23,11 +24,13 @@ export interface DeriveSemanticStatementsOptions {
   relations: NodeContextRelation[];
   nodes: Node[];
   now?: Date;
+  evidenceModel?: MemoryEvidenceModel;
 }
 
 interface ConceptRecord {
   context: Context;
   labels: string[];
+  normalizedLabels: string[];
 }
 
 interface SentenceSpan {
@@ -49,10 +52,17 @@ export function deriveSemanticStatements({
   relations,
   nodes,
   now = new Date(),
+  evidenceModel,
 }: DeriveSemanticStatementsOptions): SemanticStatement[] {
   return aggregateSemanticStatements([
     ...detectExplicitSemanticStatements({ contexts, relations, nodes }),
-    ...deriveContextualSemanticCandidates({ contexts, relations, nodes, now }),
+    ...deriveContextualSemanticCandidates({
+      contexts,
+      relations,
+      nodes,
+      now,
+      evidenceModel,
+    }),
   ]);
 }
 
@@ -157,6 +167,7 @@ function deriveContextualSemanticCandidates({
   relations,
   nodes,
   now,
+  evidenceModel,
 }: DeriveSemanticStatementsOptions & { now: Date }): SemanticStatementCandidate[] {
   const conceptsById = new Map(contexts.map((context) => [context.id, context]));
   const activeNodesById = new Map(
@@ -165,7 +176,7 @@ function deriveContextualSemanticCandidates({
       .map((node) => [node.id, node]),
   );
 
-  return deriveBehavioralPatterns({ contexts, relations, nodes, now })
+  return deriveBehavioralPatterns({ contexts, relations, nodes, now, evidenceModel })
     .filter(shouldCreateContextualCandidate)
     .flatMap((pattern) => contextualCandidatesForPattern(pattern, conceptsById, activeNodesById));
 }
@@ -223,8 +234,11 @@ function getConceptRecords(contexts: Context[]) {
     ]
       .filter(Boolean)
       .sort((first, second) => second.length - first.length || first.localeCompare(second));
+    const normalizedLabels = labels
+      .map(normalizeConceptIdentityLabel)
+      .filter(Boolean);
 
-    records.set(context.id, { context, labels });
+    records.set(context.id, { context, labels, normalizedLabels });
   }
 
   return records;
@@ -257,13 +271,11 @@ function getAcceptedConceptIdsByNodeId({
     }
 
     const used = identityLabelsByNodeId.get(relation.nodeId) ?? new Set<string>();
-    const normalizedLabels = record.labels.map(normalizeConceptIdentityLabel);
-
-    if (normalizedLabels.some((label) => used.has(label))) {
+    if (record.normalizedLabels.some((label) => used.has(label))) {
       continue;
     }
 
-    for (const label of normalizedLabels) {
+    for (const label of record.normalizedLabels) {
       used.add(label);
     }
 
