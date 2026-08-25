@@ -13,6 +13,7 @@ import {
   reconcileServerAuthoritativeMemory,
 } from "@/features/sync/server-authoritative-memory-reconciliation";
 import type { ServerAuthoritativeMemorySyncClient } from "@/features/sync/server-authoritative-memory-reconciliation";
+import { SyncClientError } from "@/features/sync/sync-client";
 import {
   CONTEXTS_STORE,
   NODE_CONTEXT_RELATIONS_STORE,
@@ -28,6 +29,7 @@ const workspaceId = "11111111-1111-4111-8111-111111111111";
 const otherWorkspaceId = "99999999-9999-4999-8999-999999999999";
 const deviceId = "22222222-2222-4222-8222-222222222222";
 const recoveredCaptureId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const sleepCaptureId = "6cc068d6-f41c-4407-a604-3862da2290c7";
 const now = "2026-08-24T12:00:00.000Z";
 
 describe("server-authoritative memory reconciliation", () => {
@@ -94,6 +96,118 @@ describe("server-authoritative memory reconciliation", () => {
     expect(result.status).toBe("REPAIRED");
     expect(result.missing.captures.active).toBe(1);
     expect(result.localCursor).toBe("1057");
+  });
+
+  it("recovers an active missing capture", async () => {
+    const capture = captureEntity({ id: uuid(1), content: "Remote active capture" });
+    const client = memoryClient([{ entityType: "capture", entity: capture }]);
+
+    const result = await reconcileServerAuthoritativeMemory({
+      workspaceId,
+      deviceId,
+      syncClient: client,
+    });
+    const db = await getVinemaDb();
+
+    expect(result.status).toBe("REPAIRED");
+    await expect(db.get(NODES_STORE, capture.id)).resolves.toMatchObject({
+      id: capture.id,
+      content: "Remote active capture",
+      archivedAt: null,
+    });
+  });
+
+  it("recovers an archived missing capture without requiring it to be active", async () => {
+    const archivedAt = "2026-08-24T12:30:00.000Z";
+    const capture = captureEntity({ id: uuid(1), archivedAt });
+    const client = memoryClient([{ entityType: "capture", entity: capture }]);
+
+    const result = await reconcileServerAuthoritativeMemory({
+      workspaceId,
+      deviceId,
+      syncClient: client,
+    });
+    const db = await getVinemaDb();
+
+    expect(result.status).toBe("REPAIRED");
+    await expect(db.get(NODES_STORE, capture.id)).resolves.toMatchObject({
+      id: capture.id,
+      archivedAt,
+    });
+  });
+
+  it("reports the exact missing capture when getEntity cannot reconstruct inventory data", async () => {
+    const capture = captureEntity({ id: uuid(1) });
+    const client = memoryClient([{ entityType: "capture", entity: capture }]);
+    vi.mocked(client.getEntity).mockRejectedValue(new SyncClientError({
+      code: "INVALID_RESPONSE",
+      status: 200,
+      message: "La API de sincronizacion devolvio una respuesta invalida.",
+    }));
+
+    const result = await reconcileServerAuthoritativeMemory({
+      workspaceId,
+      deviceId,
+      syncClient: client,
+    });
+
+    expect(result.status).toBe("INCOMPLETE");
+    expect(result.errors[0]).toMatchObject({ code: "REMOTE_ENTITY_UNAVAILABLE" });
+    expect(result.errors[0]?.message).toContain("Etapa getEntity");
+    expect(result.errors[0]?.message).toContain("capture:00000000");
+    expect(result.errors[0]?.message).toContain("Estado active");
+    expect(result.errors[0]?.message).toContain("HTTP 200");
+    expect(result.errors[0]?.message).toContain("errorCode INVALID_RESPONSE");
+  });
+
+  it("recovers the real-shaped local five versus remote thirteen capture inventory", async () => {
+    const archivedAt = "2026-08-24T12:30:00.000Z";
+    const captures = Array.from({ length: 13 }, (_, index) =>
+      captureEntity({
+        id: index === 12 ? sleepCaptureId : uuid(index + 1),
+        content: index === 12
+          ? "Synthetic sleep capture fixture"
+          : `Remote capture ${index + 1}`,
+        archivedAt: index < 2 ? archivedAt : null,
+      }),
+    );
+    await seedLocalCaptures(captures.slice(0, 5));
+    await setLocalCursor("980");
+    const client = memoryClient(captures.map((entity) => ({
+      entityType: "capture" as const,
+      entity,
+    })), "1057");
+
+    const first = await reconcileServerAuthoritativeMemory({
+      workspaceId,
+      deviceId,
+      syncClient: client,
+      pageSize: 4,
+    });
+    const second = await reconcileServerAuthoritativeMemory({
+      workspaceId,
+      deviceId,
+      syncClient: client,
+      pageSize: 4,
+    });
+    const db = await getVinemaDb();
+    const sleepCapture = await db.get(NODES_STORE, sleepCaptureId);
+
+    expect(first.status).toBe("REPAIRED");
+    expect(first.remoteCounts.captures).toMatchObject({
+      active: 11,
+      archived: 2,
+      total: 13,
+    });
+    expect(first.localCounts.captures.total).toBe(13);
+    expect(first.missing.captures.total).toBe(8);
+    expect(sleepCapture).toMatchObject({
+      id: sleepCaptureId,
+      content: "Synthetic sleep capture fixture",
+      archivedAt: null,
+    });
+    expect(second.status).toBe("COMPLETE");
+    expect(second.missing.captures.total).toBe(0);
   });
 
   it("recovers captures, concepts and relations in dependency-safe order", async () => {

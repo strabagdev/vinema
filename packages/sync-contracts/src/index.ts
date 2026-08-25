@@ -171,6 +171,7 @@ export const captureEntityResponseSchema = z.object({
   content: z.string().max(MAX_CAPTURE_CONTENT_LENGTH),
   archivedAt: nullableIsoDateSchema.optional(),
   updatedAt: isoDateSchema,
+  entity: captureEntitySchema.optional(),
 });
 
 export const syncEntityResponseSchema = syncEntitySchema;

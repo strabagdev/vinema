@@ -231,7 +231,7 @@ describe("Vinema sync API", () => {
     expect(store.processedMutations.size).toBe(1);
   });
 
-  it("returns the current capture entity for conflict resolution without exposing workspace data", async () => {
+  it("returns the current capture for conflict resolution and generic recovery", async () => {
     const store = new InMemorySyncStore([workspaceId]);
     const app = createVinemaApiServer({ store, apiKey });
     const mutation = captureMutation({
@@ -257,16 +257,53 @@ describe("Vinema sync API", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({
+    expect(response.json()).toMatchObject({
       entityType: "capture",
       entityId: mutation.entityId,
       version: 2,
       content: "Captura remota actual",
       archivedAt: null,
       updatedAt: now,
+      entity: {
+        id: mutation.entityId,
+        workspaceId,
+        content: "Captura remota actual",
+        archivedAt: null,
+        version: 2,
+      },
     });
-    expect(response.body).not.toContain(workspaceId);
     expect(response.body).not.toContain(apiKey);
+  });
+
+  it("returns archived captures through the capture entity endpoint for inventory repair", async () => {
+    const store = new InMemorySyncStore([workspaceId]);
+    const app = createVinemaApiServer({ store, apiKey });
+    const archivedAt = "2026-07-26T19:00:00.000Z";
+    const mutation = captureMutation({
+      mutationId: "44444444-4444-4444-8444-444444444444",
+      entityId: "55555555-5555-4555-8555-555555555555",
+      baseVersion: null,
+      archivedAt,
+    });
+    await push(app, [mutation]);
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/sync/entities/capture/${mutation.entityId}?workspaceId=${workspaceId}`,
+      headers: authHeaders(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      entityType: "capture",
+      entityId: mutation.entityId,
+      archivedAt,
+      entity: {
+        id: mutation.entityId,
+        workspaceId,
+        archivedAt,
+      },
+    });
   });
 
   it("returns a generic sync entity for dependency recovery", async () => {

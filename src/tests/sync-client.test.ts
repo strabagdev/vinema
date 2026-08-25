@@ -159,6 +159,56 @@ describe("sync client", () => {
     );
   });
 
+  it("loads a capture as a generic sync entity from the capture endpoint", async () => {
+    const fetchFn = mockFetch(jsonResponse({
+      entityType: "capture",
+      entityId: captureId,
+      version: 1,
+      content: "Capture content",
+      archivedAt: null,
+      updatedAt: now,
+      entity: {
+        id: captureId,
+        workspaceId,
+        content: "Capture content",
+        createdAt: now,
+        updatedAt: now,
+        archivedAt: null,
+        version: 1,
+      },
+    }));
+    const client = createSyncClient({ baseUrl, accessToken, fetchFn });
+
+    await expect(
+      client.getEntity({ workspaceId, entityType: "capture", entityId: captureId }),
+    ).resolves.toMatchObject({
+      entityType: "capture",
+      entity: {
+        id: captureId,
+        workspaceId,
+        content: "Capture content",
+      },
+    });
+  });
+
+  it("rejects a capture generic entity response when the expanded entity is missing", async () => {
+    const fetchFn = mockFetch(jsonResponse({
+      entityType: "capture",
+      entityId: captureId,
+      version: 1,
+      content: "Capture content",
+      archivedAt: null,
+      updatedAt: now,
+    }));
+    const client = createSyncClient({ baseUrl, accessToken, fetchFn });
+
+    await expect(
+      client.getEntity({ workspaceId, entityType: "capture", entityId: captureId }),
+    ).rejects.toMatchObject({
+      code: "INVALID_RESPONSE",
+    });
+  });
+
   it("loads a paginated sync inventory with authorization and the expected endpoint", async () => {
     const fetchFn = mockFetch(jsonResponse({
       items: [

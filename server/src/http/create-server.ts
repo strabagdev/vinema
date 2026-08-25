@@ -362,6 +362,7 @@ export function createVinemaApiServer({
       content: stored.entity.content,
       archivedAt: stored.entity.archivedAt,
       updatedAt: stored.entity.updatedAt,
+      entity: stored.entity,
     }));
   });
 

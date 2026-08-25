@@ -21,7 +21,7 @@ import {
   type RemoteChangeApplierTransaction,
   type RemoteSyncChange,
 } from "@/features/sync/remote-change-applier";
-import type { SyncClient } from "@/features/sync/sync-client";
+import { SyncClientError, type SyncClient } from "@/features/sync/sync-client";
 import type { SyncMutationOutboxRecord } from "@/features/sync/sync-outbox-repository";
 import { emitSyncDataChanged } from "@/features/sync/sync-data-events";
 import type { SyncDataEntityType } from "@/features/sync/sync-data-events";
@@ -493,10 +493,10 @@ async function fetchRepairEntities({
         entityType: item.entityType,
         entityId: item.entityId,
       });
-    } catch {
+    } catch (error) {
       errors.push({
         code: "REMOTE_ENTITY_UNAVAILABLE",
-        message: "No fue posible recuperar una entidad faltante del inventario remoto.",
+        message: formatRecoveryError(item, error),
       });
       continue;
     }
@@ -508,7 +508,9 @@ async function fetchRepairEntities({
     ) {
       errors.push({
         code: "INVALID_REMOTE_ENTITY",
-        message: "La entidad recuperada no coincide con el inventario remoto.",
+        message: formatRecoveryStage(item, "validation", [
+          "La entidad recuperada no coincide con el inventario remoto.",
+        ]),
       });
       continue;
     }
@@ -530,6 +532,38 @@ async function fetchRepairEntities({
     entities: Array.from(entities.values()),
     errors,
   };
+}
+
+function formatRecoveryError(item: SyncInventoryItem, error: unknown) {
+  const details = [
+    "No fue posible recuperar una entidad faltante del inventario remoto.",
+  ];
+
+  if (error instanceof SyncClientError) {
+    details.push(`HTTP ${error.status ?? "sin estado"}.`);
+    details.push(`errorCode ${error.code}.`);
+  } else if (error instanceof Error && error.message) {
+    details.push(`error ${error.message}.`);
+  }
+
+  return formatRecoveryStage(item, "getEntity", details);
+}
+
+function formatRecoveryStage(
+  item: SyncInventoryItem,
+  stage: string,
+  details: string[],
+) {
+  return [
+    `Etapa ${stage}.`,
+    `Entidad ${item.entityType}:${abbreviateId(item.entityId)}.`,
+    `Estado ${item.archivedAt ? "archived" : "active"}.`,
+    ...details,
+  ].join(" ");
+}
+
+function abbreviateId(id: string) {
+  return id.slice(0, 8);
 }
 
 function toDependencyInventoryItem(
