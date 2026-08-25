@@ -371,10 +371,10 @@ function formatCanonicalLabel(label: string) {
     return normalized;
   }
 
-  return normalized.charAt(0).toLocaleUpperCase("es") + normalized.slice(1);
+  return normalized.charAt(0).toLocaleUpperCase() + normalized.slice(1);
 }
 
 function hasNaturalCapitalization(label: string) {
   const words = extractWords(label);
-  return words.filter((word) => word !== word.toLocaleLowerCase("es")).length >= 2;
+  return words.filter((word) => word !== word.toLocaleLowerCase()).length >= 2;
 }

@@ -12,14 +12,16 @@ import {
 } from "@/features/associations/concept-suggestions";
 import { deriveKnowledgeSuggestions } from "@/features/cognition/knowledge-suggestions";
 import { normalizeAssociationText } from "@/features/associations/normalize-text";
-import { hasDirectionalContradiction } from "@/features/associations/local-support";
+import {
+  hasDirectionalContradiction,
+  isMeaningfulLocalSupportToken,
+} from "@/features/associations/local-support";
 import {
   tokenizeAssociationText,
   uniqueTokens,
 } from "@/features/associations/tokenize";
-import { SPANISH_STOPWORDS } from "@/features/associations/spanish-stopwords";
+import { isShortStructuralToken } from "@/features/associations/structural-tokens";
 import { resolveConceptIdentity } from "@/features/concepts/concept-identity";
-import { extractSemanticPhraseCandidates } from "@/features/semantics/semantic-phrase-extractor";
 import type {
   AssociationSuggestion,
   ConceptSuggestion,
@@ -33,51 +35,14 @@ export const MIN_EMERGING_TERM_FREQUENCY = 2;
 export const MIN_EMERGING_SCORE = 0.36;
 export const MIN_EVIDENCE_CAPTURE_SCORE = 0.05;
 
-const GENERIC_CONCEPT_TERMS = new Set([
-  "abrir",
-  "actualiz",
-  "aparec",
-  "captur",
-  "confirm",
-  "cos",
-  "crear",
-  "despues",
-  "escribir",
-  "general",
-  "idea",
-  "important",
-  "necesit",
-  "necesito",
-  "nueva",
-  "nuevo",
-  "nota",
-  "pendient",
-  "prepar",
-  "revis",
-  "revisar",
-  "tema",
-  "trabaj",
-  "vario",
-]);
-
-const DISPLAY_LABELS: Record<string, string> = {
-  reunion: "Reuniones",
-  reun: "Reuniones",
-  perfum: "Perfumes",
-  perfume: "Perfumes",
-  mitcom: "Mitcom",
-  railway: "Railway",
-  sponsor: "Sponsor Meeting",
-};
-
-const MIN_INPUT_EMERGING_TOKENS = 1;
-const MIN_INPUT_EMERGING_SCORE = 0.42;
-const INPUT_EMERGING_LIMIT = 5;
-
 type ExpressionCandidate = {
   key: string;
   displayLabel: string;
   frequency: number;
+  leftBoundaryTerms: Set<string>;
+  leftBoundaryObservationCount: number;
+  rightBoundaryTerms: Set<string>;
+  rightBoundaryObservationCount: number;
   wordCount: number;
   meaningfulTerms: string[];
   representativeOverlap: number;
@@ -278,16 +243,12 @@ function detectEmergingConcepts({
   existingConcepts: ConceptSuggestion[];
   index: AssociationIndex;
 }): EmergingConceptSuggestion[] {
-  const inputConcepts = detectInputEmergingConcepts({
-    text,
-    existingConcepts,
-  });
   const evidence = recoveryMatches
     .filter((match) => match.score >= MIN_EVIDENCE_CAPTURE_SCORE)
     .slice(0, EMERGING_EVIDENCE_LIMIT);
 
   if (evidence.length < MIN_EMERGING_EVIDENCE_CAPTURES) {
-    return inputConcepts;
+    return [];
   }
 
   const queryTokens = uniqueTokens(tokenizeAssociationText(text));
@@ -304,15 +265,11 @@ function detectEmergingConcepts({
 
   const representativeTerms = Array.from(frequencies.entries())
     .filter(([, frequency]) => frequency >= MIN_EMERGING_TERM_FREQUENCY)
-    .filter(([term]) => !GENERIC_CONCEPT_TERMS.has(term))
+    .filter(([term]) => isMeaningfulLocalSupportToken(term))
     .sort((first, second) => {
-      const labelBoost =
-        Number(Boolean(DISPLAY_LABELS[second[0]])) -
-        Number(Boolean(DISPLAY_LABELS[first[0]]));
       const queryBoost =
         Number(queryTokens.includes(second[0])) - Number(queryTokens.includes(first[0]));
       return (
-        labelBoost ||
         queryBoost ||
         second[1] - first[1] ||
         first[0].localeCompare(second[0])
@@ -325,14 +282,14 @@ function detectEmergingConcepts({
     return [];
   }
 
-  const label = createSuggestedLabel({
-    representativeTerms,
+  const label = findBestExpressionLabel({
     evidenceTexts: evidence.map((match) => match.node.content),
     queryText: text,
+    representativeTerms,
   });
 
   if (!label || hasEquivalentExistingConcept(label, existingConcepts)) {
-    return inputConcepts;
+    return [];
   }
 
   const cohesion =
@@ -343,7 +300,7 @@ function detectEmergingConcepts({
   const score = Math.min(1, cohesion * 0.7 + Math.min(evidence.length / 5, 1) * 0.3);
 
   if (score < MIN_EMERGING_SCORE) {
-    return inputConcepts;
+    return [];
   }
 
   const evidenceCaptureIds = evidence.map((match) => match.node.id);
@@ -357,52 +314,7 @@ function detectEmergingConcepts({
       evidenceCaptureIds,
       representativeTerms,
     },
-    ...inputConcepts,
   ]);
-}
-
-function detectInputEmergingConcepts({
-  text,
-  existingConcepts,
-}: {
-  text: string;
-  existingConcepts: ConceptSuggestion[];
-}): EmergingConceptSuggestion[] {
-  const tokens = uniqueTokens(tokenizeAssociationText(text));
-
-  if (tokens.length < MIN_INPUT_EMERGING_TOKENS) {
-    return [];
-  }
-
-  const candidates = collectInputConceptCandidates(text);
-
-  return dedupeEmergingConcepts(
-    candidates
-      .filter((candidate) => !hasEquivalentExistingConcept(candidate.label, existingConcepts))
-      .map((candidate) => ({
-        kind: "emerging" as const,
-        candidateId: createCandidateId(candidate.label, [], candidate.terms),
-        suggestedLabel: candidate.label,
-        score: candidate.score,
-        evidenceCaptureIds: [],
-        representativeTerms: candidate.terms,
-      }))
-      .filter((candidate) => candidate.score >= MIN_INPUT_EMERGING_SCORE),
-  ).slice(0, INPUT_EMERGING_LIMIT);
-}
-
-function collectInputConceptCandidates(text: string) {
-  return extractSemanticPhraseCandidates(text).map((candidate) => ({
-    label: candidate.text,
-    terms: candidate.tokens,
-    score: candidate.score,
-  })).sort((first, second) => {
-    if (second.score !== first.score) {
-      return second.score - first.score;
-    }
-
-    return first.label.localeCompare(second.label);
-  });
 }
 
 function dedupeEmergingConcepts(suggestions: EmergingConceptSuggestion[]) {
@@ -428,39 +340,6 @@ function dedupeEmergingConcepts(suggestions: EmergingConceptSuggestion[]) {
 
     return first.suggestedLabel.localeCompare(second.suggestedLabel);
   });
-}
-
-function createSuggestedLabel({
-  representativeTerms,
-  evidenceTexts,
-  queryText,
-}: {
-  representativeTerms: string[];
-  evidenceTexts: string[];
-  queryText: string;
-}) {
-  const expression = findBestExpressionLabel({
-    evidenceTexts,
-    queryText,
-    representativeTerms,
-  });
-
-  if (expression) {
-    return expression;
-  }
-
-  const [primary, secondary] = representativeTerms;
-
-  if (!primary) {
-    return null;
-  }
-
-  if (DISPLAY_LABELS[primary]) {
-    return DISPLAY_LABELS[primary];
-  }
-
-  const labelTerms = secondary ? [primary, secondary] : [primary];
-  return labelTerms.map(capitalizeTerm).join(" ");
 }
 
 function findBestExpressionLabel({
@@ -501,8 +380,16 @@ function collectExpressionCandidates({
     for (const wordCount of [2, 3]) {
       for (let index = 0; index <= words.length - wordCount; index += 1) {
         const phraseWords = words.slice(index, index + wordCount);
+        const leftBoundaryTerm = findPreviousMeaningfulTerm(
+          words.slice(0, index),
+        );
+        const rightBoundaryTerm = findNextMeaningfulTerm(
+          words.slice(index + wordCount),
+        );
         const candidate = createExpressionCandidate({
           phraseWords,
+          leftBoundaryTerm,
+          rightBoundaryTerm,
           representativeSet,
           queryTerms,
         });
@@ -516,6 +403,14 @@ function collectExpressionCandidates({
 
         if (current) {
           current.frequency += 1;
+          if (candidate.leftBoundaryTerm) {
+            current.leftBoundaryTerms.add(candidate.leftBoundaryTerm);
+            current.leftBoundaryObservationCount += 1;
+          }
+          if (candidate.rightBoundaryTerm) {
+            current.rightBoundaryTerms.add(candidate.rightBoundaryTerm);
+            current.rightBoundaryObservationCount += 1;
+          }
           current.representativeOverlap = Math.max(
             current.representativeOverlap,
             candidate.representativeOverlap,
@@ -532,32 +427,33 @@ function collectExpressionCandidates({
   return Array.from(candidates.values())
     .filter((candidate) => candidate.frequency >= MIN_EMERGING_TERM_FREQUENCY)
     .filter((candidate) => candidate.representativeOverlap > 0)
+    .filter((candidate) => hasObservedPhraseBoundary(candidate))
     .filter(
       (candidate) =>
         !hasDirectionalContradiction(queryText, candidate.displayLabel),
-    )
-    .filter(
-      (candidate) =>
-        candidate.hasProperCase ||
-        candidate.meaningfulTerms.every((term) => !DISPLAY_LABELS[term]),
     )
     .sort(compareExpressionCandidates);
 }
 
 function createExpressionCandidate({
   phraseWords,
+  leftBoundaryTerm,
+  rightBoundaryTerm,
   representativeSet,
   queryTerms,
 }: {
   phraseWords: string[];
+  leftBoundaryTerm: string | null;
+  rightBoundaryTerm: string | null;
   representativeSet: Set<string>;
   queryTerms: Set<string>;
-}): ExpressionCandidate | null {
+}): (ExpressionCandidate & {
+  leftBoundaryTerm: string | null;
+  rightBoundaryTerm: string | null;
+}) | null {
   const normalizedWords = phraseWords.map((word) => normalizeAssociationText(word));
-  const startsWithStopword = SPANISH_STOPWORDS.has(normalizedWords[0] ?? "");
-  const endsWithStopword = SPANISH_STOPWORDS.has(
-    normalizedWords[normalizedWords.length - 1] ?? "",
-  );
+  const startsWithStopword = isShortStructuralToken(normalizedWords[0] ?? "");
+  const endsWithStopword = isShortStructuralToken(normalizedWords[normalizedWords.length - 1] ?? "");
 
   if (startsWithStopword || endsWithStopword) {
     return null;
@@ -568,7 +464,7 @@ function createExpressionCandidate({
 
   if (
     meaningfulTerms.length < 2 ||
-    meaningfulTerms.every((term) => GENERIC_CONCEPT_TERMS.has(term))
+    !meaningfulTerms.some(isMeaningfulLocalSupportToken)
   ) {
     return null;
   }
@@ -582,12 +478,66 @@ function createExpressionCandidate({
     key: normalizedPhrase,
     displayLabel: formatExpressionLabel(phraseWords),
     frequency: 1,
+    leftBoundaryTerms: leftBoundaryTerm ? new Set([leftBoundaryTerm]) : new Set(),
+    leftBoundaryObservationCount: leftBoundaryTerm ? 1 : 0,
+    rightBoundaryTerms: rightBoundaryTerm ? new Set([rightBoundaryTerm]) : new Set(),
+    rightBoundaryObservationCount: rightBoundaryTerm ? 1 : 0,
+    leftBoundaryTerm,
+    rightBoundaryTerm,
     wordCount: phraseWords.length,
     meaningfulTerms,
     representativeOverlap,
     queryOverlap,
     hasProperCase: hasExpressionCapitalization(phraseWords),
   };
+}
+
+function findPreviousMeaningfulTerm(words: string[]) {
+  for (let index = words.length - 1; index >= 0; index -= 1) {
+    const word = words[index] ?? "";
+    const [term] = tokenizeAssociationText(word);
+
+    if (term && isMeaningfulLocalSupportToken(term)) {
+      return term;
+    }
+  }
+
+  return null;
+}
+
+function findNextMeaningfulTerm(words: string[]) {
+  for (const word of words) {
+    const [term] = tokenizeAssociationText(word);
+
+    if (term && isMeaningfulLocalSupportToken(term)) {
+      return term;
+    }
+  }
+
+  return null;
+}
+
+function hasObservedPhraseBoundary(candidate: ExpressionCandidate) {
+  return !(
+    hasStableObservedBoundary(
+      candidate.leftBoundaryObservationCount,
+      candidate.leftBoundaryTerms,
+      candidate.frequency,
+    ) ||
+    hasStableObservedBoundary(
+      candidate.rightBoundaryObservationCount,
+      candidate.rightBoundaryTerms,
+      candidate.frequency,
+    )
+  );
+}
+
+function hasStableObservedBoundary(
+  observationCount: number,
+  terms: Set<string>,
+  frequency: number,
+) {
+  return observationCount === frequency && terms.size === 1;
 }
 
 function compareExpressionCandidates(
@@ -619,7 +569,7 @@ function formatExpressionLabel(words: string[]) {
 }
 
 function hasUppercaseLetter(value: string) {
-  return value !== value.toLocaleLowerCase("es");
+  return value !== value.toLocaleLowerCase();
 }
 
 function hasExpressionCapitalization(words: string[]) {
@@ -660,6 +610,15 @@ function dedupeConceptSuggestions(suggestions: ConceptSuggestion[]) {
   return Array.from(byLabel.values()).sort((first, second) => {
     if (first.kind !== second.kind) {
       return first.kind === "existing" ? -1 : 1;
+    }
+
+    if (first.kind === "emerging" && second.kind === "emerging") {
+      const evidenceCountDifference =
+        second.evidenceCaptureIds.length - first.evidenceCaptureIds.length;
+
+      if (evidenceCountDifference !== 0) {
+        return evidenceCountDifference;
+      }
     }
 
     return second.score - first.score;
@@ -753,6 +712,7 @@ function getKnowledgeSuggestionKindPriority(
 
 function hasEquivalentExistingConcept(label: string, suggestions: ConceptSuggestion[]) {
   const normalizedLabel = normalizeLabelForDeduplication(label);
+  const labelTerms = new Set(tokenizeAssociationText(label));
   const existingContexts = suggestions
     .filter((suggestion): suggestion is Extract<ConceptSuggestion, { kind: "existing" }> =>
       suggestion.kind === "existing",
@@ -771,13 +731,41 @@ function hasEquivalentExistingConcept(label: string, suggestions: ConceptSuggest
   return suggestions.some(
     (suggestion) =>
       suggestion.kind === "existing" &&
-      normalizeLabelForDeduplication(suggestion.label) === normalizedLabel,
+      (normalizeLabelForDeduplication(suggestion.label) === normalizedLabel ||
+        hasExistingConceptTermSubset(suggestion, labelTerms)),
+  );
+}
+
+function hasExistingConceptTermSubset(
+  suggestion: Extract<ConceptSuggestion, { kind: "existing" }>,
+  labelTerms: Set<string>,
+) {
+  const existingTerms = getExistingConceptTerms(suggestion);
+  const extraTerms = Array.from(labelTerms).filter(
+    (term) => !existingTerms.includes(term),
+  );
+
+  return (
+    existingTerms.length > 0 &&
+    existingTerms.every((term) => labelTerms.has(term)) &&
+    extraTerms.length === 0
+  );
+}
+
+function getExistingConceptTerms(
+  suggestion: Extract<ConceptSuggestion, { kind: "existing" }>,
+) {
+  return tokenizeAssociationText(
+    [
+      suggestion.label,
+      ...(suggestion.context.aliases ?? []),
+      ...(suggestion.context.normalizedAliases ?? []),
+    ].join(" "),
   );
 }
 
 export function normalizeLabel(label: string) {
   return normalizeAssociationText(label)
-    .replace(/\breunion\b/g, "reuniones")
     .replace(/\s+/g, " ")
     .trim();
 }

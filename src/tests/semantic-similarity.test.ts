@@ -574,7 +574,7 @@ describe("semantic vector index and engine", () => {
     await expect(
       engine.findSimilarConceptsForCapture({
         workspaceId,
-        text: "quiero dormir mejor",
+        text: "quiero mejorar sueño y descanso nocturno",
         evidenceModel,
         excludeConceptIds: new Set(["work"]),
       }),
@@ -711,13 +711,11 @@ describe("semantic vector index and engine", () => {
     });
     const ids = matches.map((match) => match.concept.id);
 
-    expect(ids).toEqual(
-      expect.arrayContaining(["aligned-a", "aligned-b", "pure-semantic"]),
-    );
+    expect(ids).toEqual(expect.arrayContaining(["aligned-a", "aligned-b"]));
     expect(ids).not.toContain("weak-shared");
     expect(
       matches.find((match) => match.concept.id === "pure-semantic"),
-    ).toBeDefined();
+    ).toBeUndefined();
   });
 
   it("penalizes vector concept drag from evidence shared with stronger local concepts", async () => {
@@ -857,7 +855,7 @@ describe("semantic vector index and engine", () => {
     });
     const ids = matches.map((match) => match.concept.id);
 
-    expect(ids).toContain("identificacion-personas");
+    expect(ids).not.toContain("identificacion-personas");
     expect(ids).not.toContain("baja-visibilidad");
     expect(ids).not.toContain("mala-iluminacion");
     expect(ids).not.toContain("perforacion-avance");
@@ -1056,6 +1054,60 @@ describe("semantic vector index and engine", () => {
     expect(results).toEqual([]);
   });
 
+  it("keeps an updated sleep routine memory without semantic slot filling", () => {
+    const localText =
+      "Dejar el teléfono fuera del dormitorio antes de dormir redujo el tiempo que tardé en conciliar el sueño. Mantener un horario regular también mejoró mi descanso y energía al despertar.";
+    const results = mergeSemanticAssociationSuggestions(
+      [],
+      [
+        {
+          node: makeNode({
+            id: "sueno",
+            content:
+              "Durante las últimas semanas me cuesta conciliar el sueño cuando uso el teléfono justo antes de acostarme. Dejar la pantalla una hora antes y mantener un horario regular parece mejorar mi descanso al día siguiente.",
+          }),
+          evidence: makeSimilarityEvidence({ similarity: 0.86, rank: 1 }),
+        },
+        {
+          node: makeNode({
+            id: "maniobra-retroceso",
+            content:
+              "Antes de iniciar una maniobra en retroceso con equipos móviles se revisa la visibilidad del operador.",
+          }),
+          evidence: makeSimilarityEvidence({ similarity: 0.91, rank: 2 }),
+        },
+        {
+          node: makeNode({
+            id: "cruces-senalizacion",
+            content:
+              "Mantener señalización clara en cruces donde interactúan peatones y equipos móviles.",
+          }),
+          evidence: makeSimilarityEvidence({ similarity: 0.9, rank: 3 }),
+        },
+        {
+          node: makeNode({
+            id: "radio-operacion",
+            content:
+              "Los equipos móviles presentan mayor riesgo de atropello cuando existen personas circulando dentro de su radio de operación.",
+          }),
+          evidence: makeSimilarityEvidence({ similarity: 0.89, rank: 4 }),
+        },
+        {
+          node: makeNode({
+            id: "revision-cruces",
+            content:
+              "Revisar los cruces donde interactúan peatones y equipos móviles.",
+          }),
+          evidence: makeSimilarityEvidence({ similarity: 0.88, rank: 5 }),
+        },
+      ],
+      5,
+      localText,
+    );
+
+    expect(results.map((result) => result.node.id)).toEqual(["sueno"]);
+  });
+
   it("keeps semantic memory eligibility when a generic verb shares its object", () => {
     const localText = "Mantener horario regular mejora la planificación semanal.";
     const results = mergeSemanticAssociationSuggestions(
@@ -1103,7 +1155,7 @@ describe("semantic vector index and engine", () => {
       },
       {
         localText:
-          "La planificación semanal mejora la alimentación durante jornadas largas.",
+          "La alimentación semanal mejora la planificación durante jornadas largas.",
         anchored:
           "La alimentación semanal requiere planificación de colaciones.",
         unanchored:
@@ -1136,6 +1188,67 @@ describe("semantic vector index and engine", () => {
               content: scenario.unanchored,
             }),
             evidence: makeSimilarityEvidence({ similarity: 0.93, rank: 2 }),
+          },
+        ],
+        5,
+        scenario.localText,
+      );
+
+      expect(results.map((result) => result.node.id)).toEqual([
+        `anchored-${index}`,
+      ]);
+    }
+  });
+
+  it("rejects high-similarity memories that share only functional relations across domains", () => {
+    const scenarios = [
+      {
+        localText:
+          "El tratamiento redujo el dolor cervical y mejoró energía al despertar.",
+        anchored: "El dolor cervical mejora con tratamiento diario.",
+        unanchored:
+          "Antes de la reunión mantener acuerdos mejora la relación comercial.",
+      },
+      {
+        localText:
+          "El deploy redujo latencia de API y mantuvo caché compartida.",
+        anchored: "La caché compartida reduce latencia en la API.",
+        unanchored:
+          "Mantener señalización clara mejora cruces peatonales.",
+      },
+      {
+        localText:
+          "Preparar colaciones redujo antojos y mejoró alimentación saludable.",
+        anchored: "La alimentación saludable mejora con colaciones preparadas.",
+        unanchored:
+          "Antes de dormir mantener horario regular mejora el descanso.",
+      },
+      {
+        localText:
+          "La conversación redujo tensión y mejoró acuerdos familiares.",
+        anchored: "Los acuerdos familiares mejoran con conversación honesta.",
+        unanchored:
+          "Mantener horario regular reduce cansancio al despertar.",
+      },
+    ];
+
+    for (const [index, scenario] of scenarios.entries()) {
+      const results = mergeSemanticAssociationSuggestions(
+        [],
+        [
+          {
+            node: makeNode({
+              id: `unanchored-${index}`,
+              content: scenario.unanchored,
+            }),
+            evidence: makeSimilarityEvidence({ similarity: 0.94, rank: 1 }),
+          },
+          {
+            node: makeNode({
+              id: `anchored-${index}`,
+              content: scenario.anchored,
+            }),
+            evidence: makeSimilarityEvidence({ similarity: 0.86, rank: 2 }),
           },
         ],
         5,

@@ -1,5 +1,4 @@
 import type { ExistingConceptSuggestion } from "@/features/associations/association-types";
-import { isSpanishStopword } from "@/features/associations/spanish-stopwords";
 import { normalizeConceptIdentityLabel } from "@/features/concepts/concept-identity";
 
 export function getUsefulDetectedAlias(
@@ -22,11 +21,7 @@ export function getUsefulDetectedAlias(
     return null;
   }
 
-  if (!normalizedAlias.includes(" ") && isSpanishStopword(normalizedAlias)) {
-    return null;
-  }
-
-  if (normalizedAlias.length === 1 && !/^[A-ZÑ]$/u.test(alias)) {
+  if (normalizedAlias.length === 1 && !/^[\p{Lu}]$/u.test(alias)) {
     return null;
   }
 

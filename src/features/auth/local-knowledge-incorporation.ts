@@ -414,7 +414,7 @@ function findEquivalentNode(
 }
 
 function normalizeCaptureContent(content: string) {
-  return content.trim().replace(/\s+/g, " ").toLocaleLowerCase("es");
+  return content.trim().replace(/\s+/g, " ").toLocaleLowerCase();
 }
 
 function getLocalIncorporationSource(node: Node) {

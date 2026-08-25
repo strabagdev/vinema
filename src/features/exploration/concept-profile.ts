@@ -199,7 +199,7 @@ export function deriveRepresentativeMemories({
       continue;
     }
 
-    const excerptKey = getCapturePreview(node.content, { maxLength: 96 }).toLocaleLowerCase("es");
+    const excerptKey = getCapturePreview(node.content, { maxLength: 96 }).toLocaleLowerCase();
 
     if (usedExcerpts.has(excerptKey)) {
       continue;

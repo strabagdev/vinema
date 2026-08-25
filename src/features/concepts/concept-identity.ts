@@ -1,5 +1,5 @@
 import type { Context } from "@/domain/context/context";
-import { isSpanishStopword } from "@/features/associations/spanish-stopwords";
+import { isShortStructuralToken } from "@/features/associations/structural-tokens";
 
 export type ConceptIdentity = {
   id: string;
@@ -28,21 +28,6 @@ export type ConceptResolutionResult =
       matchedText: string;
     };
 
-const CONNECTOR_WORDS = new Set(["de", "del", "la", "las", "el", "los", "y", "and"]);
-const ACRONYM_PRONOUN_BLOCKLIST = new Set([
-  "me",
-  "te",
-  "se",
-  "lo",
-  "la",
-  "le",
-  "nos",
-  "os",
-  "mi",
-  "tu",
-  "su",
-]);
-
 export function createConceptIdentity(context: Context): ConceptIdentity {
   const aliases = normalizeAliasList(context.aliases ?? []);
   const normalizedAliases = normalizeAliasList([
@@ -65,7 +50,7 @@ export function resolveConceptIdentity(
 ): ConceptResolutionResult {
   const text = matchedText.trim();
 
-  if (!isConceptIdentityLookupCandidate(text)) {
+  if (!text || !/[\p{L}\p{N}]/u.test(text)) {
     return { status: "NEW", matchedText };
   }
 
@@ -98,7 +83,9 @@ export function resolveConceptIdentity(
   }
 
   const exactAlias = contexts.filter((context) =>
-    (context.aliases ?? []).some((alias) => alias.trim() === text),
+    (context.aliases ?? []).some(
+      (alias) => alias.trim() === text && isStoredAliasLookupAllowed(alias, text),
+    ),
   );
   const exactAliasResolution = resolveUniqueOrAmbiguous(exactAlias, text, "ALIAS");
 
@@ -108,9 +95,14 @@ export function resolveConceptIdentity(
 
   const normalizedAlias = contexts.filter((context) => {
     const identity = createConceptIdentity(context);
-    return identity.normalizedAliases.some((alias) => alias === normalizedText) ||
+    return (
+      (normalizedText.length !== 1 || isConfirmedOneLetterSurface(text)) &&
+      identity.normalizedAliases.some((alias) => alias === normalizedText)
+    ) ||
       identity.aliases.some(
-        (alias) => createCompactConceptIdentityKey(alias) === normalizedCompactText,
+        (alias) =>
+          createCompactConceptIdentityKey(alias) === normalizedCompactText &&
+          isStoredAliasLookupAllowed(alias, text),
       );
   });
   const normalizedAliasResolution = resolveUniqueOrAmbiguous(
@@ -128,10 +120,16 @@ export function resolveConceptIdentity(
         (context) => deriveConceptAcronym(context.name) === normalizeAcronym(text),
       )
     : [];
-  const acronymResolution = resolveUniqueOrAmbiguous(acronymMatches, text, "ALIAS");
+  if (acronymMatches.length === 1) {
+    const acronymResolution = resolveUniqueOrAmbiguous(acronymMatches, text, "ALIAS");
 
-  if (acronymResolution) {
-    return withMatchedAlias(acronymResolution, text);
+    if (acronymResolution) {
+      return withMatchedAlias(acronymResolution, text);
+    }
+  }
+
+  if (!isConceptIdentityLookupCandidate(text)) {
+    return { status: "NEW", matchedText: text };
   }
 
   return { status: "NEW", matchedText: text };
@@ -144,7 +142,7 @@ export function normalizeConceptIdentityLabel(value: string): string {
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim()
     .replace(/\s+/g, " ")
-    .toLocaleLowerCase("es");
+    .toLocaleLowerCase();
 }
 
 export function createCompactConceptIdentityKey(value: string): string {
@@ -168,8 +166,8 @@ export function normalizeContextAliases(context: Context): Context {
 export function deriveConceptAcronym(label: string): string {
   return normalizeConceptIdentityLabel(label)
     .split(" ")
-    .filter((word) => word && !CONNECTOR_WORDS.has(word))
-    .map((word) => word[0]?.toLocaleUpperCase("es") ?? "")
+    .filter(Boolean)
+    .map((word) => word[0]?.toLocaleUpperCase() ?? "")
     .join("");
 }
 
@@ -206,7 +204,7 @@ export function isConceptIdentityLookupCandidate(value: string) {
     return isConfirmedOneLetterAcronym(text);
   }
 
-  return !isSingleStopword(normalizedText);
+  return !isSingleShortStructuralToken(normalizedText);
 }
 
 function resolveUniqueOrAmbiguous(
@@ -281,35 +279,45 @@ export function isDerivedAcronymLookupCandidate(value: string) {
   const text = value.trim();
   const normalizedText = normalizeConceptIdentityLabel(value);
 
-  if (
-    normalizedText.length <= 1 ||
-    isSingleStopword(normalizedText) ||
-    ACRONYM_PRONOUN_BLOCKLIST.has(normalizedText)
-  ) {
+  if (normalizedText.length <= 1) {
     return false;
   }
 
-  if (normalizedText.length === 2) {
-    return /^[A-ZÑ0-9]{2}$/u.test(text);
+  if (normalizedText.length <= 3) {
+    return /^[\p{Lu}0-9]{2,3}$/u.test(text);
   }
 
   return true;
 }
 
-function isSingleStopword(value: string) {
-  return !value.includes(" ") && isSpanishStopword(value);
+function isSingleShortStructuralToken(value: string) {
+  return !value.includes(" ") && isShortStructuralToken(value);
+}
+
+function isStoredAliasLookupAllowed(alias: string, matchedText: string) {
+  const normalizedAlias = normalizeConceptIdentityLabel(alias);
+
+  if (normalizedAlias.length !== 1) {
+    return true;
+  }
+
+  return isConfirmedOneLetterSurface(matchedText);
 }
 
 function isConfirmedOneLetterAcronym(value: string) {
+  return isConfirmedOneLetterSurface(value);
+}
+
+function isConfirmedOneLetterSurface(value: string) {
   const text = value.trim();
 
-  return /^[A-ZÑ]$/u.test(text) && !isSingleStopword(normalizeConceptIdentityLabel(text));
+  return /^[\p{Lu}]$/u.test(text);
 }
 
 function normalizeAcronym(value: string) {
   return normalizeConceptIdentityLabel(value)
     .replace(/\s+/g, "")
-    .toLocaleUpperCase("es");
+    .toLocaleUpperCase();
 }
 
 function splitCompactWords(value: string) {

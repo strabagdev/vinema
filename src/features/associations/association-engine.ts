@@ -17,7 +17,9 @@ import {
 } from "@/features/associations/graph-metrics";
 import {
   hasDirectionalContradiction,
+  getMeaningfulLocalSupportTokens,
   hasMeaningfulLocalTokenOverlap,
+  isMeaningfulLocalSupportToken,
 } from "@/features/associations/local-support";
 import { captureMarkdownToEmbeddingText } from "@/features/semantic-similarity/embedding-text";
 import type {
@@ -30,6 +32,8 @@ const MIN_QUERY_TOKENS = 1;
 const MIN_QUERY_LENGTH = 4;
 const MIN_SUGGESTION_SCORE = 0.045;
 const MAX_SUGGESTIONS = 5;
+const MIN_RECURRENT_ANCHOR_DOCUMENT_FREQUENCY = 2;
+const MIN_SHARED_TOKEN_SUPPORT_COUNT = 3;
 const SUPERFICIAL_BOUNDARY_PUNCTUATION =
   /^[\s"'“”‘’.,;:!?¡¿()[\]{}]+|[\s"'“”‘’.,;:!?¡¿()[\]{}]+$/g;
 
@@ -112,15 +116,19 @@ export function suggestAssociations(
       scoreCapture(index, query, capture, selectedCaptureIds),
     )
     .filter((suggestion): suggestion is AssociationSuggestion => suggestion !== null);
+  const structurallyDominantSuggestions = suppressStructurallyDominatedSuggestions(
+    query,
+    scoredSuggestions,
+  );
   const scoringMs = Math.round(performance.now() - scoringStartedAt);
   const rankingStartedAt = performance.now();
-  scoredSuggestions.sort(bySuggestionPriority);
+  structurallyDominantSuggestions.sort(bySuggestionPriority);
   const rankingMs = Math.round(performance.now() - rankingStartedAt);
   const resultBuildStartedAt = performance.now();
-  const selectedSuggestions = scoredSuggestions.filter((suggestion) =>
+  const selectedSuggestions = structurallyDominantSuggestions.filter((suggestion) =>
     selectedCaptureIds.includes(suggestion.node.id),
   );
-  const suggestions = scoredSuggestions.filter(
+  const suggestions = structurallyDominantSuggestions.filter(
     (suggestion) => suggestion.score >= MIN_SUGGESTION_SCORE,
   );
   const visibleSuggestions = dedupeAssociationSuggestionsByContent(
@@ -138,10 +146,74 @@ export function suggestAssociations(
     input.diagnostics.resultBuildMs = Math.round(
       performance.now() - resultBuildStartedAt,
     );
-    input.diagnostics.scoredCaptureCount = scoredSuggestions.length;
+    input.diagnostics.scoredCaptureCount = structurallyDominantSuggestions.length;
   }
 
   return result;
+}
+
+function suppressStructurallyDominatedSuggestions(
+  query: AssociationIndexedCapture,
+  suggestions: AssociationSuggestion[],
+) {
+  const exactSuggestions = suggestions.filter(
+    (suggestion) =>
+      normalizeAssociationText(suggestion.node.content) === query.normalizedText,
+  );
+
+  if (exactSuggestions.length === 0) {
+    return suggestions;
+  }
+
+  return suggestions.filter((suggestion) => {
+    if (exactSuggestions.includes(suggestion)) {
+      return true;
+    }
+
+    return !isNearSurfaceVariant(query.node.content, suggestion.node.content);
+  });
+}
+
+function isNearSurfaceVariant(first: string, second: string) {
+  const firstTokens = normalizeAssociationText(first).split(" ").filter(Boolean);
+  const secondTokens = normalizeAssociationText(second).split(" ").filter(Boolean);
+  const maxDistance = Math.max(3, Math.ceil(firstTokens.length * 0.35));
+
+  return tokenEditDistance(firstTokens, secondTokens, maxDistance) <= maxDistance;
+}
+
+function tokenEditDistance(first: string[], second: string[], maxDistance: number) {
+  if (Math.abs(first.length - second.length) > maxDistance) {
+    return maxDistance + 1;
+  }
+
+  let previous = Array.from({ length: second.length + 1 }, (_value, index) => index);
+
+  for (let firstIndex = 1; firstIndex <= first.length; firstIndex += 1) {
+    const current = [firstIndex];
+    let rowMinimum = current[0] ?? 0;
+
+    for (let secondIndex = 1; secondIndex <= second.length; secondIndex += 1) {
+      const substitutionCost =
+        first[firstIndex - 1] === second[secondIndex - 1] ? 0 : 1;
+      const cost = Math.min(
+        (previous[secondIndex] ?? 0) + 1,
+        (current[secondIndex - 1] ?? 0) + 1,
+        (previous[secondIndex - 1] ?? 0) + substitutionCost,
+      );
+
+      current[secondIndex] = cost;
+      rowMinimum = Math.min(rowMinimum, cost);
+    }
+
+    if (rowMinimum > maxDistance) {
+      return maxDistance + 1;
+    }
+
+    previous = current;
+  }
+
+  return previous[second.length] ?? maxDistance + 1;
 }
 
 export function indexCapture(node: Node): AssociationIndexedCapture {
@@ -196,6 +268,8 @@ function scoreCapture(
   )
     ? 1
     : 0;
+  const selectedScore = selectedCaptureIds.includes(capture.node.id) ? 1 : 0;
+  const queryMeaningfulTokens = getMeaningfulLocalSupportTokens(query.node.content);
   const sharedNeighbors = selectedCaptureIds.flatMap((selectedId) =>
     getSharedNeighbors(index.relations, selectedId, capture.node.id),
   );
@@ -222,8 +296,13 @@ function scoreCapture(
     capture.node.content,
   );
   const localSupport =
-    commonPhrases.length > 0 ||
-    hasMeaningfulLocalTokenOverlap(query.node.content, capture.node.content);
+    selectedScore > 0 ||
+    relationScore > 0 ||
+    hasExactSingleTokenQuerySupport(queryMeaningfulTokens, commonTerms) ||
+    hasMultipleSharedTokenSupport(commonTerms) ||
+    hasMeaningfulPhraseOverlap(commonPhrases) ||
+    hasMeaningfulLocalTokenOverlap(query.node.content, capture.node.content) ||
+    hasRareCommonTermSupport(index, commonTerms);
 
   if (reasons.length === 0 || !localSupport || contradiction) {
     return null;
@@ -235,6 +314,22 @@ function scoreCapture(
     excerpt: createAssociationExcerpt(capture.node.content, commonTerms, commonPhrases),
     reasons,
   };
+}
+
+function hasExactSingleTokenQuerySupport(
+  queryMeaningfulTokens: string[],
+  commonTerms: string[],
+) {
+  return (
+    queryMeaningfulTokens.length === 1 &&
+    commonTerms.includes(queryMeaningfulTokens[0] ?? "")
+  );
+}
+
+function hasMultipleSharedTokenSupport(commonTerms: string[]) {
+  const meaningfulTerms = commonTerms.filter(isMeaningfulLocalSupportToken);
+
+  return meaningfulTerms.length >= MIN_SHARED_TOKEN_SUPPORT_COUNT;
 }
 
 export function calculateBm25(
@@ -323,14 +418,7 @@ export function formatAssociationReason(reason: AssociationReason) {
 }
 
 function formatTermForDisplay(term: string) {
-  const knownTerms: Record<string, string> = {
-    concentr: "concentración",
-    gestion: "gestión",
-    plan: "planificación",
-    reunion: "reuniones",
-  };
-
-  return knownTerms[term] ?? term;
+  return term;
 }
 
 function buildReasons(
@@ -365,6 +453,31 @@ function buildReasons(
   }
 
   return reasons;
+}
+
+function hasMeaningfulPhraseOverlap(phrases: string[]) {
+  return phrases.some((phrase) =>
+    phrase
+      .split(/\s+/)
+      .filter(Boolean)
+      .some(isMeaningfulLocalSupportToken),
+  );
+}
+
+function hasRareCommonTermSupport(index: AssociationIndex, terms: string[]) {
+  return terms.some((term) => {
+    if (!isMeaningfulLocalSupportToken(term)) {
+      return false;
+    }
+
+    const documentFrequency = index.documentFrequency.get(term) ?? 0;
+    const documentRatio = documentFrequency / Math.max(index.captures.length, 1);
+
+    return (
+      documentFrequency >= MIN_RECURRENT_ANCHOR_DOCUMENT_FREQUENCY &&
+      documentRatio <= 0.35
+    );
+  });
 }
 
 function createAssociationExcerpt(
@@ -424,7 +537,7 @@ function bySuggestionPriority(
 export function createAssociationContentDeduplicationKey(content: unknown) {
   return captureMarkdownToEmbeddingText(safeText(content))
     .normalize("NFKC")
-    .toLocaleLowerCase("es")
+    .toLocaleLowerCase()
     .trim()
     .replace(/\s+/g, " ")
     .replace(SUPERFICIAL_BOUNDARY_PUNCTUATION, "")

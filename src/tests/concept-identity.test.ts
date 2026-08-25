@@ -107,7 +107,7 @@ describe("concept identity resolution", () => {
         context({ id: "andres-tapia", name: "Andres Tapia" }),
       ]),
     ).toMatchObject({
-      status: "AMBIGUOUS",
+      status: "NEW",
       matchedText: "AT",
     });
   });

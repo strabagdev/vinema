@@ -13,7 +13,7 @@ import type {
 import { captureMarkdownToEmbeddingText } from "@/features/semantic-similarity/embedding-text";
 import { SemanticVectorIndex } from "@/features/semantic-similarity/semantic-vector-index";
 import { normalizeConceptIdentityLabel } from "@/features/concepts/concept-identity";
-import { HUMAN_ENTITY_TERMS } from "@/features/associations/local-support";
+import { isShortStructuralToken } from "@/features/associations/structural-tokens";
 
 const DEFAULT_TOP_K = 5;
 const MIN_INTERNAL_SIMILARITY = 0.18;
@@ -25,27 +25,6 @@ const EVIDENCE_DOMINANCE_MARGIN = 0.05;
 const MAX_EVIDENCE_DOMINATED_MATCHES_PER_SOURCE = 2;
 const CONTEXTUAL_EVIDENCE_DRAG_PENALTY = 0.65;
 const CLEAR_LOCAL_IDENTITY_MARGIN = 0.025;
-const LOCAL_SUPPORT_STOPWORDS = new Set([
-  "de",
-  "del",
-  "la",
-  "las",
-  "el",
-  "los",
-  "un",
-  "una",
-  "unos",
-  "unas",
-  "a",
-  "en",
-  "por",
-  "para",
-  "con",
-  "sin",
-  "y",
-  "o",
-]);
-
 export type SemanticSimilarityPolicy = "search" | "discovery";
 
 export type SemanticSimilarityEvidence = {
@@ -295,6 +274,13 @@ export class SemanticSimilarityEngine {
 
     return limitEvidenceDominatedMatches(
       contextualMatches
+        .filter((match) =>
+          hasSemanticConceptSuggestionSupport({
+            match,
+            localText: input.localText,
+            sourceType: input.sourceType,
+          }),
+        )
         .filter((match) => match.evidence.similarity >= MIN_INTERNAL_SIMILARITY)
         .sort(compareSemanticConceptMatches),
       input.topK ?? DEFAULT_TOP_K,
@@ -548,9 +534,28 @@ function hasLocalIdentitySupport(concept: Context, localTokens: Set<string>) {
   return labels.some((label) => hasLocalLabelSupport(label, localTokens));
 }
 
+function hasSemanticConceptSuggestionSupport({
+  match,
+  localText,
+  sourceType,
+}: {
+  match: SemanticConceptSimilarityMatch;
+  localText?: string;
+  sourceType: "capture" | "concept";
+}) {
+  if (sourceType !== "capture" || !localText) {
+    return true;
+  }
+
+  return hasLocalIdentitySupport(
+    match.concept,
+    new Set(tokenizeLocalSupportText(localText)),
+  );
+}
+
 function hasLocalLabelSupport(label: string, localTokens: Set<string>) {
   const identityTokens = tokenizeLocalSupportText(label)
-    .filter((token) => !LOCAL_SUPPORT_STOPWORDS.has(token));
+    .filter((token) => !isShortStructuralToken(token));
 
   if (identityTokens.length === 0) {
     return false;
@@ -560,10 +565,7 @@ function hasLocalLabelSupport(label: string, localTokens: Set<string>) {
     return true;
   }
 
-  return (
-    identityTokens.some((token) => HUMAN_ENTITY_TERMS.has(token)) &&
-    Array.from(localTokens).some((token) => HUMAN_ENTITY_TERMS.has(token))
-  );
+  return false;
 }
 
 function tokenizeLocalSupportText(text: string) {

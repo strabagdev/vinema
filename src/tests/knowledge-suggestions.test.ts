@@ -130,7 +130,7 @@ describe("Knowledge Suggestions v1", () => {
     expect(sponsor?.reasons).toEqual(
       expect.arrayContaining([
         "Patrón recurrente en tu memoria",
-        "Significado observado en tus capturas",
+        "Relación observada",
       ]),
     );
     expect(sponsor?.evidenceNodeIds.length).toBeGreaterThanOrEqual(3);
@@ -249,18 +249,18 @@ describe("Knowledge Suggestions v1", () => {
     const contexts = [
       context({ id: "actual-a", name: "Actual A" }),
       context({ id: "actual-b", name: "Actual B" }),
-      context({ id: "personas", name: "Identificación de personas" }),
+      context({ id: "peatones", name: "Exposición de peatones" }),
       context({ id: "visibility", name: "Baja visibilidad" }),
     ];
     const nodes = [
       node({
         id: "memory",
-        content: "Memoria con trabajadores, baja visibilidad y maniobra.",
+        content: "Memoria con peatones, baja visibilidad y maniobra.",
         updatedAt: "2026-07-20T10:00:00.000Z",
       }),
     ];
     const relations = [
-      ...relationsFor("memory", ["actual-a", "actual-b", "personas", "visibility"]),
+      ...relationsFor("memory", ["actual-a", "actual-b", "peatones", "visibility"]),
     ];
     const withoutLocalContext = deriveKnowledgeSuggestions({
       contexts,
@@ -286,7 +286,7 @@ describe("Knowledge Suggestions v1", () => {
       "visibility",
     );
     expect(withLocalContext.map((suggestion) => suggestion.conceptId)).toContain(
-      "personas",
+      "peatones",
     );
     expect(withLocalContext.map((suggestion) => suggestion.conceptId)).not.toContain(
       "visibility",

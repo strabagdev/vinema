@@ -65,7 +65,7 @@ describe("knowledge backup", () => {
       },
     });
     expect(backup.memory.captures[0].content).toBe("Reunion con Mitcom");
-    expect(backup.memory.concepts[0].normalizedLabel).toBe("reunion");
+    expect(backup.memory.concepts[0].normalizedLabel).toBe("reuniones");
     expect(backup.memory.concepts[0]).toMatchObject({
       aliases: ["Meetings"],
       normalizedAliases: ["meetings"],

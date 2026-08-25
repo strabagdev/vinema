@@ -117,16 +117,16 @@ function detectStatementsInSentence({
   acceptedConceptIds: string[];
   conceptRecords: Map<string, ConceptRecord>;
 }): SemanticStatementCandidate[] {
-  if (isQuestion(sentence.text) || hasUncertainty(sentence.text)) {
-    return [];
-  }
-
   const mentions = findConceptMentions({
     sentence,
     acceptedConceptIds,
     conceptRecords,
   });
   const candidates: SemanticStatementCandidate[] = [];
+
+  if (EXPLICIT_SEMANTIC_PATTERNS.length === 0) {
+    return candidates;
+  }
 
   for (const source of mentions) {
     for (const target of mentions) {
@@ -389,21 +389,17 @@ function matchSemanticExpression(value: string): {
   negative: boolean;
 } | null {
   const normalized = normalizeExpression(value);
-  const negative = normalized.startsWith("no ");
-  const expression = stripTrailingObjectArticle(
-    negative ? normalized.slice(3).trim() : normalized,
-  );
 
   for (const pattern of EXPLICIT_SEMANTIC_PATTERNS) {
     const matched = pattern.expressions.find(
-      (candidate) => normalizeExpression(candidate) === expression,
+      (candidate) => normalizeExpression(candidate) === normalized,
     );
 
     if (matched) {
       return {
         relation: pattern.relation,
-        matchedExpression: negative ? `no ${matched}` : matched,
-        negative,
+        matchedExpression: matched,
+        negative: false,
       };
     }
   }
@@ -413,26 +409,4 @@ function matchSemanticExpression(value: string): {
 
 function normalizeExpression(value: string) {
   return normalizeConceptIdentityLabel(value);
-}
-
-function stripTrailingObjectArticle(value: string) {
-  return value.replace(/\s+(un|una|el|la|los|las)$/u, "").trim();
-}
-
-function isQuestion(sentence: string) {
-  return sentence.includes("?") || sentence.includes("¿");
-}
-
-function hasUncertainty(sentence: string) {
-  const normalized = normalizeExpression(sentence);
-
-  return [
-    "quizas",
-    "tal vez",
-    "puede que",
-    "podria",
-    "posiblemente",
-    "no se si",
-    "no estoy seguro",
-  ].some((marker) => normalized.includes(marker));
 }

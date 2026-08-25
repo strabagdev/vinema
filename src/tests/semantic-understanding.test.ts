@@ -16,75 +16,21 @@ const now = new Date("2026-08-01T12:00:00.000Z");
 
 describe("Semantic Understanding v1", () => {
   it.each([
-    ["IS_A", "Vinema es un segundo cerebro.", "vinema", "segundo-cerebro"],
-    ["PART_OF", "Project Core forma parte de Operational Core.", "project-core", "operational-core"],
-    ["LOCATED_IN", "MITAT se realizará en Barrio Cívico.", "mitat", "barrio-civico"],
-    ["USES", "Vinema usa IndexedDB.", "vinema", "indexeddb"],
-    ["DEPENDS_ON", "Operational Core depende de PostgreSQL.", "operational-core", "postgresql"],
-    ["PRODUCES", "Tom Ford produce Ombre Leather.", "tom-ford", "ombre-leather"],
-    ["CREATES", "Vinema implementa Behavioral Engine.", "vinema", "behavioral-engine"],
-    ["WORKS_AT", "Danny trabaja en Züblin.", "danny", "zublin"],
-    ["WORKS_WITH", "Mitcom trabaja con Codelco.", "mitcom", "codelco"],
-    ["RESPONSIBLE_FOR", "José está a cargo de enrolamiento.", "jose", "enrolamiento"],
-  ])("detects %s from explicit text", (relation, content, sourceId, targetId) => {
+    ["Vinema es un segundo cerebro.", "vinema", "segundo-cerebro"],
+    ["Project Core forma parte de Operational Core.", "project-core", "operational-core"],
+    ["MITAT se realizará en Barrio Cívico.", "mitat", "barrio-civico"],
+    ["Vinema usa IndexedDB.", "vinema", "indexeddb"],
+    ["Operational Core depende de PostgreSQL.", "operational-core", "postgresql"],
+    ["Tom Ford produce Ombre Leather.", "tom-ford", "ombre-leather"],
+    ["Vinema implementa Behavioral Engine.", "vinema", "behavioral-engine"],
+    ["Danny trabaja en Züblin.", "danny", "zublin"],
+    ["Mitcom trabaja con Codelco.", "mitcom", "codelco"],
+    ["José está a cargo de enrolamiento.", "jose", "enrolamiento"],
+  ])("does not derive semantic statements from built-in language expressions", (content, sourceId, targetId) => {
     const setup = statementSetup(content, [sourceId, targetId]);
     const statements = deriveSemanticStatements({ ...setup, now });
 
-    expect(statements).toMatchObject([
-      {
-        sourceConceptId: sourceId,
-        relation,
-        targetConceptId: targetId,
-        evidenceLevel: "EXPLICIT",
-        confidence: "MEDIUM",
-      },
-    ]);
-  });
-
-  it("preserves source and target order", () => {
-    const setup = statementSetup("Tom Ford produce Ombre Leather.", [
-      "tom-ford",
-      "ombre-leather",
-    ]);
-    const [statement] = deriveSemanticStatements({ ...setup, now });
-
-    expect(statement.sourceLabel).toBe("Tom Ford");
-    expect(statement.targetLabel).toBe("Ombre Leather");
-  });
-
-  it("consolidates aliases under canonical concepts", () => {
-    const contexts = [
-      context({
-        id: "operational-core",
-        name: "Operational Core",
-        aliases: ["OC"],
-      }),
-      context({
-        id: "postgresql",
-        name: "PostgreSQL",
-        aliases: ["Postgres"],
-      }),
-    ];
-    const nodes = [
-      node({ id: "a", content: "OC usa PostgreSQL." }),
-      node({ id: "b", content: "Operational Core utiliza Postgres." }),
-    ];
-    const relations = nodes.flatMap((memory) => [
-      relation({ nodeId: memory.id, contextId: "operational-core" }),
-      relation({ nodeId: memory.id, contextId: "postgresql" }),
-    ]);
-    const [statement] = deriveSemanticStatements({ contexts, nodes, relations, now });
-
-    expect(statement).toMatchObject({
-      sourceConceptId: "operational-core",
-      sourceLabel: "Operational Core",
-      relation: "USES",
-      targetConceptId: "postgresql",
-      targetLabel: "PostgreSQL",
-      confidence: "HIGH",
-      evidenceLevel: "REPEATED_EXPLICIT",
-    });
-    expect(statement.evidence).toHaveLength(2);
+    expect(statements).toEqual([]);
   });
 
   it("does not convert contextual association into a verb", () => {
@@ -138,12 +84,10 @@ describe("Semantic Understanding v1", () => {
       relation({ nodeId: memory.id, contextId: "indexeddb" }),
     ]);
     const candidates = detectExplicitSemanticStatements({ contexts, nodes, relations });
-    const [statement] = deriveSemanticStatements({ contexts, nodes, relations, now });
 
-    expect(Array.from(detectSemanticContradictions(candidates))).toEqual([
-      "semantic:vinema:uses:indexeddb",
-    ]);
-    expect(statement.hasContradictoryEvidence).toBe(true);
+    expect(candidates).toEqual([]);
+    expect(Array.from(detectSemanticContradictions(candidates))).toEqual([]);
+    expect(deriveSemanticStatements({ contexts, nodes, relations, now })).toEqual([]);
   });
 
   it("excludes archived captures, archived concepts and unaccepted associations", () => {
@@ -169,8 +113,7 @@ describe("Semantic Understanding v1", () => {
     ];
     const statements = deriveSemanticStatements({ contexts, nodes, relations, now });
 
-    expect(statements).toHaveLength(1);
-    expect(statements[0].targetConceptId).toBe("indexeddb");
+    expect(statements).toEqual([]);
   });
 
   it("keeps stable ids and deterministic order", () => {
@@ -180,15 +123,13 @@ describe("Semantic Understanding v1", () => {
       context({ id: "railway", name: "Railway" }),
     ];
     const nodes = [
-      node({ id: "a", content: "Vinema usa IndexedDB." }),
-      node({ id: "b", content: "Vinema usa Railway." }),
+      node({ id: "a", content: "Vinema usa Railway." }),
+      node({ id: "b", content: "Vinema y Railway aparecen en soporte." }),
+      node({ id: "c", content: "Vinema y Railway aparecen en despliegue." }),
     ];
     const relations = nodes.flatMap((memory) => [
       relation({ nodeId: memory.id, contextId: "vinema" }),
-      relation({
-        nodeId: memory.id,
-        contextId: memory.id === "a" ? "indexeddb" : "railway",
-      }),
+      relation({ nodeId: memory.id, contextId: "railway" }),
     ]);
     const first = deriveSemanticStatements({ contexts, nodes, relations, now });
     const second = deriveSemanticStatements({
@@ -201,13 +142,13 @@ describe("Semantic Understanding v1", () => {
     expect(first.map((statement) => statement.id)).toEqual(
       second.map((statement) => statement.id),
     );
-    expect(first[0].id).toBe("semantic:vinema:uses:indexeddb");
+    expect(first[0].id).toBe("semantic:railway:related_to:vinema");
   });
 
   it("reconstructs after restore and disappears after reset", () => {
     const restored = statementSetup("Vinema usa IndexedDB.", ["vinema", "indexeddb"]);
 
-    expect(deriveSemanticStatements({ ...restored, now })).not.toEqual([]);
+    expect(deriveSemanticStatements({ ...restored, now })).toEqual([]);
     expect(
       deriveSemanticStatements({
         contexts: restored.contexts,
@@ -267,7 +208,7 @@ describe("Semantic Understanding v1", () => {
       deriveSemanticStatements({ contexts, nodes, relations, now }),
     );
 
-    expect(statements[0]).toMatchObject({ confidence: "HIGH" });
+    expect(statements[0]).toMatchObject({ confidence: "LOW" });
     expect(medianMs).toBeLessThan(500);
   });
 });

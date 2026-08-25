@@ -1,5 +1,5 @@
-import { stemSpanishToken } from "@/features/associations/normalize-text";
-import { SPANISH_STOPWORDS } from "@/features/associations/spanish-stopwords";
+import { normalizeAssociationToken } from "@/features/associations/normalize-text";
+import { isShortStructuralToken } from "@/features/associations/structural-tokens";
 import {
   hasSemanticUppercase,
   hasTechnicalShape,
@@ -24,152 +24,6 @@ export type SemanticPhraseCandidate = {
   score: number;
   reasons: string[];
 };
-
-export const SEMANTIC_CONNECTORS = new Set([
-  "de",
-  "del",
-  "la",
-  "las",
-  "los",
-]);
-
-export const SEMANTIC_STOPWORDS = new Set([
-  "hacer",
-  "tener",
-  ...SPANISH_STOPWORDS,
-]);
-
-const GENERIC_VERBS = new Set([
-  "comprar",
-  "comparar",
-  "consolidar",
-  "debe",
-  "dificultar",
-  "dejar",
-  "hacer",
-  "mantener",
-  "necesita",
-  "necesitamos",
-  "necesito",
-  "preparar",
-  "puede",
-  "pueden",
-  "quiero",
-  "realizara",
-  "realizar",
-  "revisan",
-  "revisar",
-  "tener",
-  "usar",
-]);
-
-const GENERIC_TERMS = new Set([
-  "actual",
-  "cosas",
-  "despues",
-  "general",
-  "mediante",
-  "mayor",
-  "menor",
-  "nuevo",
-  "nueva",
-  "pendiente",
-  "varios",
-]);
-
-const KNOWN_VISIBLE_LABELS = new Map([
-  ["mitcom", "Mitcom"],
-  ["next js", "Next.js"],
-  ["postgresql", "PostgreSQL"],
-  ["railway", "Railway"],
-  ["vinema", "Vinema"],
-]);
-
-const KNOWN_NOUN_LABELS = new Map([
-  ["perfumes", "Perfumes"],
-  ["perfume", "Perfumes"],
-  ["reunion", "Reunión"],
-  ["reuniones", "Reuniones"],
-]);
-
-const NOUN_PHRASE_HEADS = new Set([
-  "access",
-  "base",
-  "control",
-  "gestion",
-  "informe",
-  "motor",
-  "operational",
-  "sincronizacion",
-  "tracking",
-]);
-
-const NOUN_PHRASE_MODIFIERS = new Set([
-  "automatica",
-  "automatico",
-  "conceptos",
-  "conocimiento",
-  "contractual",
-  "contratos",
-  "core",
-  "documental",
-  "personal",
-  "seguridad",
-  "tracking",
-]);
-
-const CONNECTOR_PROPER_PHRASE_HEADS = new Set([
-  "banco",
-  "universidad",
-]);
-
-const GENERIC_MANNER_ADVERBS = new Set([
-  "adecuadamente",
-  "correctamente",
-  "directamente",
-  "facilmente",
-  "generalmente",
-  "normalmente",
-  "nuevamente",
-  "rapidamente",
-  "simplemente",
-]);
-
-const STRUCTURAL_SINGLE_NOUN_PRECEDERS = new Set([
-  "el",
-  "la",
-  "los",
-  "las",
-  "mi",
-  "mis",
-  "su",
-  "sus",
-  "un",
-  "una",
-  "unos",
-  "unas",
-]);
-
-const TEMPORAL_COMPLEMENT_HEADS = new Set([
-  "antes",
-  "despues",
-  "durante",
-]);
-
-const STRUCTURAL_SINGLE_NOUN_FOLLOWERS = new Set([
-  "ante",
-  "con",
-  "contra",
-  "durante",
-  "en",
-  "hacia",
-  "mediante",
-  "para",
-  "por",
-  "sin",
-  "sobre",
-  "tras",
-]);
 
 const MAX_SEMANTIC_SUGGESTIONS = 5;
 
@@ -203,7 +57,11 @@ export function extractSemanticPhraseCandidates(text: string) {
         continue;
       }
 
-      const candidate = createPhraseCandidate(phraseTokens);
+      const candidate = createPhraseCandidate({
+        phraseTokens,
+        previousToken: tokens[index - 1],
+        nextToken: tokens[index + size],
+      });
       if (candidate) {
         upsertCandidate(candidates, candidate);
       }
@@ -231,8 +89,6 @@ function createSingleTokenCandidate({
   index: number;
 }): SemanticPhraseCandidate | null {
   const normalized = normalizeSemanticPhrase(token.text);
-  const visibleLabel = KNOWN_VISIBLE_LABELS.get(normalized);
-  const nounLabel = KNOWN_NOUN_LABELS.get(normalized);
   const isTechnical = hasTechnicalShape(token.text);
   const isProper =
     token.start > 0 &&
@@ -246,18 +102,16 @@ function createSingleTokenCandidate({
     index,
   });
 
-  if (!visibleLabel && !nounLabel && !isTechnical && !isProper && !isSalientSingleNoun) {
+  if (!isTechnical && !isProper && !isSalientSingleNoun) {
     return null;
   }
 
-  if (isSemanticStopword(normalized) || isGenericTerm(normalized)) {
+  if (isShortBoundaryToken(normalized)) {
     return null;
   }
 
   const text =
-    visibleLabel ??
-    nounLabel ??
-    (isSalientSingleNoun ? capitalizeTerm(token.text.toLocaleLowerCase("es")) : preserveVisibleToken(token.text));
+    isSalientSingleNoun ? capitalizeTerm(token.text.toLocaleLowerCase()) : token.text;
 
   return {
     text,
@@ -266,16 +120,14 @@ function createSingleTokenCandidate({
     start: token.start,
     end: token.end,
     source:
-      visibleLabel || nounLabel || isTechnical
+      isTechnical
         ? "KNOWN_TERM"
         : isSalientSingleNoun
           ? "GENERAL_NOUN_PHRASE"
           : "CAPITALIZED_PHRASE",
-    score: visibleLabel || nounLabel ? 0.76 : isTechnical ? 0.7 : isSalientSingleNoun ? 0.58 : 0.5,
+    score: isTechnical ? 0.7 : isSalientSingleNoun ? 0.58 : 0.5,
     reasons: [
-      visibleLabel || nounLabel
-        ? "known-term"
-        : isTechnical
+      isTechnical
           ? "technical-shape"
           : isSalientSingleNoun
             ? "salient-abstract-noun"
@@ -284,28 +136,31 @@ function createSingleTokenCandidate({
   };
 }
 
-function createPhraseCandidate(
-  phraseTokens: SemanticToken[],
-): SemanticPhraseCandidate | null {
+function createPhraseCandidate({
+  phraseTokens,
+  previousToken,
+  nextToken,
+}: {
+  phraseTokens: SemanticToken[];
+  previousToken?: SemanticToken;
+  nextToken?: SemanticToken;
+}): SemanticPhraseCandidate | null {
   const normalizedValues = phraseTokens.map((token) => token.normalizedText);
   const first = normalizedValues[0] ?? "";
   const last = normalizedValues[normalizedValues.length - 1] ?? "";
 
-  const startsWithArticleProperName =
-    ["el", "la", "los", "las"].includes(first) &&
-    Boolean(phraseTokens[1]?.text) &&
-    hasSemanticUppercase(phraseTokens[1]?.text ?? "");
+  const visiblyProperPhrase = phraseTokens
+    .filter((token) => !isSemanticConnector(token.normalizedText))
+    .every((token) => hasSemanticUppercase(token.text) || hasTechnicalShape(token.text));
 
   if (
-    (!startsWithArticleProperName && isSemanticStopword(first)) ||
-    isSemanticStopword(last) ||
-    isGenericTerm(first) ||
-    isGenericTerm(last)
+    isShortBoundaryToken(first) ||
+    isShortBoundaryToken(last)
   ) {
     return null;
   }
 
-  if (normalizedValues.some((value) => GENERIC_VERBS.has(value))) {
+  if (startsWithSentenceInitialConnectorFragment(phraseTokens, previousToken)) {
     return null;
   }
 
@@ -313,16 +168,16 @@ function createPhraseCandidate(
     return null;
   }
 
-  if (isConjugatedVerbArticleNounPhrase(normalizedValues)) {
+  if (!visiblyProperPhrase && isConjugatedVerbArticleNounPhrase(normalizedValues)) {
     return null;
   }
 
-  if (isConjugatedVerbInfinitivePhrase(normalizedValues)) {
+  if (!visiblyProperPhrase && isConjugatedVerbInfinitivePhrase(normalizedValues)) {
     return null;
   }
 
   const meaningfulTokens = normalizedValues.filter(
-    (value) => !SEMANTIC_CONNECTORS.has(value),
+    (value) => !isSemanticConnector(value),
   );
 
   if (meaningfulTokens.length < 2) {
@@ -339,13 +194,21 @@ function createPhraseCandidate(
   ).length;
   const hasConnectorInside = normalizedValues
     .slice(1, -1)
-    .some((value) => SEMANTIC_CONNECTORS.has(value));
+    .some((value) => isSemanticConnector(value));
   const allMeaningfulCapitalized = phraseTokens
-    .filter((token) => !SEMANTIC_CONNECTORS.has(token.normalizedText))
+    .filter((token) => !isSemanticConnector(token.normalizedText))
     .every(isStrongProperPhraseToken);
   const nounPhrase = isNounPhrase(normalizedValues);
   const generalNounPhrase = isGeneralNounPhrase(normalizedValues);
-  const actionObjectPhrase = isActionObjectPhrase(normalizedValues);
+  const actionObjectPhrase = isActionObjectPhrase({
+    normalizedValues,
+    segmentId: phraseTokens[0]?.segmentId,
+    nextToken,
+  });
+
+  if (!actionObjectPhrase && isVerbInfinitiveSurface(first)) {
+    return null;
+  }
 
   if (
     !allMeaningfulCapitalized &&
@@ -360,7 +223,7 @@ function createPhraseCandidate(
     hasConnectorInside &&
     !nounPhrase &&
     !generalNounPhrase &&
-    !isAllowedProperConnectorPhrase(normalizedValues)
+    !isAllowedProperConnectorPhrase()
   ) {
     return null;
   }
@@ -494,7 +357,7 @@ function compareSemanticCandidates(
     return first.start - second.start;
   }
 
-  return first.text.localeCompare(second.text, "es");
+  return first.text.localeCompare(second.text);
 }
 
 function upsertCandidate(
@@ -510,7 +373,7 @@ function upsertCandidate(
 
 function isNounPhrase(normalizedValues: string[]) {
   const meaningfulValues = normalizedValues.filter(
-    (value) => !SEMANTIC_CONNECTORS.has(value),
+    (value) => !isSemanticConnector(value),
   );
   const [first, second] = meaningfulValues;
 
@@ -518,19 +381,15 @@ function isNounPhrase(normalizedValues: string[]) {
     return false;
   }
 
-  if (!NOUN_PHRASE_HEADS.has(first)) {
-    return false;
-  }
-
   return (
-    NOUN_PHRASE_MODIFIERS.has(second) ||
-    normalizedValues.some((value) => SEMANTIC_CONNECTORS.has(value))
+    normalizedValues.some((value) => isSemanticConnector(value)) &&
+    isFlexibleConnectorNounPhrase(normalizedValues, meaningfulValues)
   );
 }
 
 function isGeneralNounPhrase(normalizedValues: string[]) {
   const meaningfulValues = normalizedValues.filter(
-    (value) => !SEMANTIC_CONNECTORS.has(value),
+    (value) => !isSemanticConnector(value),
   );
   const [first, second] = meaningfulValues;
 
@@ -541,15 +400,19 @@ function isGeneralNounPhrase(normalizedValues: string[]) {
   if (
     meaningfulValues.some(
       (value) =>
-        isSemanticStopword(value) || isGenericTerm(value) || GENERIC_VERBS.has(value),
+        isShortBoundaryToken(value) || isLikelyInfinitive(value),
     )
   ) {
     return false;
   }
 
+  if (isLikelyPresentVerb(first)) {
+    return false;
+  }
+
   const hasConnectorInside = normalizedValues
     .slice(1, -1)
-    .some((value) => SEMANTIC_CONNECTORS.has(value));
+    .some((value) => isSemanticConnector(value));
 
   if (hasConnectorInside) {
     return isFlexibleConnectorNounPhrase(normalizedValues, meaningfulValues);
@@ -558,12 +421,12 @@ function isGeneralNounPhrase(normalizedValues: string[]) {
   return (
     meaningfulValues.length === 2 &&
     ((isLikelyModifier(first) && isNominalConceptTerm(second)) ||
-      (isLikelyNoun(first) && isLikelyAdjective(second)))
+      (isLikelyNoun(first) && (isLikelyAdjective(second) || isLikelyNoun(second))))
   );
 }
 
 function isNominalConceptTerm(value: string) {
-  return /(cion|sion|miento|mento|dad|aje|ncia|encia|ancia|ura)$/u.test(value);
+  return value.length >= 8;
 }
 
 function isFlexibleConnectorNounPhrase(
@@ -571,17 +434,13 @@ function isFlexibleConnectorNounPhrase(
   meaningfulValues: string[],
 ) {
   const connectorIndex = normalizedValues.findIndex((value) =>
-    SEMANTIC_CONNECTORS.has(value),
+    isSemanticConnector(value),
   );
   const beforeConnector = normalizedValues.slice(0, connectorIndex);
   const afterConnector = normalizedValues.slice(connectorIndex + 1);
-  const hasArticleAfterConnector = afterConnector.some((value) =>
-    ["la", "las", "los"].includes(value),
-  );
-
   if (
     connectorIndex <= 0 ||
-    afterConnector.length === 0 ||
+    afterConnector.length !== 1 ||
     beforeConnector.length > 1 ||
     meaningfulValues.length > 3
   ) {
@@ -595,27 +454,26 @@ function isFlexibleConnectorNounPhrase(
   return (
     meaningfulValues.some(isNominalConceptTerm) ||
     (meaningfulValues.length === 2 &&
-      meaningfulValues.every(isLikelyNoun) &&
-      !hasArticleAfterConnector)
+      meaningfulValues.every(isLikelyNoun))
   );
 }
 
 function isLikelyNoun(value: string) {
-  return /^[a-zñ]{4,}$/u.test(value) &&
-    !isLikelyAdjective(value) &&
-    !isLikelyGerund(value);
+  return /^[\p{L}]{4,}$/u.test(value);
 }
 
 function isLikelyAdjective(value: string) {
-  return /(al|ales|ar|ares|ble|bles|ico|ica|icos|icas|ivo|iva|ivos|ivas|il|iles|oso|osa|osos|osas|ado|ada|ados|adas|ido|ida|idos|idas)$/u.test(value);
+  void value;
+  return false;
 }
 
 function isLikelyGerund(value: string) {
-  return /(ando|iendo)$/u.test(value);
+  void value;
+  return false;
 }
 
 function isLikelyModifier(value: string) {
-  return /[aeiou]$/u.test(value) && !isGenericTerm(value);
+  return value.length >= 4 && !isShortStructuralToken(value);
 }
 
 function isSalientAbstractSingleNoun({
@@ -635,8 +493,7 @@ function isSalientAbstractSingleNoun({
 
   if (
     normalized.length < 6 ||
-    isSemanticStopword(normalized) ||
-    isGenericTerm(normalized) ||
+    isShortBoundaryToken(normalized) ||
     isLikelyAdjective(normalized) ||
     isLikelyGerund(normalized) ||
     (!isNominalConceptTerm(normalized) && !hasStructuralSimpleNounEvidence({
@@ -654,9 +511,9 @@ function isSalientAbstractSingleNoun({
       previous,
       next,
     }) ||
-    (index === 1 && STRUCTURAL_SINGLE_NOUN_PRECEDERS.has(previous)) ||
-    STRUCTURAL_SINGLE_NOUN_FOLLOWERS.has(previous) ||
-    STRUCTURAL_SINGLE_NOUN_FOLLOWERS.has(next)
+    (index === 1 && isShortStructuralToken(previous)) ||
+    isShortStructuralToken(previous) ||
+    isShortStructuralToken(next)
   );
 }
 
@@ -671,7 +528,7 @@ function hasStructuralSimpleNounEvidence({
 }) {
   if (
     next &&
-    !isSemanticStopword(next) &&
+    !isShortBoundaryToken(next) &&
     (isLikelyNoun(next) || isLikelyModifier(next))
   ) {
     return false;
@@ -679,7 +536,7 @@ function hasStructuralSimpleNounEvidence({
 
   return (
     normalized.length >= 7 &&
-    STRUCTURAL_SINGLE_NOUN_PRECEDERS.has(previous) &&
+    isShortStructuralToken(previous) &&
     !isLikelyInfinitive(normalized)
   );
 }
@@ -692,14 +549,14 @@ function isConjugatedVerbArticleNounPhrase(normalizedValues: string[]) {
       second &&
       third &&
       isLikelyPresentVerb(first) &&
-      ["el", "la", "los", "las"].includes(second) &&
-      !isSemanticStopword(third),
+      isShortStructuralToken(second) &&
+      !isShortBoundaryToken(third),
   );
 }
 
 function isConjugatedVerbInfinitivePhrase(normalizedValues: string[]) {
   const meaningfulValues = normalizedValues.filter(
-    (value) => !SEMANTIC_CONNECTORS.has(value),
+    (value) => !isSemanticConnector(value),
   );
   const [first, second] = meaningfulValues;
 
@@ -707,114 +564,99 @@ function isConjugatedVerbInfinitivePhrase(normalizedValues: string[]) {
     first &&
       second &&
       isLikelyPresentVerb(first) &&
-      isLikelyInfinitive(second),
+      isVerbInfinitiveSurface(second),
   );
 }
 
 function isTemporalComplementFragment(normalizedValues: string[]) {
-  const [first] = normalizedValues;
-
-  return Boolean(first && TEMPORAL_COMPLEMENT_HEADS.has(first));
+  void normalizedValues;
+  return false;
 }
 
-function isActionObjectPhrase(normalizedValues: string[]) {
-  const [first, second, third] = normalizedValues;
+function startsWithSentenceInitialConnectorFragment(
+  phraseTokens: SemanticToken[],
+  previousToken?: SemanticToken,
+) {
+  const [first, second] = phraseTokens;
 
   return Boolean(
     first &&
       second &&
+      isLikelySentenceInitialOnly(first, previousToken) &&
+      isShortStructuralToken(second.normalizedText),
+  );
+}
+
+function isActionObjectPhrase({
+  normalizedValues,
+  segmentId,
+  nextToken,
+}: {
+  normalizedValues: string[];
+  segmentId?: number;
+  nextToken?: SemanticToken;
+}) {
+  const [first, second, third] = normalizedValues;
+
+  if (
+    nextToken &&
+    nextToken.segmentId === segmentId &&
+    !isShortBoundaryToken(nextToken.normalizedText) &&
+    !isLikelyPresentVerb(nextToken.normalizedText) &&
+    (isLikelyNoun(nextToken.normalizedText) ||
+      isLikelyAdjective(nextToken.normalizedText) ||
+      isLikelyModifier(nextToken.normalizedText))
+  ) {
+    return false;
+  }
+
+  return Boolean(
+      first &&
+      second &&
       third &&
       normalizedValues.length === 3 &&
-      isLikelyInfinitive(first) &&
-      !isGenericTerm(first) &&
-      ["el", "la", "los", "las", "un", "una", "unos", "unas"].includes(second) &&
+      isVerbInfinitiveSurface(first) &&
+      isShortStructuralToken(second) &&
       isLikelyNoun(third),
   );
 }
 
 function isLikelyPresentVerb(value: string) {
-  return /^[a-zñ]{5,}(a|e|an|en)$/u.test(value) &&
-    !isNominalConceptTerm(value) &&
-    !isLikelyAdjective(value) &&
-    !isLikelyGerund(value);
+  void value;
+  return false;
 }
 
 function isLikelyInfinitive(value: string) {
-  return /^[a-zñ]{5,}(ar|er|ir)$/u.test(value);
+  void value;
+  return false;
+}
+
+function isVerbInfinitiveSurface(value: string) {
+  void value;
+  return false;
 }
 
 function nominalizeEligibleVerb(token: SemanticToken) {
-  const normalized = token.normalizedText;
-
-  if (
-    isGenericTerm(normalized) ||
-    isSemanticStopword(normalized) ||
-    !/^[a-zñ]+r$/u.test(normalized)
-  ) {
-    return null;
-  }
-
-  const visible = token.text.toLocaleLowerCase("es");
-
-  if (normalized.endsWith("ctar")) {
-    return capitalizeTerm(`${visible.slice(0, -3)}ción`);
-  }
-
-  if (normalized.endsWith("ficar")) {
-    return capitalizeTerm(`${visible.slice(0, -2)}ación`);
-  }
-
-  if (normalized.endsWith("izar")) {
-    return capitalizeTerm(`${visible.slice(0, -2)}ación`);
-  }
-
-  if (normalized.endsWith("uar")) {
-    return capitalizeTerm(`${visible.slice(0, -2)}ación`);
-  }
-
+  void token;
   return null;
 }
 
 function adjectiveFromConceptualAdverb(token: SemanticToken) {
-  const normalized = token.normalizedText;
-
-  if (
-    !normalized.endsWith("mente") ||
-    GENERIC_MANNER_ADVERBS.has(normalized) ||
-    isGenericTerm(normalized)
-  ) {
-    return null;
-  }
-
-  const visible = token.text.toLocaleLowerCase("es");
-  const adjective = visible.slice(0, -5);
-
-  if (adjective.length < 4 || isGenericTerm(normalizeSemanticPhrase(adjective))) {
-    return null;
-  }
-
-  return adjective;
+  void token;
+  return null;
 }
 
 function capitalizeTerm(value: string) {
-  return value.charAt(0).toLocaleUpperCase("es") + value.slice(1);
+  return value.charAt(0).toLocaleUpperCase() + value.slice(1);
 }
 
-function isAllowedProperConnectorPhrase(normalizedValues: string[]) {
-  const connectorIndex = normalizedValues.findIndex((value) =>
-    SEMANTIC_CONNECTORS.has(value),
-  );
-
-  return (
-    normalizedValues.length === 3 &&
-    connectorIndex === 1 &&
-    CONNECTOR_PROPER_PHRASE_HEADS.has(normalizedValues[0] ?? "")
-  );
+function isAllowedProperConnectorPhrase() {
+  return false;
 }
 
 function absorbsProperNameAfterConnector(phraseTokens: SemanticToken[]) {
   const connectorIndex = phraseTokens.findIndex((token) =>
-    SEMANTIC_CONNECTORS.has(token.normalizedText),
+    isSemanticConnector(token.normalizedText),
   );
 
   if (connectorIndex < 0) {
@@ -823,15 +665,11 @@ function absorbsProperNameAfterConnector(phraseTokens: SemanticToken[]) {
 
   return phraseTokens
     .slice(connectorIndex + 1)
-    .some((token) => KNOWN_VISIBLE_LABELS.has(token.normalizedText));
+    .some((token) => hasTechnicalShape(token.text));
 }
 
-function isSemanticStopword(value: string) {
-  return SEMANTIC_STOPWORDS.has(value);
-}
-
-function isGenericTerm(value: string) {
-  return GENERIC_TERMS.has(value) || GENERIC_VERBS.has(value);
+function isShortBoundaryToken(value: string) {
+  return isShortStructuralToken(value);
 }
 
 function isLikelySentenceInitialOnly(
@@ -854,19 +692,15 @@ function formatSemanticPhraseLabel(
     return phrase;
   }
 
-  return phrase.charAt(0).toLocaleUpperCase("es") + phrase.slice(1);
-}
-
-function preserveVisibleToken(value: string) {
-  if (KNOWN_VISIBLE_LABELS.has(normalizeSemanticPhrase(value))) {
-    return KNOWN_VISIBLE_LABELS.get(normalizeSemanticPhrase(value)) ?? value;
-  }
-
-  return value;
+  return phrase.charAt(0).toLocaleUpperCase() + phrase.slice(1);
 }
 
 function stemSemanticToken(value: string) {
-  return stemSpanishToken(value);
+  return normalizeAssociationToken(value);
+}
+
+function isSemanticConnector(value: string) {
+  return isShortStructuralToken(value);
 }
 
 function isWithinSingleSegment(tokens: SemanticToken[]) {

@@ -48,7 +48,12 @@ type IdentityResolution =
       matchedAlias?: string;
     }
   | {
-      status: "AMBIGUOUS" | "NEW";
+      status: "AMBIGUOUS";
+      matchedText: string;
+      candidates: Context[];
+    }
+  | {
+      status: "NEW";
       matchedText: string;
     };
 
@@ -393,6 +398,17 @@ function resolveIdentityMatches(
   for (const candidate of candidates.items) {
     const resolution = resolveIdentityCandidate(candidate, index);
 
+    if (resolution.status === "AMBIGUOUS") {
+      for (const context of resolution.candidates) {
+        if (!matches.has(context.id)) {
+          matches.set(context.id, {
+            matchedText: resolution.matchedText,
+          });
+        }
+      }
+      continue;
+    }
+
     if (resolution.status !== "EXACT" && resolution.status !== "ALIAS") {
       continue;
     }
@@ -412,7 +428,7 @@ function resolveIdentityCandidate(
   candidate: IdentityCandidate,
   index: ConceptIdentityIndex,
 ): IdentityResolution {
-  if (!isConceptIdentityLookupCandidate(candidate.text)) {
+  if (!candidate.text.trim() || !/[\p{L}\p{N}]/u.test(candidate.text)) {
     return { status: "NEW", matchedText: candidate.text };
   }
 
@@ -429,39 +445,64 @@ function resolveIdentityCandidate(
     candidate.text,
     "EXACT",
   ) ?? resolveIndexedIdentity(
-    index.exactAlias.get(candidate.text.trim()) ?? [],
+    candidate.normalizedKey.length !== 1 ||
+      /^[\p{Lu}]$/u.test(candidate.text.trim())
+      ? index.exactAlias.get(candidate.text.trim()) ?? []
+      : [],
     candidate.text,
     "ALIAS",
+    { allowAmbiguous: true },
   ) ?? resolveIndexedIdentity(
-    index.normalizedAlias.get(candidate.normalizedKey) ?? [],
+    candidate.normalizedKey.length !== 1 ||
+      /^[\p{Lu}]$/u.test(candidate.text.trim())
+      ? index.normalizedAlias.get(candidate.normalizedKey) ?? []
+      : [],
     candidate.text,
     "ALIAS",
+    { allowAmbiguous: true },
   ) ?? resolveIndexedIdentity(
-    index.compactAlias.get(candidate.compactKey) ?? [],
+    candidate.compactKey.length !== 1 ||
+      /^[\p{Lu}]$/u.test(candidate.text.trim())
+      ? index.compactAlias.get(candidate.compactKey) ?? []
+      : [],
     candidate.text,
     "ALIAS",
+    { allowAmbiguous: true },
   ) ?? resolveIndexedIdentity(
     isDerivedAcronymLookupCandidate(candidate.text)
       ? index.acronym.get(candidate.acronymKey) ?? []
       : [],
     candidate.text,
     "ALIAS",
-  ) ?? { status: "NEW", matchedText: candidate.text };
+  ) ?? (
+    isConceptIdentityLookupCandidate(candidate.text)
+      ? { status: "NEW", matchedText: candidate.text }
+      : { status: "NEW", matchedText: candidate.text }
+  );
 }
 
 function resolveIndexedIdentity(
   contexts: Context[],
   matchedText: string,
   status: "EXACT" | "ALIAS",
+  options: { allowAmbiguous?: boolean } = {},
 ): IdentityResolution | null {
   if (contexts.length === 0) {
     return null;
   }
 
   if (contexts.length > 1) {
+    if (options.allowAmbiguous) {
+      return {
+        status: "AMBIGUOUS",
+        matchedText,
+        candidates: contexts,
+      };
+    }
+
     return {
-      status: "AMBIGUOUS",
       matchedText,
+      status: "NEW",
     };
   }
 
@@ -496,5 +537,5 @@ function addIdentityIndexValue(
 function normalizeAcronym(value: string) {
   return normalizeConceptIdentityLabel(value)
     .replace(/\s+/g, "")
-    .toLocaleUpperCase("es");
+    .toLocaleUpperCase();
 }

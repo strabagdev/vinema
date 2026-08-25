@@ -3,21 +3,20 @@ import {
   hasDirectionalContradiction,
   hasLocalConceptIdentitySupport,
   hasMeaningfulLocalTokenOverlap,
-  HUMAN_ENTITY_TERMS,
 } from "@/features/associations/local-support";
 
 describe("local semantic support", () => {
-  it("uses meaningful linguistic support across non-mining domains", () => {
+  it("uses exact identity support across non-mining domains", () => {
     expect(
       hasLocalConceptIdentitySupport({
         localText: "El paciente reporta dolor crónico despues del tratamiento.",
-        labels: ["Manejo del dolor"],
+        labels: ["Dolor crónico"],
       }),
     ).toBe(true);
     expect(
       hasLocalConceptIdentitySupport({
         localText: "La caché reduce latencia en consultas frecuentes.",
-        labels: ["Optimización de caché"],
+        labels: ["Caché"],
       }),
     ).toBe(true);
     expect(
@@ -35,7 +34,7 @@ describe("local semantic support", () => {
     expect(
       hasLocalConceptIdentitySupport({
         localText: "Los clientes necesitan acuerdos claros en la conversación.",
-        labels: ["Relación con clientes"],
+        labels: ["Acuerdos claros"],
       }),
     ).toBe(true);
   });
@@ -55,7 +54,22 @@ describe("local semantic support", () => {
     ).toBe(false);
   });
 
-  it("does not let human entity terms become standalone support", () => {
+  it("does not treat functional or directional words as standalone memory support", () => {
+    expect(
+      hasMeaningfulLocalTokenOverlap(
+        "Antes de empezar mantener la rutina redujo el tiempo y mejoró la energía.",
+        "Antes de revisar mantener la pauta redujo esperas y mejoró el orden.",
+      ),
+    ).toBe(false);
+    expect(
+      hasMeaningfulLocalTokenOverlap(
+        "Mantener horario regular mejoró el descanso.",
+        "Mantener horario regular ayuda a ordenar la rutina.",
+      ),
+    ).toBe(true);
+  });
+
+  it("does not let shared human categories become standalone support", () => {
     expect(
       hasLocalConceptIdentitySupport({
         localText: "El paciente llega temprano a la consulta.",
@@ -82,14 +96,14 @@ describe("local semantic support", () => {
     ).toBe(false);
   });
 
-  it("uses the human bridge only when independent thematic support is present", () => {
+  it("does not bridge different human terms without exact thematic support", () => {
     expect(
       hasLocalConceptIdentitySupport({
         localText:
           "Los pacientes requieren seguimiento despues del alta hospitalaria.",
         labels: ["Seguimiento de clientes"],
       }),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       hasLocalConceptIdentitySupport({
         localText: "Los pacientes llegan despues del alta hospitalaria.",
@@ -98,37 +112,37 @@ describe("local semantic support", () => {
     ).toBe(false);
   });
 
-  it("detects directional contradictions across domains without fixture vocabulary", () => {
+  it("does not derive contradictions from predefined directional verb groups", () => {
     expect(
       hasDirectionalContradiction(
         "El dolor aumenta cuando se suspende el tratamiento.",
         "La terapia disminuye el dolor despues de una semana.",
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       hasDirectionalContradiction(
         "La caché permite reducir la latencia del endpoint.",
         "La configuración impide reducir la latencia del endpoint.",
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       hasDirectionalContradiction(
         "La sal aumenta la presión arterial.",
         "Reducir la sal disminuye la presión arterial.",
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       hasDirectionalContradiction(
         "La planificación mejora el rendimiento en estudios.",
         "La postergación empeora el rendimiento en estudios.",
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       hasDirectionalContradiction(
         "La escucha activa permite conversaciones difíciles.",
         "La crítica constante impide conversaciones difíciles.",
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("does not treat every opposite verb as a contradiction without shared scope", () => {
@@ -140,22 +154,4 @@ describe("local semantic support", () => {
     ).toBe(false);
   });
 
-  it("keeps the human bridge generic rather than mining-specific", () => {
-    expect(Array.from(HUMAN_ENTITY_TERMS).sort()).toEqual([
-      "cliente",
-      "clientes",
-      "estudiante",
-      "estudiantes",
-      "paciente",
-      "pacientes",
-      "peaton",
-      "peatones",
-      "persona",
-      "personas",
-      "trabajador",
-      "trabajadores",
-      "usuario",
-      "usuarios",
-    ]);
-  });
 });

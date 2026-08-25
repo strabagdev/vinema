@@ -43,14 +43,10 @@ describe("association text normalization", () => {
       normalizeAssociationText(" Reunión, planificación\nDEL proveedor  "),
     ).toBe("reunion planificacion del proveedor");
     expect(tokenizeAssociationText("las reuniones con planificación")).toEqual([
-      "reunion",
-      "plan",
+      "reuniones",
+      "planificacion",
     ]);
-    expect(tokenizeAssociationText("API Mitcom SQL v2")).toEqual([
-      "api",
-      "mitcom",
-      "sql",
-    ]);
+    expect(tokenizeAssociationText("API Mitcom SQL v2")).toEqual(["mitcom"]);
     expect(tokenizeAssociationText("")).toEqual([]);
   });
 
@@ -136,6 +132,97 @@ describe("association scoring", () => {
     );
   });
 
+  it("keeps positive and negative near-duplicate memories separate in both directions", () => {
+    const nodes = [
+      node({
+        id: "positive",
+        content: "El teléfono mejora el descanso.",
+      }),
+      node({
+        id: "negative",
+        content: "El teléfono no mejora el descanso.",
+      }),
+    ];
+
+    expect(
+      suggestAssociations(buildAssociationIndex({ nodes }), {
+        text: "El teléfono mejora el descanso.",
+      }).map((suggestion) => suggestion.node.id),
+    ).toEqual(["positive"]);
+    expect(
+      suggestAssociations(buildAssociationIndex({ nodes }), {
+        text: "El teléfono no mejora el descanso.",
+      }).map((suggestion) => suggestion.node.id),
+    ).toEqual(["negative"]);
+  });
+
+  it("keeps improvement and worsening near-duplicate memories separate in both directions", () => {
+    const nodes = [
+      node({
+        id: "improves",
+        content: "Mantener el teléfono fuera mejora el descanso.",
+      }),
+      node({
+        id: "worsens",
+        content: "Mantener el teléfono fuera empeora el descanso.",
+      }),
+    ];
+
+    expect(
+      suggestAssociations(buildAssociationIndex({ nodes }), {
+        text: "Mantener el teléfono fuera mejora el descanso.",
+      }).map((suggestion) => suggestion.node.id),
+    ).toEqual(["improves"]);
+    expect(
+      suggestAssociations(buildAssociationIndex({ nodes }), {
+        text: "Mantener el teléfono fuera empeora el descanso.",
+      }).map((suggestion) => suggestion.node.id),
+    ).toEqual(["worsens"]);
+  });
+
+  it("keeps direct and uncertain schedule memories separate in both directions", () => {
+    const nodes = [
+      node({
+        id: "uncertain",
+        content: "Puede que el horario regular mejore el descanso.",
+      }),
+      node({
+        id: "direct",
+        content: "El horario regular mejora el descanso.",
+      }),
+    ];
+
+    expect(
+      suggestAssociations(buildAssociationIndex({ nodes }), {
+        text: "El horario regular mejora el descanso.",
+      }).map((suggestion) => suggestion.node.id),
+    ).toEqual(["direct"]);
+    expect(
+      suggestAssociations(buildAssociationIndex({ nodes }), {
+        text: "Puede que el horario regular mejore el descanso.",
+      }).map((suggestion) => suggestion.node.id),
+    ).toEqual(["uncertain"]);
+  });
+
+  it("keeps a relevant paraphrase when a stronger literal memory also exists", () => {
+    const nodes = [
+      node({
+        id: "literal",
+        content: "Teléfono fuera del dormitorio ayuda mi descanso nocturno.",
+      }),
+      node({
+        id: "paraphrase",
+        content: "Dejar el teléfono fuera del dormitorio favorece descanso nocturno.",
+      }),
+    ];
+
+    expect(
+      suggestAssociations(buildAssociationIndex({ nodes }), {
+        text: "Teléfono fuera del dormitorio ayuda mi descanso nocturno.",
+      }).map((suggestion) => suggestion.node.id),
+    ).toEqual(["literal", "paraphrase"]);
+  });
+
   it("finds the controlled meeting and contract examples from VIN-019.1", () => {
     const index = buildAssociationIndex({
       nodes: [
@@ -159,7 +246,7 @@ describe("association scoring", () => {
 
     expect(
       suggestAssociations(index, {
-        text: "Después de muchas reuniones me cuesta concentrarme.",
+        text: "Muchas reuniones extensas me afectan la concentración.",
       }).map((suggestion) => suggestion.node.id),
     ).toContain("a");
     expect(
@@ -221,7 +308,7 @@ describe("association scoring", () => {
     expect(index.relations).toHaveLength(1);
     expect(
       suggestAssociations(index, {
-        text: "Después de muchas reuniones me cuesta concentrarme.",
+        text: "Muchas reuniones extensas afectan mi concentración.",
       }).map((suggestion) => suggestion.node.id),
     ).toEqual(["valid"]);
   });
@@ -666,10 +753,105 @@ describe("association scoring", () => {
       "horario",
     ]);
   });
+
+  it("keeps the updated sleep routine anchored without filling slots from functional terms", () => {
+    const suggestions = suggestAssociations(
+      buildAssociationIndex({
+        nodes: [
+          node({
+            id: "sueno",
+            content:
+              "Durante las últimas semanas me cuesta conciliar el sueño cuando uso el teléfono justo antes de acostarme. Dejar la pantalla una hora antes y mantener un horario regular parece mejorar mi descanso al día siguiente.",
+          }),
+          node({
+            id: "maniobra-retroceso",
+            content:
+              "Antes de iniciar una maniobra en retroceso con equipos móviles se revisa la visibilidad del operador.",
+          }),
+          node({
+            id: "cruces-senalizacion",
+            content:
+              "Mantener señalización clara en cruces donde interactúan peatones y equipos móviles.",
+          }),
+          node({
+            id: "radio-operacion",
+            content:
+              "Los equipos móviles presentan mayor riesgo de atropello cuando existen personas circulando dentro de su radio de operación.",
+          }),
+          node({
+            id: "revision-cruces",
+            content:
+              "Revisar los cruces donde interactúan peatones y equipos móviles.",
+          }),
+        ],
+      }),
+      {
+        text: "Dejar el teléfono fuera del dormitorio antes de dormir redujo el tiempo que tardé en conciliar el sueño. Mantener un horario regular también mejoró mi descanso y energía al despertar.",
+        limit: 5,
+      },
+    );
+
+    expect(suggestions.map((suggestion) => suggestion.node.id)).toEqual([
+      "sueno",
+    ]);
+  });
+
+  it("requires thematic anchors beyond shared functional words across domains", () => {
+    const scenarios = [
+      {
+        local:
+          "El tratamiento redujo el dolor cervical y mejoró energía al despertar.",
+        anchored:
+          "El dolor cervical mejora con seguimiento de tratamiento diario.",
+        unanchored:
+          "Antes de la reunión mantener acuerdos mejora la relación comercial.",
+      },
+      {
+        local:
+          "El deploy redujo la latencia de API y mejoró la caché compartida.",
+        anchored:
+          "La caché compartida reduce latencia en endpoints de la API.",
+        unanchored:
+          "Mantener señalización clara mejora cruces peatonales.",
+      },
+      {
+        local:
+          "Preparar colaciones redujo antojos y mejoró alimentación saludable.",
+        anchored:
+          "La alimentación saludable mejora con colaciones preparadas.",
+        unanchored:
+          "Antes de dormir mantener horario regular mejora el descanso.",
+      },
+      {
+        local:
+          "La conversación redujo tensión y mejoró acuerdos familiares.",
+        anchored:
+          "Los acuerdos familiares mejoran con conversación honesta.",
+        unanchored:
+          "Mantener horario regular reduce cansancio al despertar.",
+      },
+    ];
+
+    for (const [index, scenario] of scenarios.entries()) {
+      const suggestions = suggestAssociations(
+        buildAssociationIndex({
+          nodes: [
+            node({ id: `anchored-${index}`, content: scenario.anchored }),
+            node({ id: `unanchored-${index}`, content: scenario.unanchored }),
+          ],
+        }),
+        { text: scenario.local, limit: 5 },
+      );
+
+      expect(suggestions.map((suggestion) => suggestion.node.id)).toEqual([
+        `anchored-${index}`,
+      ]);
+    }
+  });
 });
 
 describe("concept suggestions", () => {
-  it("returns emerging concepts from strong terms in the current input", () => {
+  it("does not return emerging concepts from current input without memory evidence", () => {
     const evaluation = evaluateCaptureInput({
       text: "Revisar Railway para la sincronizacion de Vinema",
       nodes: [],
@@ -680,18 +862,11 @@ describe("concept suggestions", () => {
       (suggestion) => suggestion.kind === "emerging",
     );
 
-    expect(emerging).toContainEqual(
-      expect.objectContaining({
-        kind: "emerging",
-        suggestedLabel: "Railway",
-        evidenceCaptureIds: [],
-        representativeTerms: ["railway"],
-      }),
-    );
-    expect(evaluation.diagnostics.emergingConceptSuggestionCount).toBeGreaterThan(0);
+    expect(emerging).toEqual([]);
+    expect(evaluation.diagnostics.emergingConceptSuggestionCount).toBe(0);
   });
 
-  it("suggests at least one current-text emerging concept before saving with empty memory", () => {
+  it("keeps current-text concepts empty before saving with empty memory", () => {
     const evaluation = evaluateCaptureInput({
       text: "Durante la perforación de avance, una mala iluminación puede dificultar la identificación de personas u obstáculos en el frente de trabajo.",
       nodes: [],
@@ -703,10 +878,10 @@ describe("concept suggestions", () => {
       evaluation.conceptSuggestions.filter(
         (suggestion) => suggestion.kind === "emerging",
       ).length,
-    ).toBeGreaterThan(0);
+    ).toBe(0);
   });
 
-  it("suggests current-text mobile equipment risk concepts before saving with empty memory", () => {
+  it("does not suggest current-text mobile equipment risk concepts before saving", () => {
     const evaluation = evaluateCaptureInput({
       text: "Los equipos móviles presentan mayor riesgo de atropello cuando existen personas circulando dentro de su radio de operación.",
       nodes: [],
@@ -717,16 +892,10 @@ describe("concept suggestions", () => {
       .filter((suggestion) => suggestion.kind === "emerging")
       .map((suggestion) => suggestion.suggestedLabel);
 
-    expect(emergingLabels).toEqual(
-      expect.arrayContaining([
-        "Equipos móviles",
-        "Riesgo de atropello",
-        "Radio de operación",
-      ]),
-    );
+    expect(emergingLabels).toEqual([]);
   });
 
-  it("suggests derived late detection concepts from current input before saving", () => {
+  it("does not derive late detection concepts from current input before saving", () => {
     const evaluation = evaluateCaptureInput({
       text: "En sectores con baja visibilidad, el operador puede detectar tardíamente a trabajadores que ingresan al área de maniobra del equipo.",
       nodes: [],
@@ -737,10 +906,10 @@ describe("concept suggestions", () => {
       .filter((suggestion) => suggestion.kind === "emerging")
       .map((suggestion) => suggestion.suggestedLabel);
 
-    expect(emergingLabels).toEqual(expect.arrayContaining(["Detección tardía"]));
+    expect(emergingLabels).toEqual([]);
   });
 
-  it("suggests segregation controls without conjugated verb article noise", () => {
+  it("does not suggest segregation controls from current input alone", () => {
     const evaluation = evaluateCaptureInput({
       text: "La segregación mediante barreras físicas disminuye la exposición de peatones a equipos móviles durante las maniobras.",
       nodes: [],
@@ -751,14 +920,7 @@ describe("concept suggestions", () => {
       .filter((suggestion) => suggestion.kind === "emerging")
       .map((suggestion) => suggestion.suggestedLabel);
 
-    expect(emergingLabels).toEqual(
-      expect.arrayContaining([
-        "Segregación",
-        "Barreras físicas",
-        "Equipos móviles",
-        "Exposición de peatones",
-      ]),
-    );
+    expect(emergingLabels).toEqual([]);
     expect(emergingLabels).not.toContain("Disminuye la exposición");
   });
 
@@ -819,23 +981,11 @@ describe("concept suggestions", () => {
       .filter((suggestion) => suggestion.kind === "emerging")
       .map((suggestion) => suggestion.suggestedLabel);
 
-    expect(existingLabels).toEqual(
-      expect.arrayContaining([
-        "Equipos móviles",
-        "Área de maniobra",
-        "Maniobra del equipo",
-        "Identificación de personas",
-      ]),
-    );
+    expect(existingLabels).toEqual(["Equipos móviles"]);
+    expect(existingLabels).not.toContain("Identificación de personas");
     expect(existingLabels).not.toContain("Baja visibilidad");
     expect(existingLabels).not.toContain("Mala iluminación");
-    expect(emergingLabels).toEqual(
-      expect.arrayContaining([
-        "Segregación",
-        "Barreras físicas",
-        "Exposición de peatones",
-      ]),
-    );
+    expect(emergingLabels).toEqual([]);
   });
 
   it("keeps maneuver concepts while preventing dust and silica thematic contamination", () => {
@@ -985,14 +1135,7 @@ describe("concept suggestions", () => {
       suggestion.kind === "existing" ? suggestion.label : suggestion.suggestedLabel,
     );
 
-    expect(labels).toEqual(
-      expect.arrayContaining([
-        "Conciliar el sueño",
-        "Horario regular",
-        "Pantalla",
-        "Descanso",
-      ]),
-    );
+    expect(labels).toEqual([]);
     expect(labels).not.toEqual(
       expect.arrayContaining([
         "Maniobra del equipo",
@@ -1004,6 +1147,52 @@ describe("concept suggestions", () => {
       ]),
     );
     expect(evaluation.recoveryMatches).toEqual([]);
+  });
+
+  it("keeps the updated sleep capture focused on current local themes", () => {
+    const evaluation = evaluateCaptureInput({
+      text: "Dejar el teléfono fuera del dormitorio antes de dormir redujo el tiempo que tardé en conciliar el sueño. Mantener un horario regular también mejoró mi descanso y energía al despertar.",
+      nodes: [
+        node({
+          id: "sueno",
+          content:
+            "Durante las últimas semanas me cuesta conciliar el sueño cuando uso el teléfono justo antes de acostarme. Dejar la pantalla una hora antes y mantener un horario regular parece mejorar mi descanso al día siguiente.",
+        }),
+        node({
+          id: "maniobra-retroceso",
+          content:
+            "Antes de iniciar una maniobra en retroceso con equipos móviles se revisa la visibilidad del operador.",
+        }),
+        node({
+          id: "cruces-senalizacion",
+          content:
+            "Mantener señalización clara en cruces donde interactúan peatones y equipos móviles.",
+        }),
+        node({
+          id: "radio-operacion",
+          content:
+            "Los equipos móviles presentan mayor riesgo de atropello cuando existen personas circulando dentro de su radio de operación.",
+        }),
+        node({
+          id: "revision-cruces",
+          content:
+            "Revisar los cruces donde interactúan peatones y equipos móviles.",
+        }),
+      ],
+      contexts: [context({ id: "pantalla", name: "Pantalla" })],
+      relations: [
+        contextRelation("sueno", "pantalla"),
+      ],
+    });
+    const labels = evaluation.conceptSuggestions.map((suggestion) =>
+      suggestion.kind === "existing" ? suggestion.label : suggestion.suggestedLabel,
+    );
+
+    expect(labels).toEqual(["Pantalla"]);
+    expect(labels).not.toContain("Antes Fuera");
+    expect(evaluation.recoveryMatches.map((match) => match.node.id)).toEqual([
+      "sueno",
+    ]);
   });
 
   it("does not create current-input emerging noise for empty or generic text", () => {
@@ -1062,7 +1251,7 @@ describe("concept suggestions", () => {
     expect(evaluation.recoveryMatches).toHaveLength(3);
     expect(emerging).toMatchObject({
       kind: "emerging",
-      suggestedLabel: "Perfumes",
+      suggestedLabel: "Perfume cuero",
       evidenceCaptureIds: ["p1", "p2", "p3"],
     });
     expect(evaluation.diagnostics.evidenceCandidateCount).toBe(3);
@@ -1162,7 +1351,7 @@ describe("concept suggestions", () => {
     });
   });
 
-  it("does not suggest emerging concepts from one evidence capture", () => {
+  it("does not promote one evidence capture into a seeded product category", () => {
     const evaluation = evaluateCaptureInput({
       text: "Perfume cuero",
       nodes: [node({ id: "p1", content: "Perfume cuero intenso" })],
@@ -1170,11 +1359,10 @@ describe("concept suggestions", () => {
       relations: [],
     });
 
-    expect(evaluation.conceptSuggestions).toContainEqual(
+    expect(evaluation.conceptSuggestions).not.toContainEqual(
       expect.objectContaining({
         kind: "emerging",
         suggestedLabel: "Perfumes",
-        evidenceCaptureIds: [],
       }),
     );
   });

@@ -1,8 +1,8 @@
 import {
+  normalizeAssociationToken,
   normalizeAssociationText,
-  stemSpanishToken,
 } from "@/features/associations/normalize-text";
-import { SPANISH_STOPWORDS } from "@/features/associations/spanish-stopwords";
+import { isShortStructuralToken } from "@/features/associations/structural-tokens";
 
 export const MIN_ASSOCIATION_TOKEN_LENGTH = 3;
 
@@ -11,8 +11,8 @@ export function tokenizeAssociationText(value: string) {
     .split(" ")
     .map((token) => token.trim())
     .filter((token) => token.length >= MIN_ASSOCIATION_TOKEN_LENGTH)
-    .filter((token) => !SPANISH_STOPWORDS.has(token))
-    .map(stemSpanishToken)
+    .filter((token) => !isShortStructuralToken(token))
+    .map(normalizeAssociationToken)
     .filter((token) => token.length >= MIN_ASSOCIATION_TOKEN_LENGTH);
 }
 

@@ -160,7 +160,7 @@ function createPresentation({
     status,
     headline,
     severity,
-    ariaLabel: headline.toLocaleLowerCase("es"),
+    ariaLabel: headline.toLocaleLowerCase(),
     conflictCount,
     pendingCount,
   };

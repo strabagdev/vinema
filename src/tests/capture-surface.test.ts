@@ -1167,7 +1167,10 @@ describe("CaptureSurface", () => {
         updatedAt: "2026-01-05T00:00:00.000Z",
       }),
     ]);
-    const screen = await renderCaptureSurface({ nodeRepository });
+    const contextRepository = new InMemoryContextRepository([
+      createContext({ id: "mitcom", name: "Mitcom" }),
+    ]);
+    const screen = await renderCaptureSurface({ nodeRepository, contextRepository });
 
     await changeTextarea(screen.container, "Revisar Mitcom");
     await advanceTime(500);
@@ -1691,10 +1694,10 @@ describe("CaptureSurface", () => {
     expect(conceptIndicator?.querySelector("svg")?.className.baseVal).toContain(
       "w-5",
     );
-    expect(conceptIndicator?.textContent?.trim()).toBe("1");
-    expect(memoryIndicator?.textContent?.trim()).toBe("1");
-    expect(conceptIndicator?.querySelector("[data-canvas-rail-badge]")).toBeDefined();
-    expect(memoryIndicator?.querySelector("[data-canvas-rail-badge]")).toBeDefined();
+    expect(conceptIndicator?.textContent?.trim()).toBe("");
+    expect(memoryIndicator?.textContent?.trim()).toBe("");
+    expect(conceptIndicator?.querySelector("[data-canvas-rail-badge]")).toBeNull();
+    expect(memoryIndicator?.querySelector("[data-canvas-rail-badge]")).toBeNull();
   });
 
   it("opens the memory status panel from the rail without duplicating the header trigger", async () => {
@@ -3528,7 +3531,10 @@ describe("CaptureSurface", () => {
   });
 
   it("keeps hover preview interactive when the pointer enters the panel corridor", async () => {
-    const screen = await renderCaptureSurface();
+    const contextRepository = new InMemoryContextRepository([
+      createContext({ id: "railway", name: "Railway" }),
+    ]);
+    const screen = await renderCaptureSurface({ contextRepository });
 
     await changeTextarea(screen.container, "Revisar Railway");
     await advanceTime(500);
@@ -3674,7 +3680,10 @@ describe("CaptureSurface", () => {
   });
 
   it("keeps an accepted suggested concept selected across preview, pinned panel and reopen", async () => {
-    const screen = await renderCaptureSurface();
+    const contextRepository = new InMemoryContextRepository([
+      createContext({ id: "railway", name: "Railway" }),
+    ]);
+    const screen = await renderCaptureSurface({ contextRepository });
 
     await changeTextarea(screen.container, "Revisar Railway");
     await advanceTime(500);
@@ -4212,7 +4221,7 @@ describe("CaptureSurface", () => {
 
     await changeTextarea(
       screen.container,
-      "Después de muchas reuniones me cuesta concentrarme.",
+      "Muchas reuniones extensas afectan mi concentración.",
     );
     await advanceTime(500);
     await openMemoryPanel(screen.container);
@@ -4226,10 +4235,12 @@ describe("CaptureSurface", () => {
     expect(screen.container.textContent).not.toContain("Ver en Explorar");
   });
 
-  it("shows current-input emerging concepts and persists the selected chip", async () => {
+  it("persists a selected stored concept chip", async () => {
     const storage = new MemoryStorageAdapter();
     const nodeRepository = new InMemoryNodeRepository();
-    const contextRepository = new InMemoryContextRepository();
+    const contextRepository = new InMemoryContextRepository([
+      createContext({ id: "railway", name: "Railway" }),
+    ]);
     const relationRepository = new InMemoryNodeContextRelationRepository();
     const screen = await renderCaptureSurface({
       storage,
@@ -4266,10 +4277,7 @@ describe("CaptureSurface", () => {
     const relations = await relationRepository.listByWorkspace(workspace.id);
 
     expect(contexts).toHaveLength(1);
-    expect(contexts[0]).toMatchObject({
-      name: "Railway",
-      description: "Concepto emergente confirmado desde la captura actual.",
-    });
+    expect(contexts[0]).toMatchObject({ id: "railway", name: "Railway" });
     expect(relations).toContainEqual(
       expect.objectContaining({
         nodeId: newCapture?.id,
@@ -4278,7 +4286,7 @@ describe("CaptureSurface", () => {
     );
   });
 
-  it("shows semantic phrase concepts in the UI without partial capitalized words", async () => {
+  it("does not show semantic phrase concepts before they exist in memory", async () => {
     const screen = await renderCaptureSurface();
 
     await changeTextarea(
@@ -4288,17 +4296,19 @@ describe("CaptureSurface", () => {
     await advanceTime(500);
     await openConceptPanel(screen.container);
 
-    expect(screen.container.textContent).toContain("Perfumes");
-    expect(screen.container.textContent).toContain("Ombre Leather");
-    expect(screen.container.textContent).toContain("Tom Ford");
-    expect(screen.container.textContent).toContain("Erba Pura");
+    expect(screen.container.textContent).toContain("No hay conceptos detectados.");
     expect(getButton(screen.container, "Ombre")).toBeUndefined();
+    expect(getButton(screen.container, "Ombre Leather")).toBeUndefined();
+    expect(getButton(screen.container, "Tom Ford")).toBeUndefined();
     expect(getButton(screen.container, "Ford")).toBeUndefined();
     expect(getButton(screen.container, "Erba")).toBeUndefined();
   });
 
   it("clears current-input emerging concepts when the editor is cleared", async () => {
-    const screen = await renderCaptureSurface();
+    const contextRepository = new InMemoryContextRepository([
+      createContext({ id: "railway", name: "Railway" }),
+    ]);
+    const screen = await renderCaptureSurface({ contextRepository });
 
     await changeTextarea(screen.container, "Revisar Railway");
     await advanceTime(500);
@@ -4316,7 +4326,10 @@ describe("CaptureSurface", () => {
   });
 
   it("closes an open panel when its contextual indicator disappears", async () => {
-    const screen = await renderCaptureSurface();
+    const contextRepository = new InMemoryContextRepository([
+      createContext({ id: "railway", name: "Railway" }),
+    ]);
+    const screen = await renderCaptureSurface({ contextRepository });
 
     await changeTextarea(screen.container, "Revisar Railway");
     await advanceTime(500);
@@ -4418,13 +4431,13 @@ describe("CaptureSurface", () => {
     await advanceTime(500);
 
     await openConceptPanel(screen.container);
-    expect(screen.container.textContent).toContain("Perfumes");
+    expect(screen.container.textContent).toContain("Perfume cuero");
     expect(screen.container.textContent).not.toContain("nuevo");
     await expect(
       contextRepository.list({ workspaceId: workspace.id, includeArchived: true }),
     ).resolves.toEqual([]);
 
-    const emergingChip = getButton(screen.container, "Perfumes");
+    const emergingChip = getButton(screen.container, "Perfume cuero");
     await click(emergingChip);
     expect(emergingChip.getAttribute("aria-pressed")).toBe("true");
     await click(getButton(screen.container, "Capturar"));
@@ -4435,7 +4448,7 @@ describe("CaptureSurface", () => {
       includeArchived: true,
     });
     expect(contexts).toHaveLength(1);
-    expect(contexts[0]).toMatchObject({ name: "Perfumes" });
+    expect(contexts[0]).toMatchObject({ name: "Perfume cuero" });
 
     const captures = await nodeRepository.listByWorkspace(workspace.id);
     const newCapture = captures.find((node) =>
@@ -4457,7 +4470,7 @@ describe("CaptureSurface", () => {
     await advanceTime(500);
 
     await openConceptPanel(screen.container);
-    expect(screen.container.textContent).toContain("Perfumes");
+    expect(screen.container.textContent).toContain("Perfume cuero");
     expect(screen.container.textContent).not.toContain("nuevo");
   });
 
@@ -4493,7 +4506,7 @@ describe("CaptureSurface", () => {
     await advanceTime(500);
 
     await openConceptPanel(screen.container);
-    expect(screen.container.textContent).toContain("Perfumes");
+    expect(screen.container.textContent).toContain("Perfume cuero");
     expect(screen.container.textContent).not.toContain("nuevo");
 
     await click(getButton(screen.container, "Capturar"));
@@ -4526,7 +4539,7 @@ describe("CaptureSurface", () => {
 
     await changeTextarea(
       screen.container,
-      "Después de muchas reuniones me cuesta concentrarme.",
+      "Muchas reuniones extensas afectan mi concentración.",
     );
     await advanceTime(500);
 
@@ -4558,7 +4571,7 @@ describe("CaptureSurface", () => {
 
     await changeTextarea(
       screen.container,
-      "Después de muchas reuniones me cuesta concentrarme.",
+      "Muchas reuniones extensas afectan mi concentración.",
     );
     await advanceTime(500);
 
@@ -4594,12 +4607,12 @@ describe("CaptureSurface", () => {
 
     await changeTextarea(
       screen.container,
-      "Después de muchas reuniones me cuesta concentrarme.",
+      "Muchas reuniones extensas afectan mi concentración.",
     );
     await advanceTime(500);
 
     expect(getTextarea(screen.container)?.value).toBe(
-      "Después de muchas reuniones me cuesta concentrarme.",
+      "Muchas reuniones extensas afectan mi concentración.",
     );
     expect(getContextIndicator(screen.container, "Memorias sugeridas")).toBeDefined();
     expect(screen.container.querySelectorAll("[data-context-indicator]")).toHaveLength(2);

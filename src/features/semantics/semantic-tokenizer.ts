@@ -41,12 +41,14 @@ export function normalizeSemanticPhrase(value: string) {
 }
 
 export function hasSemanticUppercase(value: string) {
-  return value !== value.toLocaleLowerCase("es");
+  return value !== value.toLocaleLowerCase();
 }
 
 export function hasTechnicalShape(value: string) {
   return (
-    /[A-Z]/.test(value) &&
-    (/[a-z]/.test(value) || /\d/.test(value) || /[.-]/.test(value))
+    /^[A-Z0-9]{2,}$/.test(value) ||
+    (/[A-Z]/.test(value) && /\d/.test(value)) ||
+    (/[A-Z]/.test(value) && /[.-]/.test(value)) ||
+    /[\p{Ll}][\p{Lu}]|[\p{Lu}]{2,}[\p{Ll}]/u.test(value)
   );
 }

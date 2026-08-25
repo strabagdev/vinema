@@ -178,7 +178,7 @@ describe("useAssociationSuggestions", () => {
     const initial = observed.at(-1) ?? [];
     const initialLabels = initial.map(getConceptSuggestionLabel);
 
-    expect(initialLabels).toContain("Barreras físicas");
+    expect(initialLabels).toEqual([]);
     expect(evaluateCaptureInputSpy).toHaveBeenCalledTimes(1);
 
     await act(async () => {
@@ -200,7 +200,7 @@ describe("useAssociationSuggestions", () => {
     expect(afterSelection.map(getConceptSuggestionKey)).toEqual(
       initial.map(getConceptSuggestionKey),
     );
-    expect(afterSelection.map(getConceptSuggestionLabel)).toContain("Barreras físicas");
+    expect(afterSelection.map(getConceptSuggestionLabel)).toEqual([]);
   });
 });
 

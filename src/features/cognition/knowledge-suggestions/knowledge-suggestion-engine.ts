@@ -18,11 +18,7 @@ import {
 import type {
   ConceptSuggestionTrace,
 } from "@/features/associations/association-types";
-import { HUMAN_ENTITY_TERMS } from "@/features/associations/local-support";
-import {
-  tokenizeAssociationText,
-  uniqueTokens,
-} from "@/features/associations/tokenize";
+import { hasLocalConceptIdentitySupport } from "@/features/associations/local-support";
 import type {
   KnowledgeSuggestion,
   KnowledgeSuggestionConfidence,
@@ -73,7 +69,9 @@ type LocalConceptSupport =
   | {
       required: true;
       supportedConceptIds: Set<string>;
-      localTokens: Set<string>;
+      text?: string;
+      model: ReturnType<typeof createKnowledgeModel>;
+      identitySupportCache: Map<string, boolean>;
     };
 
 export function deriveKnowledgeSuggestions({
@@ -503,8 +501,6 @@ function createLocalConceptSupport({
   semanticRelatedConceptIds: string[];
   model: ReturnType<typeof createKnowledgeModel>;
 }): LocalConceptSupport {
-  const localTokens = new Set(text ? tokenizeAssociationText(text) : []);
-
   if (!text && traces.length === 0 && semanticRelatedConceptIds.length === 0) {
     return { required: false };
   }
@@ -523,22 +519,12 @@ function createLocalConceptSupport({
     }
   }
 
-  for (const [conceptId, record] of model.recordsById) {
-    const identityTokens = uniqueTokens(
-      Array.from(record.identityLabels).flatMap((label) =>
-        tokenizeAssociationText(label),
-      ),
-    );
-
-    if (hasHumanEntityBridge(localTokens, identityTokens)) {
-      supportedConceptIds.add(conceptId);
-    }
-  }
-
   return {
     required: true,
     supportedConceptIds,
-    localTokens,
+    text,
+    model,
+    identitySupportCache: new Map(),
   };
 }
 
@@ -547,22 +533,34 @@ function hasLocalSupport(conceptId: string, support: LocalConceptSupport) {
     return true;
   }
 
-  return support.supportedConceptIds.has(conceptId);
-}
+  if (support.supportedConceptIds.has(conceptId)) {
+    return true;
+  }
 
-function hasHumanEntityBridge(
-  localTokens: Set<string>,
-  identityTokens: string[],
-) {
-  const hasLocalHumanTerm = Array.from(localTokens).some((token) =>
-    HUMAN_ENTITY_TERMS.has(token),
-  );
-
-  if (!hasLocalHumanTerm) {
+  if (!support.text) {
     return false;
   }
 
-  return identityTokens.some((token) => HUMAN_ENTITY_TERMS.has(token));
+  const cached = support.identitySupportCache.get(conceptId);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const record = support.model.recordsById.get(conceptId);
+  const supported = record
+    ? hasLocalConceptIdentitySupport({
+        localText: support.text,
+        labels: [
+          record.context.name,
+          ...(record.context.aliases ?? []),
+          ...(record.context.normalizedAliases ?? []),
+        ],
+      })
+    : false;
+
+  support.identitySupportCache.set(conceptId, supported);
+
+  return supported;
 }
 
 function resolvePresentConceptIds(

@@ -469,7 +469,7 @@ describe("IndexedDB repositories", () => {
     const suggestions = suggestAssociations(
       buildAssociationIndex({ nodes, relations }),
       {
-        text: "Después de muchas reuniones me cuesta concentrarme.",
+        text: "Muchas reuniones extensas afectan mi concentración.",
       },
     );
 
