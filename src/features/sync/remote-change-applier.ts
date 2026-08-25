@@ -421,6 +421,7 @@ async function assertRelationDependencies(
   const entity = change.entity as CaptureConceptEntity;
   const node = normalizeStoredNode(
     await transaction.objectStore(NODES_STORE).get(entity.captureId),
+    { includeArchived: true },
   );
   const context = normalizeStoredContext(
     await transaction.objectStore(CONTEXTS_STORE).get(entity.conceptId),

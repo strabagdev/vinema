@@ -153,6 +153,104 @@ describe("pull coordinator", () => {
     });
   });
 
+  it("applies an active relation whose capture dependency exists archived locally", async () => {
+    const archivedAt = "2026-07-30T13:00:00.000Z";
+    await seedCapture({ version: 2, archivedAt });
+    await seedConcept({ version: 1 });
+    const setup = createSetup({
+      responses: [
+        pullResponse({
+          changes: [
+            relationChange({
+              sequence: "9",
+              captureId,
+              conceptId,
+              version: 1,
+            }),
+          ],
+          nextCursor: "9",
+        }),
+      ],
+    });
+
+    const result = await setup.coordinator.run();
+    const db = await getVinemaDb();
+
+    expect(result.status).toBe("SUCCESS");
+    await expect(
+      db.get(NODE_CONTEXT_RELATIONS_STORE, relationId),
+    ).resolves.toMatchObject({
+      id: relationId,
+      nodeId: captureId,
+      contextId: conceptId,
+    });
+    await expect(
+      new IndexedDbNodeRepository().listByWorkspace(workspaceId),
+    ).resolves.toEqual([]);
+    await expect(
+      new IndexedDbNodeRepository().listByWorkspace(workspaceId, {
+        includeArchived: true,
+      }),
+    ).resolves.toMatchObject([{ id: captureId, archivedAt }]);
+  });
+
+  it("applies an active relation whose concept dependency exists archived locally", async () => {
+    await seedCapture({ version: 1 });
+    await seedConcept({ version: 2, archivedAt: "2026-07-30T13:00:00.000Z" });
+    const setup = createSetup({
+      responses: [
+        pullResponse({
+          changes: [
+            relationChange({
+              sequence: "9",
+              captureId,
+              conceptId,
+              version: 1,
+            }),
+          ],
+          nextCursor: "9",
+        }),
+      ],
+    });
+
+    const result = await setup.coordinator.run();
+
+    expect(result.status).toBe("SUCCESS");
+    await expect(
+      (await getVinemaDb()).get(NODE_CONTEXT_RELATIONS_STORE, relationId),
+    ).resolves.toMatchObject({
+      id: relationId,
+      nodeId: captureId,
+      contextId: conceptId,
+    });
+  });
+
+  it("still fails safely when an active relation has a truly missing concept dependency", async () => {
+    await seedCapture({ version: 1 });
+    const setup = createSetup({
+      responses: [
+        pullResponse({
+          changes: [
+            relationChange({
+              sequence: "9",
+              captureId,
+              conceptId,
+              version: 1,
+            }),
+          ],
+          nextCursor: "9",
+        }),
+      ],
+    });
+
+    const result = await setup.coordinator.run();
+
+    expect(result.status).toBe("FAILED");
+    expect(result.errors[0]).toMatchObject({
+      code: "MISSING_RELATION_DEPENDENCY",
+    });
+  });
+
   it("recovers a relation dependency that was created before the local cursor but is missing locally", async () => {
     await seedCapture({ version: 1 });
     const setup = createSetup({
@@ -1030,20 +1128,24 @@ async function setMetadataCursor(cursor: string) {
   });
 }
 
-async function seedCapture(input: { version: number; content?: string }) {
+async function seedCapture(input: {
+  version: number;
+  content?: string;
+  archivedAt?: string | null;
+}) {
   const db = await getVinemaDb();
   await db.put(NODES_STORE, {
     id: captureId,
     workspaceId,
     type: "NOTE",
     content: input.content ?? "Local capture",
-    status: "ACTIVE",
+    status: input.archivedAt ? "ARCHIVED" : "ACTIVE",
     organizationStatus: "ORGANIZED",
     metadata: {},
     version: input.version,
     createdAt: now,
     contentUpdatedAt: now,
-    archivedAt: null,
+    archivedAt: input.archivedAt ?? null,
     restoredAt: null,
     updatedAt: now,
     deletedAt: null,
@@ -1052,7 +1154,7 @@ async function seedCapture(input: { version: number; content?: string }) {
   });
 }
 
-async function seedConcept(input: { version: number }) {
+async function seedConcept(input: { version: number; archivedAt?: string | null }) {
   const db = await getVinemaDb();
   await db.put(CONTEXTS_STORE, {
     id: conceptId,
@@ -1063,7 +1165,7 @@ async function seedConcept(input: { version: number }) {
     version: input.version,
     createdAt: now,
     updatedAt: now,
-    archivedAt: null,
+    archivedAt: input.archivedAt ?? null,
   });
 }
 

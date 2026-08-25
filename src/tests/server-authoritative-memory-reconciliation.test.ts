@@ -272,6 +272,99 @@ describe("server-authoritative memory reconciliation", () => {
     await expect(db.get(NODE_CONTEXT_RELATIONS_STORE, relation.id)).resolves.toBeUndefined();
   });
 
+  it("preserves an active relation to an archived capture dependency", async () => {
+    const archivedAt = "2026-08-24T12:30:00.000Z";
+    const capture = captureEntity({ id: uuid(1), archivedAt });
+    const concept = conceptEntity({ id: uuid(2), label: "Archived evidence concept" });
+    const relation = relationEntity({
+      id: uuid(3),
+      captureId: capture.id,
+      conceptId: concept.id,
+    });
+    const client = memoryClient([
+      { entityType: "capture", entity: capture },
+      { entityType: "concept", entity: concept },
+      { entityType: "captureConcept", entity: relation },
+    ]);
+
+    const result = await reconcileServerAuthoritativeMemory({
+      workspaceId,
+      deviceId,
+      syncClient: client,
+    });
+    const db = await getVinemaDb();
+
+    expect(result.status).toBe("REPAIRED");
+    await expect(db.get(NODES_STORE, capture.id)).resolves.toMatchObject({
+      id: capture.id,
+      archivedAt,
+    });
+    await expect(db.get(NODE_CONTEXT_RELATIONS_STORE, relation.id)).resolves.toMatchObject({
+      id: relation.id,
+      nodeId: capture.id,
+      contextId: concept.id,
+    });
+  });
+
+  it("continues past the real archived capture relation shape and recovers the later sleep capture", async () => {
+    const archivedCaptureId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const archivedRelationId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    const archivedAt = "2026-08-23T18:25:12.854Z";
+    const archivedCapture = captureEntity({
+      id: archivedCaptureId,
+      content: "Synthetic archived crossing fixture",
+      archivedAt,
+      version: 2,
+    });
+    const concept = conceptEntity({
+      id: uuid(22),
+      label: "Synthetic concept",
+    });
+    const activeRelation = relationEntity({
+      id: archivedRelationId,
+      captureId: archivedCapture.id,
+      conceptId: concept.id,
+    });
+    const sleepCapture = captureEntity({
+      id: sleepCaptureId,
+      content: "Synthetic sleep capture fixture",
+    });
+    await seedLocalCaptures(Array.from({ length: 5 }, (_, index) =>
+      captureEntity({ id: uuid(index + 1), content: `Local capture ${index + 1}` })
+    ));
+    await setLocalCursor("980");
+    const client = memoryClient([
+      ...Array.from({ length: 5 }, (_, index) => ({
+        entityType: "capture" as const,
+        entity: captureEntity({ id: uuid(index + 1), content: `Local capture ${index + 1}` }),
+      })),
+      { entityType: "capture", entity: archivedCapture },
+      { entityType: "concept", entity: concept },
+      { entityType: "captureConcept", entity: activeRelation },
+      { entityType: "capture", entity: sleepCapture },
+    ], "1057");
+
+    const result = await reconcileServerAuthoritativeMemory({
+      workspaceId,
+      deviceId,
+      syncClient: client,
+      pageSize: 3,
+    });
+    const db = await getVinemaDb();
+
+    expect(result.status).toBe("REPAIRED");
+    await expect(db.get(NODE_CONTEXT_RELATIONS_STORE, archivedRelationId))
+      .resolves.toMatchObject({
+        id: archivedRelationId,
+        nodeId: archivedCaptureId,
+        contextId: concept.id,
+      });
+    await expect(db.get(NODES_STORE, sleepCaptureId)).resolves.toMatchObject({
+      id: sleepCaptureId,
+      archivedAt: null,
+    });
+  });
+
   it("does not declare success when a relation dependency cannot be recovered", async () => {
     const relation = relationEntity({
       id: uuid(1),
