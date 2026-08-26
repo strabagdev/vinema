@@ -163,13 +163,21 @@ describe("PersonalEvidence", () => {
   it("builds one PersonalEvidence instance and passes it consistently through the orchestrator", async () => {
     vi.resetModules();
     const createdEvidence: unknown[] = [];
-    const behavioralEvidence: unknown[] = [];
-    const semanticEvidence: unknown[] = [];
-    const evolutionEvidence: unknown[] = [];
+    const learningEvidence: unknown[] = [];
+    const createdLearning = {
+      observedPatterns: [{ id: "pattern", evidenceNodeIds: [] }],
+      observedRelations: [{ id: "relation", evidence: [] }],
+      temporalSignals: [{ id: "signal", evidenceNodeIds: [] }],
+    };
     const suggestionCalls: Array<{
       behavioralEvidenceModel?: unknown;
       evolutionEvidenceModel?: unknown;
-      precomputedEvidence?: unknown;
+      precomputedEvidence?: {
+        relationships: unknown[];
+        behavioralPatterns: unknown[];
+        semanticStatements: unknown[];
+        evolutionSignals: unknown[];
+      };
     }> = [];
 
     vi.doMock("@/features/cognition/personal-evidence", async () => {
@@ -186,15 +194,27 @@ describe("PersonalEvidence", () => {
       };
     });
 
+    vi.doMock("@/features/cognition/personal-learning", async () => {
+      const actual = await vi.importActual<
+        typeof import("@/features/cognition/personal-learning")
+      >("@/features/cognition/personal-learning");
+      return {
+        ...actual,
+        createPersonalLearning: vi.fn((options) => {
+          learningEvidence.push(options.evidence);
+          return createdLearning;
+        }),
+      };
+    });
+
     vi.doMock("@/features/cognition/behavioral-engine/behavioral-engine", async () => {
       const actual = await vi.importActual<
         typeof import("@/features/cognition/behavioral-engine/behavioral-engine")
       >("@/features/cognition/behavioral-engine/behavioral-engine");
       return {
         ...actual,
-        deriveBehavioralPatterns: vi.fn((options) => {
-          behavioralEvidence.push(options.evidenceModel);
-          return [];
+        deriveBehavioralPatterns: vi.fn(() => {
+          throw new Error("orchestrator must use PersonalLearning");
         }),
       };
     });
@@ -205,9 +225,8 @@ describe("PersonalEvidence", () => {
       >("@/features/cognition/semantic-understanding");
       return {
         ...actual,
-        deriveSemanticStatements: vi.fn((options) => {
-          semanticEvidence.push(options.evidenceModel);
-          return [];
+        deriveSemanticStatements: vi.fn(() => {
+          throw new Error("orchestrator must use PersonalLearning");
         }),
       };
     });
@@ -218,9 +237,8 @@ describe("PersonalEvidence", () => {
       >("@/features/cognition/memory-evolution");
       return {
         ...actual,
-        deriveMemoryEvolutionSignals: vi.fn((options) => {
-          evolutionEvidence.push(options.evidenceModel);
-          return [];
+        deriveMemoryEvolutionSignals: vi.fn(() => {
+          throw new Error("orchestrator must use PersonalLearning");
         }),
       };
     });
@@ -257,17 +275,15 @@ describe("PersonalEvidence", () => {
 
     const [evidence] = createdEvidence;
     expect(createdEvidence).toHaveLength(1);
-    expect(behavioralEvidence).toEqual([evidence]);
-    expect(semanticEvidence).toEqual([evidence]);
-    expect(evolutionEvidence).toEqual([evidence]);
+    expect(learningEvidence).toEqual([evidence]);
     expect(suggestionCalls).toHaveLength(1);
     expect(suggestionCalls[0].behavioralEvidenceModel).toBe(evidence);
     expect(suggestionCalls[0].evolutionEvidenceModel).toBe(evidence);
-    expect(suggestionCalls[0].precomputedEvidence).toMatchObject({
+    expect(suggestionCalls[0].precomputedEvidence).toEqual({
       relationships: expect.any(Array),
-      behavioralPatterns: expect.any(Array),
-      semanticStatements: expect.any(Array),
-      evolutionSignals: expect.any(Array),
+      behavioralPatterns: createdLearning.observedPatterns,
+      semanticStatements: createdLearning.observedRelations,
+      evolutionSignals: createdLearning.temporalSignals,
     });
   });
 });

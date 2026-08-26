@@ -2,16 +2,15 @@ import type { Context } from "@/domain/context/context";
 import type { Node } from "@/domain/node/node";
 import {
   DEFAULT_BEHAVIORAL_RECENT_WINDOW_DAYS,
-  deriveBehavioralPatterns,
   type BehavioralPattern,
 } from "@/features/cognition/behavioral-engine/behavioral-engine";
 import { deriveKnowledgeSuggestions, type KnowledgeSuggestion } from "@/features/cognition/knowledge-suggestions";
 import {
-  deriveMemoryEvolutionSignals,
   type MemoryEvolutionSignal,
 } from "@/features/cognition/memory-evolution";
 import { createPersonalEvidence } from "@/features/cognition/personal-evidence";
-import { deriveSemanticStatements, type SemanticStatement } from "@/features/cognition/semantic-understanding";
+import { createPersonalLearning } from "@/features/cognition/personal-learning";
+import type { SemanticStatement } from "@/features/cognition/semantic-understanding";
 import { createConceptIdentity } from "@/features/concepts/concept-identity";
 import { deriveConceptProfile, type ConceptProfile } from "@/features/exploration/concept-profile";
 import { deriveConceptRelationships, type DerivedConceptRelationship } from "@/features/exploration/concept-relationships";
@@ -88,32 +87,15 @@ export function deriveMemoryResponse({
       limit: DEFAULT_RELATIONSHIP_LIMIT,
     }),
   );
+  const personalLearning = createPersonalLearning({ evidence: personalEvidence });
   const behavioralPatterns = dedupeBehavioralPatterns(
-    deriveBehavioralPatterns({
-      contexts,
-      relations,
-      nodes,
-      now: query.now,
-      evidenceModel: personalEvidence,
-    }),
+    personalLearning.observedPatterns,
   );
   const semanticStatements = dedupeSemanticStatements(
-    deriveSemanticStatements({
-      contexts,
-      relations,
-      nodes,
-      now: query.now,
-      evidenceModel: personalEvidence,
-    }),
+    personalLearning.observedRelations,
   );
   const evolutionSignals = dedupeEvolutionSignals(
-    deriveMemoryEvolutionSignals({
-      contexts,
-      relations,
-      nodes,
-      now: query.now,
-      evidenceModel: personalEvidence,
-    }),
+    personalLearning.temporalSignals,
   );
   const suggestions = dedupeSuggestions(
     deriveKnowledgeSuggestions({

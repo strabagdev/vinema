@@ -3,14 +3,15 @@ import type { NodeContextRelation } from "@/domain/context/node-context-relation
 import type { Node } from "@/domain/node/node";
 import {
   DEFAULT_BEHAVIORAL_RECENT_WINDOW_DAYS,
-  deriveBehavioralPatterns,
 } from "@/features/cognition/behavioral-engine/behavioral-engine";
-import { deriveMemoryEvolutionSignals } from "@/features/cognition/memory-evolution";
-import { deriveSemanticStatements } from "@/features/cognition/semantic-understanding";
 import {
   createMemoryEvidenceModel,
   type MemoryEvidenceModel,
 } from "@/features/cognition/memory-evidence/memory-evidence-model";
+import {
+  createPersonalLearning,
+  type PersonalLearning,
+} from "@/features/cognition/personal-learning";
 import type {
   ConceptSuggestionTrace,
 } from "@/features/associations/association-types";
@@ -124,6 +125,7 @@ export function deriveKnowledgeSuggestions({
 
   const buckets = new Map<string, SuggestionBucket>();
   let fallbackEvidenceModel: MemoryEvidenceModel | null = null;
+  let fallbackLearning: PersonalLearning | null = null;
   const getFallbackEvidenceModel = () => {
     fallbackEvidenceModel ??= createMemoryEvidenceModel({
       contexts,
@@ -133,6 +135,12 @@ export function deriveKnowledgeSuggestions({
       recentWindowDays: DEFAULT_BEHAVIORAL_RECENT_WINDOW_DAYS,
     });
     return fallbackEvidenceModel;
+  };
+  const getFallbackLearning = () => {
+    fallbackLearning ??= createPersonalLearning({
+      evidence: behavioralEvidenceModel ?? evolutionEvidenceModel ?? getFallbackEvidenceModel(),
+    });
+    return fallbackLearning;
   };
   const relationships =
     precomputedEvidence?.relationships ??
@@ -148,36 +156,13 @@ export function deriveKnowledgeSuggestions({
       );
   const behavioralPatterns =
     precomputedEvidence?.behavioralPatterns ??
-    deriveBehavioralPatterns({
-      contexts,
-      relations: activeRelations,
-      nodes: activeNodes,
-      now,
-      evidenceModel:
-        behavioralEvidenceModel ??
-        getFallbackEvidenceModel(),
-    });
+    getFallbackLearning().observedPatterns;
   const semanticStatements =
     precomputedEvidence?.semanticStatements ??
-    deriveSemanticStatements({
-      contexts,
-      relations: activeRelations,
-      nodes: activeNodes,
-      now,
-      evidenceModel: behavioralEvidenceModel ?? getFallbackEvidenceModel(),
-    });
+    getFallbackLearning().observedRelations;
   const evolutionSignals =
     precomputedEvidence?.evolutionSignals ??
-    deriveMemoryEvolutionSignals({
-      contexts,
-      relations: activeRelations,
-      nodes: activeNodes,
-      now,
-      evidenceModel:
-        evolutionEvidenceModel ??
-        behavioralEvidenceModel ??
-        getFallbackEvidenceModel(),
-    });
+    getFallbackLearning().temporalSignals;
 
   for (const relationship of relationships) {
     if (!canSuggestConcept(relationship.targetConceptId, presentConceptIds, model)) {
