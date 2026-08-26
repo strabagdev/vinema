@@ -7,12 +7,10 @@ import {
 } from "@/features/cognition/behavioral-engine/behavioral-engine";
 import { deriveKnowledgeSuggestions, type KnowledgeSuggestion } from "@/features/cognition/knowledge-suggestions";
 import {
-  DEFAULT_DORMANT_DAYS,
-  DEFAULT_RECENT_WINDOW_DAYS,
   deriveMemoryEvolutionSignals,
   type MemoryEvolutionSignal,
 } from "@/features/cognition/memory-evolution";
-import { createMemoryEvidenceModel } from "@/features/cognition/memory-evidence/memory-evidence-model";
+import { createPersonalEvidence } from "@/features/cognition/personal-evidence";
 import { deriveSemanticStatements, type SemanticStatement } from "@/features/cognition/semantic-understanding";
 import { createConceptIdentity } from "@/features/concepts/concept-identity";
 import { deriveConceptProfile, type ConceptProfile } from "@/features/exploration/concept-profile";
@@ -30,20 +28,12 @@ export function deriveMemoryResponse({
   nodes,
 }: DeriveMemoryResponseOptions): MemoryResponse {
   const conceptsById = createConceptModel(contexts);
-  const behavioralEvidenceModel = createMemoryEvidenceModel({
-    contexts,
+  const personalEvidence = createPersonalEvidence({
+    concepts: contexts,
     relations,
-    nodes,
+    captures: nodes,
     now: query.now,
     recentWindowDays: DEFAULT_BEHAVIORAL_RECENT_WINDOW_DAYS,
-  });
-  const evolutionEvidenceModel = createMemoryEvidenceModel({
-    contexts,
-    relations,
-    nodes,
-    now: query.now,
-    recentWindowDays: DEFAULT_RECENT_WINDOW_DAYS,
-    dormantDays: DEFAULT_DORMANT_DAYS,
   });
   const queryConceptIds = resolveQueryConceptIds({
     detectedConceptIds: query.detectedConceptIds,
@@ -63,6 +53,7 @@ export function deriveMemoryResponse({
           relations,
           nodes,
           now: query.now,
+          personalEvidence,
         }),
       )
       .filter((profile): profile is ConceptProfile => profile !== null),
@@ -76,8 +67,26 @@ export function deriveMemoryResponse({
         nodes,
         now: query.now,
         limit: DEFAULT_RELATIONSHIP_LIMIT,
+        personalEvidence,
       }),
     ),
+  );
+  const activeSuggestionNodes = nodes.filter(
+    (node) => node.deletedAt === null && !node.archivedAt,
+  );
+  const activeSuggestionNodeIds = new Set(activeSuggestionNodes.map((node) => node.id));
+  const activeSuggestionRelations = relations.filter((relation) =>
+    activeSuggestionNodeIds.has(relation.nodeId),
+  );
+  const suggestionRelationships = queryConceptIds.flatMap((conceptId) =>
+    deriveConceptRelationships({
+      sourceConceptId: conceptId,
+      contexts,
+      relations: activeSuggestionRelations,
+      nodes: activeSuggestionNodes,
+      now: query.now,
+      limit: DEFAULT_RELATIONSHIP_LIMIT,
+    }),
   );
   const behavioralPatterns = dedupeBehavioralPatterns(
     deriveBehavioralPatterns({
@@ -85,7 +94,7 @@ export function deriveMemoryResponse({
       relations,
       nodes,
       now: query.now,
-      evidenceModel: behavioralEvidenceModel,
+      evidenceModel: personalEvidence,
     }),
   );
   const semanticStatements = dedupeSemanticStatements(
@@ -94,7 +103,7 @@ export function deriveMemoryResponse({
       relations,
       nodes,
       now: query.now,
-      evidenceModel: behavioralEvidenceModel,
+      evidenceModel: personalEvidence,
     }),
   );
   const evolutionSignals = dedupeEvolutionSignals(
@@ -103,7 +112,7 @@ export function deriveMemoryResponse({
       relations,
       nodes,
       now: query.now,
-      evidenceModel: evolutionEvidenceModel,
+      evidenceModel: personalEvidence,
     }),
   );
   const suggestions = dedupeSuggestions(
@@ -113,8 +122,14 @@ export function deriveMemoryResponse({
       relations,
       nodes,
       now: query.now,
-      behavioralEvidenceModel,
-      evolutionEvidenceModel,
+      behavioralEvidenceModel: personalEvidence,
+      evolutionEvidenceModel: personalEvidence,
+      precomputedEvidence: {
+        relationships: suggestionRelationships,
+        behavioralPatterns,
+        semanticStatements,
+        evolutionSignals,
+      },
     }),
   );
   const evidence = collectEvidence({

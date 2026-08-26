@@ -9,6 +9,7 @@ import {
 } from "@/features/exploration/concept-relationships";
 import { deriveCaptureEmergentIdentity } from "@/features/identity/capture-emergent-identity";
 import { getCapturePreview } from "@/features/node/node-display";
+import type { PersonalEvidence } from "@/features/cognition/personal-evidence";
 
 export interface ConceptProfile {
   concept: {
@@ -65,6 +66,7 @@ export function deriveConceptProfile({
   now = new Date(),
   representativeLimit = DEFAULT_REPRESENTATIVE_LIMIT,
   relatedLimit = DEFAULT_RELATED_LIMIT,
+  personalEvidence,
 }: {
   currentContextId: string;
   contexts: Context[];
@@ -73,7 +75,9 @@ export function deriveConceptProfile({
   now?: Date;
   representativeLimit?: number;
   relatedLimit?: number;
+  personalEvidence?: PersonalEvidence;
 }): ConceptProfile | null {
+  void personalEvidence;
   const concept = contexts.find((context) => context.id === currentContextId);
 
   if (!concept) {

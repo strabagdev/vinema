@@ -54,14 +54,17 @@ export function deriveMemoryEvolutionSignals({
       recentWindowDays,
       dormantDays,
     });
+  const temporalModel = evidenceModel
+    ? evidenceModel.getTemporalEvidence({ recentWindowDays, dormantDays })
+    : model;
   const windows: EvolutionWindows = {
-    observedAt: model.windows.observedAt,
-    recentStart: model.windows.recentStart,
-    previousStart: model.windows.previousStart,
+    observedAt: temporalModel.windows.observedAt,
+    recentStart: temporalModel.windows.recentStart,
+    previousStart: temporalModel.windows.previousStart,
     dormantDays,
   };
 
-  return Array.from(model.conceptSeriesById.values())
+  return Array.from(temporalModel.conceptSeriesById.values())
     .flatMap((input) =>
       deriveConceptEvolution({
         input,

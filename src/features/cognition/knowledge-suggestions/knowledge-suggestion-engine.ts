@@ -5,11 +5,7 @@ import {
   DEFAULT_BEHAVIORAL_RECENT_WINDOW_DAYS,
   deriveBehavioralPatterns,
 } from "@/features/cognition/behavioral-engine/behavioral-engine";
-import {
-  DEFAULT_DORMANT_DAYS,
-  DEFAULT_RECENT_WINDOW_DAYS,
-  deriveMemoryEvolutionSignals,
-} from "@/features/cognition/memory-evolution";
+import { deriveMemoryEvolutionSignals } from "@/features/cognition/memory-evolution";
 import { deriveSemanticStatements } from "@/features/cognition/semantic-understanding";
 import {
   createMemoryEvidenceModel,
@@ -26,6 +22,10 @@ import type {
 } from "@/features/cognition/knowledge-suggestions/knowledge-suggestions";
 import { createConceptIdentity, normalizeConceptIdentityLabel } from "@/features/concepts/concept-identity";
 import { deriveConceptRelationships } from "@/features/exploration/concept-relationships";
+import type { DerivedConceptRelationship } from "@/features/exploration/concept-relationships";
+import type { BehavioralPattern } from "@/features/cognition/behavioral-engine/behavioral-engine";
+import type { MemoryEvolutionSignal } from "@/features/cognition/memory-evolution";
+import type { SemanticStatement } from "@/features/cognition/semantic-understanding";
 
 export interface DeriveKnowledgeSuggestionsOptions {
   inputConceptIds: string[];
@@ -39,6 +39,14 @@ export interface DeriveKnowledgeSuggestionsOptions {
   semanticRelatedConceptIds?: string[];
   localText?: string;
   localConceptTraces?: ConceptSuggestionTrace[];
+  precomputedEvidence?: KnowledgeSuggestionPrecomputedEvidence;
+}
+
+export interface KnowledgeSuggestionPrecomputedEvidence {
+  relationships: DerivedConceptRelationship[];
+  behavioralPatterns: BehavioralPattern[];
+  semanticStatements: SemanticStatement[];
+  evolutionSignals: MemoryEvolutionSignal[];
 }
 
 type SuggestionBucket = {
@@ -86,6 +94,7 @@ export function deriveKnowledgeSuggestions({
   semanticRelatedConceptIds = [],
   localText,
   localConceptTraces = [],
+  precomputedEvidence,
 }: DeriveKnowledgeSuggestionsOptions): KnowledgeSuggestion[] {
   if (limit <= 0) {
     return [];
@@ -114,53 +123,61 @@ export function deriveKnowledgeSuggestions({
   }
 
   const buckets = new Map<string, SuggestionBucket>();
-  const relationships = Array.from(presentConceptIds).flatMap((sourceConceptId) =>
-      deriveConceptRelationships({
-        sourceConceptId,
-        contexts,
-        relations: activeRelations,
-        nodes: activeNodes,
-        now,
-        limit: RELATED_NOW_LIMIT_PER_SOURCE,
-      }),
-    );
-  const behavioralPatterns = deriveBehavioralPatterns({
-    contexts,
-    relations: activeRelations,
-    nodes: activeNodes,
-    now,
-    evidenceModel:
-      behavioralEvidenceModel ??
-      createMemoryEvidenceModel({
-        contexts,
-        relations: activeRelations,
-        nodes: activeNodes,
-        now,
-        recentWindowDays: DEFAULT_BEHAVIORAL_RECENT_WINDOW_DAYS,
-      }),
-  });
-  const semanticStatements = deriveSemanticStatements({
-    contexts,
-    relations: activeRelations,
-    nodes: activeNodes,
-    now,
-  });
-  const evolutionSignals = deriveMemoryEvolutionSignals({
-    contexts,
-    relations: activeRelations,
-    nodes: activeNodes,
-    now,
-    evidenceModel:
-      evolutionEvidenceModel ??
-      createMemoryEvidenceModel({
-        contexts,
-        relations: activeRelations,
-        nodes: activeNodes,
-        now,
-        recentWindowDays: DEFAULT_RECENT_WINDOW_DAYS,
-        dormantDays: DEFAULT_DORMANT_DAYS,
-      }),
-  });
+  let fallbackEvidenceModel: MemoryEvidenceModel | null = null;
+  const getFallbackEvidenceModel = () => {
+    fallbackEvidenceModel ??= createMemoryEvidenceModel({
+      contexts,
+      relations: activeRelations,
+      nodes: activeNodes,
+      now,
+      recentWindowDays: DEFAULT_BEHAVIORAL_RECENT_WINDOW_DAYS,
+    });
+    return fallbackEvidenceModel;
+  };
+  const relationships =
+    precomputedEvidence?.relationships ??
+    Array.from(presentConceptIds).flatMap((sourceConceptId) =>
+        deriveConceptRelationships({
+          sourceConceptId,
+          contexts,
+          relations: activeRelations,
+          nodes: activeNodes,
+          now,
+          limit: RELATED_NOW_LIMIT_PER_SOURCE,
+        }),
+      );
+  const behavioralPatterns =
+    precomputedEvidence?.behavioralPatterns ??
+    deriveBehavioralPatterns({
+      contexts,
+      relations: activeRelations,
+      nodes: activeNodes,
+      now,
+      evidenceModel:
+        behavioralEvidenceModel ??
+        getFallbackEvidenceModel(),
+    });
+  const semanticStatements =
+    precomputedEvidence?.semanticStatements ??
+    deriveSemanticStatements({
+      contexts,
+      relations: activeRelations,
+      nodes: activeNodes,
+      now,
+      evidenceModel: behavioralEvidenceModel ?? getFallbackEvidenceModel(),
+    });
+  const evolutionSignals =
+    precomputedEvidence?.evolutionSignals ??
+    deriveMemoryEvolutionSignals({
+      contexts,
+      relations: activeRelations,
+      nodes: activeNodes,
+      now,
+      evidenceModel:
+        evolutionEvidenceModel ??
+        behavioralEvidenceModel ??
+        getFallbackEvidenceModel(),
+    });
 
   for (const relationship of relationships) {
     if (!canSuggestConcept(relationship.targetConceptId, presentConceptIds, model)) {

@@ -5,6 +5,7 @@ import type { Node } from "@/domain/node/node";
 import { getContentTimestamp } from "@/features/capture/capture-timestamps";
 import { deriveCaptureEmergentIdentity } from "@/features/identity/capture-emergent-identity";
 import { getCapturePreview } from "@/features/node/node-display";
+import type { PersonalEvidence } from "@/features/cognition/personal-evidence";
 
 export type RelationshipStrength = "WEAK" | "MEDIUM" | "STRONG";
 
@@ -60,6 +61,7 @@ export function deriveConceptRelationships({
   nodes,
   now = new Date(),
   limit = DEFAULT_RELATIONSHIP_LIMIT,
+  personalEvidence,
 }: {
   sourceConceptId: string;
   contexts: Context[];
@@ -67,7 +69,9 @@ export function deriveConceptRelationships({
   nodes: Node[];
   now?: Date;
   limit?: number;
+  personalEvidence?: PersonalEvidence;
 }): DerivedConceptRelationship[] {
+  void personalEvidence;
   const source = contexts.find((context) => context.id === sourceConceptId);
 
   if (!source || limit <= 0) {
