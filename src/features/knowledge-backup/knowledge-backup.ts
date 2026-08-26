@@ -1,14 +1,14 @@
-import type { Context } from "@/domain/context/context";
+import type { Concept } from "@/domain/concept/concept";
 import {
   CONTEXT_TYPES,
-  isContextType,
-  normalizeContextNameForComparison,
+  isConceptType,
+  normalizeConceptNameForComparison,
 } from "@/domain/context/context";
-import type { ContextRepository } from "@/domain/context/context-repository";
-import type { NodeContextRelation } from "@/domain/context/node-context-relation";
-import type { NodeContextRelationRepository } from "@/domain/context/node-context-relation-repository";
-import type { Node } from "@/domain/node/node";
-import type { NodeRepository } from "@/domain/node/node-repository";
+import type { ConceptRepository } from "@/domain/concept/concept-repository";
+import type { CaptureConceptRelation } from "@/domain/concept/capture-concept-relation";
+import type { CaptureConceptRelationRepository } from "@/domain/concept/capture-concept-relation-repository";
+import type { Capture } from "@/domain/capture/capture";
+import type { CaptureRepository } from "@/domain/capture/capture-repository";
 import type { Workspace } from "@/domain/workspace/workspace";
 import { createConceptEquivalenceKey } from "@/features/associations/concept-label-normalization";
 import {
@@ -27,8 +27,8 @@ export const MAX_KNOWLEDGE_BACKUP_BYTES = 5 * 1024 * 1024;
 const SENSITIVE_KEY_PATTERN =
   /token|secret|password|credential|session|apikey|api_key|hash/i;
 
-export type KnowledgeBackupNode = Pick<
-  Node,
+export type KnowledgeBackupCapture = Pick<
+  Capture,
   | "id"
   | "workspaceId"
   | "type"
@@ -47,11 +47,11 @@ export type KnowledgeBackupNode = Pick<
   | "lastModifiedByDeviceId"
 >;
 
-export type KnowledgeBackupContext = Context & {
+export type KnowledgeBackupConcept = Concept & {
   normalizedLabel: string;
 };
 
-export type KnowledgeBackupRelation = NodeContextRelation;
+export type KnowledgeBackupCaptureConceptRelation = CaptureConceptRelation;
 
 export type LegacyKnowledgeBackup = {
   format: typeof KNOWLEDGE_BACKUP_FORMAT;
@@ -62,9 +62,9 @@ export type LegacyKnowledgeBackup = {
     name: string;
   };
   knowledge: {
-    nodes: KnowledgeBackupNode[];
-    contexts: KnowledgeBackupContext[];
-    relations: KnowledgeBackupRelation[];
+    nodes: KnowledgeBackupCapture[];
+    contexts: KnowledgeBackupConcept[];
+    relations: KnowledgeBackupCaptureConceptRelation[];
   };
   summary: {
     nodes: number;
@@ -79,9 +79,9 @@ export type MemoryBackup = {
   exportedAt: string;
   applicationVersion: string;
   memory: {
-    captures: KnowledgeBackupNode[];
-    concepts: KnowledgeBackupContext[];
-    relations: KnowledgeBackupRelation[];
+    captures: KnowledgeBackupCapture[];
+    concepts: KnowledgeBackupConcept[];
+    relations: KnowledgeBackupCaptureConceptRelation[];
   };
   summary: {
     captures: number;
@@ -106,11 +106,42 @@ export type MemoryBackup = {
 
 export type KnowledgeBackup = LegacyKnowledgeBackup | MemoryBackup;
 
-export type KnowledgeRepositories = {
-  nodeRepository: NodeRepository;
-  contextRepository: ContextRepository;
-  relationRepository: NodeContextRelationRepository;
+export type CanonicalKnowledgeRepositories = {
+  captureRepository: CaptureRepository;
+  conceptRepository: ConceptRepository;
+  captureConceptRelationRepository: CaptureConceptRelationRepository;
 };
+
+export type LegacyKnowledgeRepositories = {
+  /** @deprecated Use captureRepository. Pending removal after terminology migration. */
+  nodeRepository: CaptureRepository;
+  /** @deprecated Use conceptRepository. Pending removal after terminology migration. */
+  contextRepository: ConceptRepository;
+  /** @deprecated Use captureConceptRelationRepository. Pending removal after terminology migration. */
+  relationRepository: CaptureConceptRelationRepository;
+};
+
+export type KnowledgeRepositories =
+  | CanonicalKnowledgeRepositories
+  | LegacyKnowledgeRepositories;
+
+type BuildKnowledgeBackupInput =
+  | {
+      workspace: Workspace;
+      captures: Capture[];
+      concepts: Concept[];
+      relations: CaptureConceptRelation[];
+      exportedAt: string;
+    }
+  | {
+      workspace: Workspace;
+      /** @deprecated Use captures. Pending removal after terminology migration. */
+      nodes: Capture[];
+      /** @deprecated Use concepts. Pending removal after terminology migration. */
+      contexts: Concept[];
+      relations: CaptureConceptRelation[];
+      exportedAt: string;
+    };
 
 export type RestoreKnowledgeBackupResult = {
   createdNodes: number;
@@ -151,54 +182,48 @@ export async function exportKnowledgeBackup({
   repositories: KnowledgeRepositories;
   now?: () => string;
 }): Promise<MemoryBackup> {
-  const [nodes, contexts, relations] = await Promise.all([
-    repositories.nodeRepository.listByWorkspace(workspace.id, {
+  const repositoriesByConcept = normalizeKnowledgeRepositories(repositories);
+  const [captures, concepts, relations] = await Promise.all([
+    repositoriesByConcept.captureRepository.listByWorkspace(workspace.id, {
       includeArchived: true,
     }),
-    repositories.contextRepository.list({
+    repositoriesByConcept.conceptRepository.list({
       workspaceId: workspace.id,
       includeArchived: true,
     }),
-    repositories.relationRepository.listByWorkspace(workspace.id),
+    repositoriesByConcept.captureConceptRelationRepository.listByWorkspace(workspace.id),
   ]);
 
   return buildKnowledgeBackup({
     workspace,
-    nodes,
-    contexts,
+    captures,
+    concepts,
     relations,
     exportedAt: now(),
   });
 }
 
-export function buildKnowledgeBackup({
-  workspace,
-  nodes,
-  contexts,
-  relations,
-  exportedAt,
-}: {
-  workspace: Workspace;
-  nodes: Node[];
-  contexts: Context[];
-  relations: NodeContextRelation[];
-  exportedAt: string;
-}): MemoryBackup {
-  const knowledgeNodes = nodes
-    .filter((node) => node.workspaceId === workspace.id && node.deletedAt === null)
-    .map(toBackupNode);
-  const knowledgeContexts = contexts
-    .filter((context) => context.workspaceId === workspace.id)
-    .map(toBackupContext);
-  const nodeIds = new Set(knowledgeNodes.map((node) => node.id));
-  const contextIds = new Set(knowledgeContexts.map((context) => context.id));
+export function buildKnowledgeBackup(input: BuildKnowledgeBackupInput): MemoryBackup {
+  const { workspace, relations, exportedAt } = input;
+  const captures = "captures" in input ? input.captures : input.nodes;
+  const concepts = "concepts" in input ? input.concepts : input.contexts;
+  const knowledgeCaptures = captures
+    .filter(
+      (capture) => capture.workspaceId === workspace.id && capture.deletedAt === null,
+    )
+    .map(toBackupCapture);
+  const knowledgeConcepts = concepts
+    .filter((concept) => concept.workspaceId === workspace.id)
+    .map(toBackupConcept);
+  const captureIds = new Set(knowledgeCaptures.map((capture) => capture.id));
+  const conceptIds = new Set(knowledgeConcepts.map((concept) => concept.id));
   const knowledgeRelations = relations
     .filter((relation) => relation.workspaceId === workspace.id)
     .filter(
       (relation) =>
-        nodeIds.has(relation.nodeId) && contextIds.has(relation.contextId),
+        captureIds.has(relation.nodeId) && conceptIds.has(relation.contextId),
     )
-    .map(toBackupRelation);
+    .map(toBackupCaptureConceptRelation);
 
   const backup = withMemoryIntegrity({
     format: MEMORY_BACKUP_FORMAT,
@@ -206,17 +231,18 @@ export function buildKnowledgeBackup({
     exportedAt,
     applicationVersion: "0.1.0",
     memory: {
-      captures: knowledgeNodes,
-      concepts: knowledgeContexts,
+      captures: knowledgeCaptures,
+      concepts: knowledgeConcepts,
       relations: knowledgeRelations,
     },
     summary: {
-      captures: knowledgeNodes.length,
-      concepts: knowledgeContexts.length,
+      captures: knowledgeCaptures.length,
+      concepts: knowledgeConcepts.length,
       relations: knowledgeRelations.length,
-      archivedCaptures: knowledgeNodes.filter((node) => node.status === "ARCHIVED")
-        .length,
-      archivedConcepts: knowledgeContexts.filter((context) => context.archivedAt)
+      archivedCaptures: knowledgeCaptures.filter(
+        (capture) => capture.status === "ARCHIVED",
+      ).length,
+      archivedConcepts: knowledgeConcepts.filter((concept) => concept.archivedAt)
         .length,
     },
     integrity: {
@@ -309,12 +335,12 @@ function validateLegacyKnowledgeBackup(value: unknown): LegacyKnowledgeBackup {
   const workspaceId = assertNonEmptyString(workspace.id, "workspace.id");
   const workspaceName = assertNonEmptyString(workspace.name, "workspace.name");
   const knowledge = asRecord(backup.knowledge, "knowledge debe ser un objeto.");
-  const nodes = assertArray(knowledge.nodes, "knowledge.nodes").map(validateNode);
+  const nodes = assertArray(knowledge.nodes, "knowledge.nodes").map(validateCapture);
   const contexts = assertArray(knowledge.contexts, "knowledge.contexts").map(
-    validateContext,
+    validateConcept,
   );
   const relations = assertArray(knowledge.relations, "knowledge.relations").map(
-    validateRelation,
+    validateCaptureConceptRelation,
   );
   const summary = asRecord(backup.summary, "summary debe ser un objeto.");
 
@@ -418,12 +444,12 @@ function validateMemoryBackup(value: unknown): MemoryBackup {
     "applicationVersion",
   );
   const memory = asRecord(backup.memory, "memory debe ser un objeto.");
-  const captures = assertArray(memory.captures, "memory.captures").map(validateNode);
+  const captures = assertArray(memory.captures, "memory.captures").map(validateCapture);
   const concepts = assertArray(memory.concepts, "memory.concepts").map(
-    validateContext,
+    validateConcept,
   );
   const relations = assertArray(memory.relations, "memory.relations").map(
-    validateRelation,
+    validateCaptureConceptRelation,
   );
   const summary = asRecord(backup.summary, "summary debe ser un objeto.");
   const integrity = asRecord(backup.integrity, "integrity debe ser un objeto.");
@@ -586,7 +612,7 @@ export async function restoreKnowledgeBackup({
   backup: KnowledgeBackup;
   workspace: Workspace;
   deviceId: string;
-  repositories: KnowledgeRepositories;
+  repositories: KnowledgeRepositories | LegacyKnowledgeRepositories;
   syncNow?: () => Promise<void>;
 }): Promise<RestoreKnowledgeBackupResult> {
   const validBackup = toRestorableKnowledge(validateKnowledgeBackup(backup));
@@ -598,26 +624,29 @@ export async function restoreKnowledgeBackup({
     );
   }
 
-  const [existingNodes, existingContexts, existingRelations] = await Promise.all([
-    repositories.nodeRepository.listByWorkspace(workspace.id, {
+  const repositoriesByConcept = normalizeKnowledgeRepositories(repositories);
+  const [existingCaptures, existingConcepts, existingRelations] = await Promise.all([
+    repositoriesByConcept.captureRepository.listByWorkspace(workspace.id, {
       includeArchived: true,
     }),
-    repositories.contextRepository.list({
+    repositoriesByConcept.conceptRepository.list({
       workspaceId: workspace.id,
       includeArchived: true,
     }),
-    repositories.relationRepository.listByWorkspace(workspace.id),
+    repositoriesByConcept.captureConceptRelationRepository.listByWorkspace(workspace.id),
   ]);
-  const contextIdMap = new Map<string, string>();
+  const conceptIdMap = new Map<string, string>();
   const conflicts: string[] = [];
-  const existingNodesById = new Map(existingNodes.map((node) => [node.id, node]));
-  const existingContextsById = new Map(
-    existingContexts.map((context) => [context.id, context]),
+  const existingCapturesById = new Map(
+    existingCaptures.map((capture) => [capture.id, capture]),
   );
-  const existingContextsByKey = new Map(
-    existingContexts.map((context) => [
-      createConceptEquivalenceKey(context.name),
-      context,
+  const existingConceptsById = new Map(
+    existingConcepts.map((concept) => [concept.id, concept]),
+  );
+  const existingConceptsByKey = new Map(
+    existingConcepts.map((concept) => [
+      createConceptEquivalenceKey(concept.name),
+      concept,
     ]),
   );
   const existingRelationsById = new Map(
@@ -628,46 +657,46 @@ export async function restoreKnowledgeBackup({
       relationKey(relation.nodeId, relation.contextId),
     ),
   );
-  const contextsToCreate: Context[] = [];
-  const nodesToCreate: Node[] = [];
-  const relationsToCreate: NodeContextRelation[] = [];
-  let skippedContexts = 0;
-  let skippedNodes = 0;
+  const conceptsToCreate: Concept[] = [];
+  const capturesToCreate: Capture[] = [];
+  const relationsToCreate: CaptureConceptRelation[] = [];
+  let skippedConcepts = 0;
+  let skippedCaptures = 0;
   let skippedRelations = 0;
 
-  for (const context of validBackup.knowledge.contexts) {
-    const existingById = existingContextsById.get(context.id);
+  for (const concept of validBackup.knowledge.contexts) {
+    const existingById = existingConceptsById.get(concept.id);
     if (existingById) {
-      if (!sameContextKnowledge(existingById, context)) {
-        conflicts.push(`concept:${context.id}`);
+      if (!sameConceptKnowledge(existingById, concept)) {
+        conflicts.push(`concept:${concept.id}`);
       } else {
-        skippedContexts += 1;
+        skippedConcepts += 1;
       }
-      contextIdMap.set(context.id, existingById.id);
+      conceptIdMap.set(concept.id, existingById.id);
       continue;
     }
 
-    const existingByKey = existingContextsByKey.get(context.normalizedLabel);
+    const existingByKey = existingConceptsByKey.get(concept.normalizedLabel);
     if (existingByKey) {
-      contextIdMap.set(context.id, existingByKey.id);
-      skippedContexts += 1;
+      conceptIdMap.set(concept.id, existingByKey.id);
+      skippedConcepts += 1;
       continue;
     }
 
-    const identityResolution = resolveConceptIdentity(context.name, existingContexts);
+    const identityResolution = resolveConceptIdentity(concept.name, existingConcepts);
     if (identityResolution.status === "EXACT" || identityResolution.status === "ALIAS") {
-      contextIdMap.set(context.id, identityResolution.conceptId);
-      skippedContexts += 1;
+      conceptIdMap.set(concept.id, identityResolution.conceptId);
+      skippedConcepts += 1;
       continue;
     }
 
     if (identityResolution.status === "AMBIGUOUS") {
-      conflicts.push(`concept:${context.id}`);
+      conflicts.push(`concept:${concept.id}`);
       continue;
     }
 
-    const aliasResolutions = (context.aliases ?? []).map((alias) =>
-      resolveConceptIdentity(alias, existingContexts),
+    const aliasResolutions = (concept.aliases ?? []).map((alias) =>
+      resolveConceptIdentity(alias, existingConcepts),
     );
     const aliasMatches = aliasResolutions.filter(
       (
@@ -679,40 +708,40 @@ export async function restoreKnowledgeBackup({
     );
 
     if (aliasResolutions.some((resolution) => resolution.status === "AMBIGUOUS")) {
-      conflicts.push(`concept:${context.id}`);
+      conflicts.push(`concept:${concept.id}`);
       continue;
     }
 
     const aliasConceptIds = new Set(aliasMatches.map((resolution) => resolution.conceptId));
     if (aliasConceptIds.size > 1) {
-      conflicts.push(`concept:${context.id}`);
+      conflicts.push(`concept:${concept.id}`);
       continue;
     }
 
     const [aliasMatch] = aliasMatches;
     if (aliasMatch) {
-      contextIdMap.set(context.id, aliasMatch.conceptId);
-      skippedContexts += 1;
+      conceptIdMap.set(concept.id, aliasMatch.conceptId);
+      skippedConcepts += 1;
       continue;
     }
 
-    contextIdMap.set(context.id, context.id);
-    contextsToCreate.push(stripBackupContext(context));
+    conceptIdMap.set(concept.id, concept.id);
+    conceptsToCreate.push(stripBackupConcept(concept));
   }
 
-  for (const node of validBackup.knowledge.nodes) {
-    const existing = existingNodesById.get(node.id);
+  for (const capture of validBackup.knowledge.nodes) {
+    const existing = existingCapturesById.get(capture.id);
     if (existing) {
-      if (!sameNodeKnowledge(existing, node)) {
-        conflicts.push(`capture:${node.id}`);
+      if (!sameCaptureKnowledge(existing, capture)) {
+        conflicts.push(`capture:${capture.id}`);
       } else {
-        skippedNodes += 1;
+        skippedCaptures += 1;
       }
       continue;
     }
 
-    nodesToCreate.push({
-      ...node,
+    capturesToCreate.push({
+      ...capture,
       workspaceId: workspace.id,
       createdByDeviceId: deviceId,
       lastModifiedByDeviceId: deviceId,
@@ -720,18 +749,18 @@ export async function restoreKnowledgeBackup({
   }
 
   for (const relation of validBackup.knowledge.relations) {
-    const mappedContextId = contextIdMap.get(relation.contextId);
-    if (!mappedContextId) {
+    const mappedConceptId = conceptIdMap.get(relation.contextId);
+    if (!mappedConceptId) {
       throw new KnowledgeBackupValidationError(
         "ORPHAN_RELATION",
         "Una relacion apunta a un concepto inexistente.",
       );
     }
 
-    const mappedRelation: NodeContextRelation = {
+    const mappedRelation: CaptureConceptRelation = {
       ...relation,
       workspaceId: workspace.id,
-      contextId: mappedContextId,
+      contextId: mappedConceptId,
     };
     const existingById = existingRelationsById.get(mappedRelation.id);
     if (existingById) {
@@ -743,7 +772,7 @@ export async function restoreKnowledgeBackup({
       continue;
     }
 
-    if (existingRelationKeys.has(relationKey(mappedRelation.nodeId, mappedContextId))) {
+    if (existingRelationKeys.has(relationKey(mappedRelation.nodeId, mappedConceptId))) {
       skippedRelations += 1;
       continue;
     }
@@ -755,21 +784,21 @@ export async function restoreKnowledgeBackup({
     throw new KnowledgeRestoreConflictError(conflicts);
   }
 
-  for (const context of contextsToCreate) {
-    await repositories.contextRepository.save(context);
+  for (const concept of conceptsToCreate) {
+    await repositoriesByConcept.conceptRepository.save(concept);
   }
 
-  for (const node of nodesToCreate) {
-    await repositories.nodeRepository.create(node);
+  for (const capture of capturesToCreate) {
+    await repositoriesByConcept.captureRepository.create(capture);
   }
 
   for (const relation of relationsToCreate) {
-    await repositories.relationRepository.save(relation);
+    await repositoriesByConcept.captureConceptRelationRepository.save(relation);
   }
 
   if (
-    contextsToCreate.length > 0 ||
-    nodesToCreate.length > 0 ||
+    conceptsToCreate.length > 0 ||
+    capturesToCreate.length > 0 ||
     relationsToCreate.length > 0
   ) {
     await syncNow?.();
@@ -777,11 +806,11 @@ export async function restoreKnowledgeBackup({
   }
 
   return {
-    createdNodes: nodesToCreate.length,
-    createdContexts: contextsToCreate.length,
+    createdNodes: capturesToCreate.length,
+    createdContexts: conceptsToCreate.length,
     createdRelations: relationsToCreate.length,
-    skippedNodes,
-    skippedContexts,
+    skippedNodes: skippedCaptures,
+    skippedContexts: skippedConcepts,
     skippedRelations,
   };
 }
@@ -812,85 +841,85 @@ function toRestorableKnowledge(backup: KnowledgeBackup): LegacyKnowledgeBackup {
   };
 }
 
-function toBackupNode(node: Node): KnowledgeBackupNode {
+function toBackupCapture(capture: Capture): KnowledgeBackupCapture {
   return {
-    id: node.id,
-    workspaceId: node.workspaceId,
-    type: node.type,
-    content: node.content,
-    status: node.status,
-    organizationStatus: node.organizationStatus,
-    metadata: sanitizeMetadata(node.metadata),
-    version: node.version,
-    createdAt: node.createdAt,
-    contentUpdatedAt: node.contentUpdatedAt,
-    archivedAt: node.archivedAt ?? null,
-    restoredAt: node.restoredAt ?? null,
-    updatedAt: node.updatedAt,
-    deletedAt: node.deletedAt,
-    createdByDeviceId: node.createdByDeviceId,
-    lastModifiedByDeviceId: node.lastModifiedByDeviceId,
+    id: capture.id,
+    workspaceId: capture.workspaceId,
+    type: capture.type,
+    content: capture.content,
+    status: capture.status,
+    organizationStatus: capture.organizationStatus,
+    metadata: sanitizeMetadata(capture.metadata),
+    version: capture.version,
+    createdAt: capture.createdAt,
+    contentUpdatedAt: capture.contentUpdatedAt,
+    archivedAt: capture.archivedAt ?? null,
+    restoredAt: capture.restoredAt ?? null,
+    updatedAt: capture.updatedAt,
+    deletedAt: capture.deletedAt,
+    createdByDeviceId: capture.createdByDeviceId,
+    lastModifiedByDeviceId: capture.lastModifiedByDeviceId,
   };
 }
 
-function toBackupContext(context: Context): KnowledgeBackupContext {
-  const normalizedContext = normalizeContextAliases(context);
+function toBackupConcept(concept: Concept): KnowledgeBackupConcept {
+  const normalizedConcept = normalizeContextAliases(concept);
 
   return {
-    ...normalizedContext,
-    normalizedLabel: createConceptEquivalenceKey(context.name),
+    ...normalizedConcept,
+    normalizedLabel: createConceptEquivalenceKey(concept.name),
   };
 }
 
-function toBackupRelation(
-  relation: NodeContextRelation,
-): KnowledgeBackupRelation {
+function toBackupCaptureConceptRelation(
+  relation: CaptureConceptRelation,
+): KnowledgeBackupCaptureConceptRelation {
   return { ...relation };
 }
 
-function validateNode(value: unknown): KnowledgeBackupNode {
-  const node = asRecord(value, "Cada captura debe ser un objeto.");
-  const result: KnowledgeBackupNode = {
-    id: assertNonEmptyString(node.id, "node.id"),
-    workspaceId: assertNonEmptyString(node.workspaceId, "node.workspaceId"),
-    type: node.type === "NOTE" || node.type === "IDEA"
-      ? node.type
+function validateCapture(value: unknown): KnowledgeBackupCapture {
+  const capture = asRecord(value, "Cada captura debe ser un objeto.");
+  const result: KnowledgeBackupCapture = {
+    id: assertNonEmptyString(capture.id, "node.id"),
+    workspaceId: assertNonEmptyString(capture.workspaceId, "node.workspaceId"),
+    type: capture.type === "NOTE" || capture.type === "IDEA"
+      ? capture.type
       : invalid("node.type"),
-    content: assertString(node.content, "node.content"),
-    status: node.status === "ACTIVE" || node.status === "ARCHIVED"
-      ? node.status
+    content: assertString(capture.content, "node.content"),
+    status: capture.status === "ACTIVE" || capture.status === "ARCHIVED"
+      ? capture.status
       : invalid("node.status"),
     organizationStatus:
-      node.organizationStatus === "INBOX" ||
-        node.organizationStatus === "ORGANIZED"
-        ? node.organizationStatus
+      capture.organizationStatus === "INBOX" ||
+        capture.organizationStatus === "ORGANIZED"
+        ? capture.organizationStatus
         : invalid("node.organizationStatus"),
-    metadata: sanitizeMetadata(asOptionalRecord(node.metadata) ?? {}),
-    version: assertPositiveInteger(node.version, "node.version"),
-    createdAt: assertIsoDate(node.createdAt, "node.createdAt"),
+    metadata: sanitizeMetadata(asOptionalRecord(capture.metadata) ?? {}),
+    version: assertPositiveInteger(capture.version, "node.version"),
+    createdAt: assertIsoDate(capture.createdAt, "node.createdAt"),
     contentUpdatedAt:
-      node.contentUpdatedAt === undefined
+      capture.contentUpdatedAt === undefined
         ? undefined
-        : assertIsoDate(node.contentUpdatedAt, "node.contentUpdatedAt"),
+        : assertIsoDate(capture.contentUpdatedAt, "node.contentUpdatedAt"),
     archivedAt:
-      node.archivedAt === null || node.archivedAt === undefined
+      capture.archivedAt === null || capture.archivedAt === undefined
         ? null
-        : assertIsoDate(node.archivedAt, "node.archivedAt"),
+        : assertIsoDate(capture.archivedAt, "node.archivedAt"),
     restoredAt:
-      node.restoredAt === null || node.restoredAt === undefined
+      capture.restoredAt === null || capture.restoredAt === undefined
         ? null
-        : assertIsoDate(node.restoredAt, "node.restoredAt"),
-    updatedAt: assertIsoDate(node.updatedAt, "node.updatedAt"),
+        : assertIsoDate(capture.restoredAt, "node.restoredAt"),
+    updatedAt: assertIsoDate(capture.updatedAt, "node.updatedAt"),
     deletedAt:
-      node.deletedAt === null || node.deletedAt === undefined
+      capture.deletedAt === null || capture.deletedAt === undefined
         ? null
-        : assertIsoDate(node.deletedAt, "node.deletedAt"),
+        : assertIsoDate(capture.deletedAt, "node.deletedAt"),
     createdByDeviceId: assertNonEmptyString(
-      node.createdByDeviceId,
+      capture.createdByDeviceId,
       "node.createdByDeviceId",
     ),
     lastModifiedByDeviceId: assertNonEmptyString(
-      node.lastModifiedByDeviceId,
+      capture.lastModifiedByDeviceId,
       "node.lastModifiedByDeviceId",
     ),
   };
@@ -905,28 +934,28 @@ function validateNode(value: unknown): KnowledgeBackupNode {
   return result;
 }
 
-function validateContext(value: unknown): KnowledgeBackupContext {
-  const context = asRecord(value, "Cada concepto debe ser un objeto.");
-  const type = context.type;
+function validateConcept(value: unknown): KnowledgeBackupConcept {
+  const concept = asRecord(value, "Cada concepto debe ser un objeto.");
+  const type = concept.type;
   const result = normalizeContextAliases({
-    id: assertNonEmptyString(context.id, "context.id"),
-    workspaceId: assertNonEmptyString(context.workspaceId, "context.workspaceId"),
-    type: isContextType(type) ? type : invalid("context.type"),
-    name: assertNonEmptyString(context.name, "context.name"),
+    id: assertNonEmptyString(concept.id, "context.id"),
+    workspaceId: assertNonEmptyString(concept.workspaceId, "context.workspaceId"),
+    type: isConceptType(type) ? type : invalid("context.type"),
+    name: assertNonEmptyString(concept.name, "context.name"),
     description:
-      context.description === null || context.description === undefined
+      concept.description === null || concept.description === undefined
         ? null
-        : assertString(context.description, "context.description"),
-    version: assertPositiveInteger(context.version, "context.version"),
-    createdAt: assertIsoDate(context.createdAt, "context.createdAt"),
-    updatedAt: assertIsoDate(context.updatedAt, "context.updatedAt"),
+        : assertString(concept.description, "context.description"),
+    version: assertPositiveInteger(concept.version, "context.version"),
+    createdAt: assertIsoDate(concept.createdAt, "context.createdAt"),
+    updatedAt: assertIsoDate(concept.updatedAt, "context.updatedAt"),
     archivedAt:
-      context.archivedAt === null || context.archivedAt === undefined
+      concept.archivedAt === null || concept.archivedAt === undefined
         ? null
-        : assertIsoDate(context.archivedAt, "context.archivedAt"),
-    aliases: assertOptionalStringArray(context.aliases, "context.aliases"),
+        : assertIsoDate(concept.archivedAt, "context.archivedAt"),
+    aliases: assertOptionalStringArray(concept.aliases, "context.aliases"),
     normalizedAliases: assertOptionalStringArray(
-      context.normalizedAliases,
+      concept.normalizedAliases,
       "context.normalizedAliases",
     ),
   });
@@ -934,13 +963,13 @@ function validateContext(value: unknown): KnowledgeBackupContext {
   return {
     ...result,
     normalizedLabel: assertNonEmptyString(
-      context.normalizedLabel,
+      concept.normalizedLabel,
       "context.normalizedLabel",
     ),
   };
 }
 
-function validateRelation(value: unknown): KnowledgeBackupRelation {
+function validateCaptureConceptRelation(value: unknown): KnowledgeBackupCaptureConceptRelation {
   const relation = asRecord(value, "Cada relacion debe ser un objeto.");
   return {
     id: assertNonEmptyString(relation.id, "relation.id"),
@@ -962,13 +991,13 @@ function validateRelation(value: unknown): KnowledgeBackupRelation {
   };
 }
 
-function stripBackupContext(context: KnowledgeBackupContext): Context {
-  const { normalizedLabel, ...rest } = context;
+function stripBackupConcept(concept: KnowledgeBackupConcept): Concept {
+  const { normalizedLabel, ...rest } = concept;
   void normalizedLabel;
   return normalizeContextAliases(rest);
 }
 
-function sameNodeKnowledge(existing: Node, backup: KnowledgeBackupNode) {
+function sameCaptureKnowledge(existing: Capture, backup: KnowledgeBackupCapture) {
   return (
     existing.content === backup.content &&
     existing.type === backup.type &&
@@ -979,7 +1008,7 @@ function sameNodeKnowledge(existing: Node, backup: KnowledgeBackupNode) {
   );
 }
 
-function sameContextKnowledge(existing: Context, backup: KnowledgeBackupContext) {
+function sameConceptKnowledge(existing: Concept, backup: KnowledgeBackupConcept) {
   return (
     createConceptEquivalenceKey(existing.name) === backup.normalizedLabel &&
     existing.type === backup.type &&
@@ -1006,8 +1035,8 @@ function haveSameAliases(
 }
 
 function sameRelationKnowledge(
-  existing: NodeContextRelation,
-  backup: NodeContextRelation,
+  existing: CaptureConceptRelation,
+  backup: CaptureConceptRelation,
 ) {
   return (
     existing.nodeId === backup.nodeId &&
@@ -1019,6 +1048,20 @@ function sameRelationKnowledge(
 
 function relationKey(nodeId: string, contextId: string) {
   return `${nodeId}:${contextId}`;
+}
+
+function normalizeKnowledgeRepositories(
+  repositories: KnowledgeRepositories,
+): CanonicalKnowledgeRepositories {
+  if ("captureRepository" in repositories) {
+    return repositories;
+  }
+
+  return {
+    captureRepository: repositories.nodeRepository,
+    conceptRepository: repositories.contextRepository,
+    captureConceptRelationRepository: repositories.relationRepository,
+  };
 }
 
 function sanitizeMetadata(metadata: Record<string, unknown>) {
@@ -1230,5 +1273,5 @@ export function listContextTypesForBackup() {
 }
 
 export function normalizeBackupContextLabel(label: string) {
-  return normalizeContextNameForComparison(label);
+  return normalizeConceptNameForComparison(label);
 }

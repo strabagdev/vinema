@@ -1,28 +1,28 @@
-export const CONTEXT_TYPES = ["AREA", "PROJECT", "PERSON"] as const;
+export {
+  CONCEPT_TYPES,
+  isConceptType,
+  normalizeConceptNameForComparison,
+} from "@/domain/concept/concept";
+export type { Concept, ConceptType } from "@/domain/concept/concept";
 
-export type ContextType = (typeof CONTEXT_TYPES)[number];
+import {
+  CONCEPT_TYPES,
+  isConceptType,
+  normalizeConceptNameForComparison,
+} from "@/domain/concept/concept";
+import type { Concept, ConceptType } from "@/domain/concept/concept";
 
-export interface Context {
-  id: string;
-  workspaceId: string;
-  type: ContextType;
-  name: string;
-  description: string | null;
-  aliases?: string[];
-  normalizedAliases?: string[];
-  version: number;
-  createdAt: string;
-  updatedAt: string;
-  archivedAt: string | null;
-}
+/** @deprecated Use CONCEPT_TYPES. Pending removal after terminology migration. */
+export const CONTEXT_TYPES = CONCEPT_TYPES;
 
-export function isContextType(value: unknown): value is ContextType {
-  return (
-    typeof value === "string" &&
-    CONTEXT_TYPES.includes(value as ContextType)
-  );
-}
+/** @deprecated Use ConceptType. Pending removal after terminology migration. */
+export type ContextType = ConceptType;
 
-export function normalizeContextNameForComparison(name: string) {
-  return name.trim().toLocaleLowerCase();
-}
+/** @deprecated Use Concept. Pending removal after terminology migration. */
+export type Context = Concept;
+
+/** @deprecated Use isConceptType. Pending removal after terminology migration. */
+export const isContextType = isConceptType;
+
+/** @deprecated Use normalizeConceptNameForComparison. Pending removal after terminology migration. */
+export const normalizeContextNameForComparison = normalizeConceptNameForComparison;

@@ -6,18 +6,35 @@ import { createLocalSyncRepositories } from "@/infrastructure/sync/indexed-db-lo
 import { IndexedDbWorkspaceRepository } from "@/infrastructure/workspace/indexed-db-workspace-repository";
 
 export const storageAdapter = new IndexedDbAdapter();
-export const contextRepository = new IndexedDbContextRepository();
-export const nodeRepository = new IndexedDbNodeRepository();
-export const nodeContextRelationRepository =
+export const conceptRepository = new IndexedDbContextRepository();
+export const captureRepository = new IndexedDbNodeRepository();
+export const captureConceptRelationRepository =
   new IndexedDbNodeContextRelationRepository();
 export const workspaceRepository = new IndexedDbWorkspaceRepository();
+
+/** @deprecated Use conceptRepository. Pending removal after terminology migration. */
+export const contextRepository = conceptRepository;
+
+/** @deprecated Use captureRepository. Pending removal after terminology migration. */
+export const nodeRepository = captureRepository;
+
+/** @deprecated Use captureConceptRelationRepository. Pending removal after terminology migration. */
+export const nodeContextRelationRepository = captureConceptRelationRepository;
 
 export function createLocalSyncRepositorySet(input: {
   workspaceId: string;
   deviceId: string;
 }) {
-  return createLocalSyncRepositories({
+  const repositories = createLocalSyncRepositories({
     syncContext: input,
     origin: "LOCAL",
   });
+
+  return {
+    ...repositories,
+    captureRepository: repositories.nodeRepository,
+    conceptRepository: repositories.contextRepository,
+    captureConceptRelationRepository:
+      repositories.nodeContextRelationRepository,
+  };
 }

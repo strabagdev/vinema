@@ -37,10 +37,10 @@ import {
 } from "@/features/knowledge-reset/knowledge-reset";
 import { useVinemaContext } from "@/features/node/hooks/use-vinema-context";
 import {
+  captureConceptRelationRepository,
+  captureRepository,
+  conceptRepository,
   createLocalSyncRepositorySet,
-  contextRepository,
-  nodeContextRelationRepository,
-  nodeRepository,
   storageAdapter,
 } from "@/infrastructure/repositories";
 
@@ -141,9 +141,9 @@ export function KnowledgeManagementCenterMenuItem({
       const backup = await exportKnowledgeBackup({
         workspace: vinemaContext.workspace,
         repositories: {
-          nodeRepository,
-          contextRepository,
-          relationRepository: nodeContextRelationRepository,
+          captureRepository,
+          conceptRepository,
+          captureConceptRelationRepository,
         },
       });
       downloadKnowledgeBackup(backup);
@@ -208,9 +208,10 @@ export function KnowledgeManagementCenterMenuItem({
         workspace: vinemaContext.workspace,
         deviceId: auth.deviceId,
         repositories: {
-          nodeRepository: repositories.nodeRepository,
-          contextRepository: repositories.contextRepository,
-          relationRepository: repositories.nodeContextRelationRepository,
+          captureRepository: repositories.captureRepository,
+          conceptRepository: repositories.conceptRepository,
+          captureConceptRelationRepository:
+            repositories.captureConceptRelationRepository,
         },
         syncNow: auth.syncNow,
       });

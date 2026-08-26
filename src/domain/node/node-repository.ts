@@ -1,14 +1,6 @@
-import type { Node } from "@/domain/node/node";
+export type { CaptureRepository } from "@/domain/capture/capture-repository";
 
-export interface NodeRepository {
-  create(node: Node): Promise<Node>;
-  update(node: Node): Promise<Node>;
-  archive(captureId: string, archivedAt: string): Promise<Node>;
-  findById(id: string): Promise<Node | null>;
-  listActive(): Promise<Node[]>;
-  listInbox(): Promise<Node[]>;
-  listByWorkspace(
-    workspaceId: string,
-    options?: { includeArchived?: boolean },
-  ): Promise<Node[]>;
-}
+import type { CaptureRepository } from "@/domain/capture/capture-repository";
+
+/** @deprecated Use CaptureRepository. Pending removal after terminology migration. */
+export type NodeRepository = CaptureRepository;

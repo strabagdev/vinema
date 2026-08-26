@@ -1,13 +1,15 @@
-import type { Context, ContextType } from "@/domain/context/context";
+export type {
+  ConceptRepository,
+  ListConceptsOptions,
+} from "@/domain/concept/concept-repository";
 
-export type ListContextsOptions = {
-  workspaceId: string;
-  type?: ContextType;
-  includeArchived?: boolean;
-};
+import type {
+  ConceptRepository,
+  ListConceptsOptions,
+} from "@/domain/concept/concept-repository";
 
-export interface ContextRepository {
-  getById(id: string): Promise<Context | null>;
-  list(options: ListContextsOptions): Promise<Context[]>;
-  save(context: Context): Promise<Context>;
-}
+/** @deprecated Use ListConceptsOptions. Pending removal after terminology migration. */
+export type ListContextsOptions = ListConceptsOptions;
+
+/** @deprecated Use ConceptRepository. Pending removal after terminology migration. */
+export type ContextRepository = ConceptRepository;

@@ -1,24 +1,25 @@
-export type NodeType = "NOTE" | "IDEA";
+export type {
+  Capture,
+  CaptureOrganizationStatus,
+  CaptureStatus,
+  CaptureType,
+} from "@/domain/capture/capture";
 
-export type NodeStatus = "ACTIVE" | "ARCHIVED";
+import type {
+  Capture,
+  CaptureOrganizationStatus,
+  CaptureStatus,
+  CaptureType,
+} from "@/domain/capture/capture";
 
-export type NodeOrganizationStatus = "INBOX" | "ORGANIZED";
+/** @deprecated Use CaptureType. Pending removal after terminology migration. */
+export type NodeType = CaptureType;
 
-export interface Node {
-  id: string;
-  workspaceId: string;
-  type: NodeType;
-  content: string;
-  status: NodeStatus;
-  organizationStatus: NodeOrganizationStatus;
-  metadata: Record<string, unknown>;
-  version: number;
-  createdAt: string;
-  contentUpdatedAt?: string;
-  archivedAt?: string | null;
-  restoredAt?: string | null;
-  updatedAt: string;
-  deletedAt: string | null;
-  createdByDeviceId: string;
-  lastModifiedByDeviceId: string;
-}
+/** @deprecated Use CaptureStatus. Pending removal after terminology migration. */
+export type NodeStatus = CaptureStatus;
+
+/** @deprecated Use CaptureOrganizationStatus. Pending removal after terminology migration. */
+export type NodeOrganizationStatus = CaptureOrganizationStatus;
+
+/** @deprecated Use Capture. Pending removal after terminology migration. */
+export type Node = Capture;

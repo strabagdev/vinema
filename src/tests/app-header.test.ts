@@ -129,8 +129,14 @@ vi.mock("@/features/knowledge-reset/knowledge-reset-client", () => ({
 }));
 
 vi.mock("@/infrastructure/repositories", () => ({
+  captureConceptRelationRepository: {},
+  captureRepository: {},
+  conceptRepository: {},
   contextRepository: {},
   createLocalSyncRepositorySet: () => ({
+    captureConceptRelationRepository: {},
+    captureRepository: {},
+    conceptRepository: {},
     nodeRepository: {},
     contextRepository: {},
     nodeContextRelationRepository: {},

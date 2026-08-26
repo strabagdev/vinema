@@ -1,13 +1,6 @@
-import type { NodeContextRelation } from "@/domain/context/node-context-relation";
+export type { CaptureConceptRelationRepository } from "@/domain/concept/capture-concept-relation-repository";
 
-export interface NodeContextRelationRepository {
-  getByNodeAndContext(
-    nodeId: string,
-    contextId: string,
-  ): Promise<NodeContextRelation | null>;
-  listByNodeId(nodeId: string): Promise<NodeContextRelation[]>;
-  listByContextId(contextId: string): Promise<NodeContextRelation[]>;
-  listByWorkspace(workspaceId: string): Promise<NodeContextRelation[]>;
-  save(relation: NodeContextRelation): Promise<NodeContextRelation>;
-  delete(id: string): Promise<void>;
-}
+import type { CaptureConceptRelationRepository } from "@/domain/concept/capture-concept-relation-repository";
+
+/** @deprecated Use CaptureConceptRelationRepository. Pending removal after terminology migration. */
+export type NodeContextRelationRepository = CaptureConceptRelationRepository;

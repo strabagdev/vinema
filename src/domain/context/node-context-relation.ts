@@ -1,10 +1,6 @@
-export interface NodeContextRelation {
-  id: string;
-  workspaceId: string;
-  nodeId: string;
-  contextId: string;
-  relationType?: "CONTEXT" | "CAPTURE_ASSOCIATION";
-  relatedNodeId?: string;
-  version: number;
-  createdAt: string;
-}
+export type { CaptureConceptRelation } from "@/domain/concept/capture-concept-relation";
+
+import type { CaptureConceptRelation } from "@/domain/concept/capture-concept-relation";
+
+/** @deprecated Use CaptureConceptRelation. Pending removal after terminology migration. */
+export type NodeContextRelation = CaptureConceptRelation;
