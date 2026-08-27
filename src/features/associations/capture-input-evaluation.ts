@@ -32,6 +32,11 @@ import {
 import { isShortStructuralToken } from "@/features/associations/structural-tokens";
 import { resolveConceptIdentity } from "@/features/concepts/concept-identity";
 import { deriveConceptRelationships } from "@/features/exploration/concept-relationships";
+import { extractSemanticPhraseCandidates } from "@/features/semantics/semantic-phrase-extractor";
+import {
+  hasSemanticUppercase,
+  tokenizeSemanticText,
+} from "@/features/semantics/semantic-tokenizer";
 import type {
   AssociationSuggestion,
   ConceptSuggestion,
@@ -58,6 +63,12 @@ type ExpressionCandidate = {
   representativeOverlap: number;
   queryOverlap: number;
   hasProperCase: boolean;
+};
+
+type LocalConceptCandidate = {
+  label: string;
+  score: number;
+  representativeTerms: string[];
 };
 
 export type CaptureInputEvaluation = {
@@ -229,12 +240,19 @@ export function evaluateCaptureInput({
     existingConcepts,
     index,
   });
+  const localConceptCandidates = detectLocalConceptCandidates(text);
+  const localConcepts = buildLocalConceptSuggestions({
+    candidates: localConceptCandidates,
+    existingConcepts,
+    emergingConcepts,
+  });
   const clusterDetectionMs = Math.round(performance.now() - clusterStartedAt);
   const deduplicationStartedAt = performance.now();
   const conceptSuggestions = dedupeConceptSuggestions([
     ...directConcepts,
     ...selectedConcepts,
     ...knowledgeConcepts,
+    ...localConcepts,
     ...emergingConcepts,
   ]);
   const deduplicationMs = Math.round(performance.now() - deduplicationStartedAt);
@@ -264,6 +282,8 @@ export function evaluateCaptureInput({
       evidenceCandidateCount: recoveryMatches.length,
       clusterCount: emergingConcepts.length,
       existingConceptSuggestionCount: existingConcepts.length,
+      localConceptCandidateCount: localConceptCandidates.length,
+      localConceptSuggestionCount: localConcepts.length,
       emergingConceptSuggestionCount: emergingConcepts.length,
       clusterDetectionMs,
       labelExtractionMs: 0,
@@ -366,6 +386,118 @@ function detectEmergingConcepts({
       representativeTerms,
     },
   ]);
+}
+
+function detectLocalConceptCandidates(text: string): LocalConceptCandidate[] {
+  const semanticCandidates = extractSemanticPhraseCandidates(text);
+  const candidates = new Map<string, LocalConceptCandidate>();
+
+  for (const candidate of semanticCandidates) {
+    if (candidate.source !== "PROPER_NOUN_PHRASE") {
+      continue;
+    }
+
+    if (crossesLocalConceptBoundary(text.slice(candidate.start, candidate.end))) {
+      continue;
+    }
+
+    const tokens = tokenizeSemanticText(candidate.text);
+    const meaningfulTokens = tokens.filter(
+      (token) => !isShortStructuralToken(token.normalizedText),
+    );
+    const [firstMeaningful] = meaningfulTokens;
+
+    if (!firstMeaningful || !hasSemanticUppercase(firstMeaningful.text)) {
+      continue;
+    }
+
+    for (const token of meaningfulTokens.filter((item) =>
+      hasSemanticUppercase(item.text),
+    )) {
+      if (!isLocalConceptToken(token.normalizedText)) {
+        continue;
+      }
+
+      addLocalConceptCandidate(candidates, {
+        label: formatLocalConceptLabel(token.text),
+        score: candidate.score,
+        representativeTerms: [token.normalizedText],
+      });
+    }
+  }
+
+  return Array.from(candidates.values()).sort(compareLocalConceptCandidates);
+}
+
+function buildLocalConceptSuggestions({
+  candidates,
+  existingConcepts,
+  emergingConcepts,
+}: {
+  candidates: LocalConceptCandidate[];
+  existingConcepts: ConceptSuggestion[];
+  emergingConcepts: EmergingConceptSuggestion[];
+}): EmergingConceptSuggestion[] {
+  return dedupeEmergingConcepts(
+    candidates
+      .filter(
+        (candidate) =>
+          !hasEquivalentExistingConcept(candidate.label, existingConcepts) &&
+          !hasEquivalentEmergingConcept(candidate.label, emergingConcepts),
+      )
+      .map((candidate) => ({
+        kind: "emerging" as const,
+        candidateId: createCandidateId(
+          candidate.label,
+          [],
+          candidate.representativeTerms,
+        ),
+        suggestedLabel: candidate.label,
+        score: candidate.score,
+        evidenceCaptureIds: [],
+        representativeTerms: candidate.representativeTerms,
+      })),
+  );
+}
+
+function addLocalConceptCandidate(
+  candidates: Map<string, LocalConceptCandidate>,
+  candidate: LocalConceptCandidate,
+) {
+  const key = normalizeLabelForDeduplication(candidate.label);
+  const current = candidates.get(key);
+
+  if (!current || candidate.score > current.score) {
+    candidates.set(key, candidate);
+  }
+}
+
+function compareLocalConceptCandidates(
+  first: LocalConceptCandidate,
+  second: LocalConceptCandidate,
+) {
+  return (
+    second.score - first.score ||
+    first.label.localeCompare(second.label)
+  );
+}
+
+function isLocalConceptToken(normalized: string) {
+  return (
+    normalized.length >= 4 &&
+    !isShortStructuralToken(normalized) &&
+    isMeaningfulLocalSupportToken(normalized)
+  );
+}
+
+function formatLocalConceptLabel(value: string) {
+  const trimmed = value.trim();
+
+  return trimmed.charAt(0).toLocaleUpperCase() + trimmed.slice(1);
+}
+
+function crossesLocalConceptBoundary(value: string) {
+  return /[,()[\]{}]/u.test(value);
 }
 
 function dedupeEmergingConcepts(suggestions: EmergingConceptSuggestion[]) {
@@ -792,6 +924,18 @@ function hasEquivalentExistingConcept(label: string, suggestions: ConceptSuggest
       suggestion.kind === "existing" &&
       (normalizeLabelForDeduplication(suggestion.label) === normalizedLabel ||
         hasExistingConceptTermSubset(suggestion, labelTerms)),
+  );
+}
+
+function hasEquivalentEmergingConcept(
+  label: string,
+  suggestions: EmergingConceptSuggestion[],
+) {
+  const normalizedLabel = normalizeLabelForDeduplication(label);
+
+  return suggestions.some(
+    (suggestion) =>
+      normalizeLabelForDeduplication(suggestion.suggestedLabel) === normalizedLabel,
   );
 }
 

@@ -134,6 +134,80 @@ describe("local sync repositories", () => {
     ).resolves.toHaveLength(3);
   });
 
+  it("persists a confirmed local concept from the current capture", async () => {
+    const mutationIds = [
+      "33333333-3333-4333-8333-333333333333",
+      "44444444-4444-4444-8444-444444444444",
+      "55555555-5555-4555-8555-555555555555",
+    ];
+    const repositories = createLocalSyncRepositories({
+      syncContext: {
+        workspaceId: workspace.id,
+        deviceId: device.id,
+      },
+      mutationIdFactory: () => mutationIds.shift() ?? crypto.randomUUID(),
+    });
+    const result = await commitCaptureText({
+      content: "La Asertividad de Cristo podría resumirse así.",
+      workspace,
+      device,
+      repository: repositories.nodeRepository,
+      contextRepository: repositories.contextRepository,
+      relationRepository: repositories.nodeContextRelationRepository,
+      storage: new MemoryStorageAdapter(),
+      selectedEmergingConcepts: [
+        {
+          kind: "emerging",
+          candidateId: "local:asertividad",
+          suggestedLabel: "Asertividad",
+          score: 0.86,
+          evidenceCaptureIds: [],
+          representativeTerms: ["asertividad"],
+        },
+      ],
+    });
+    const db = await getVinemaDb();
+    const contexts = await db.getAllFromIndex(CONTEXTS_STORE, "by-workspace", workspace.id);
+    const relations =
+      await repositories.nodeContextRelationRepository.listByNodeId(result.node.id);
+
+    expect(contexts).toHaveLength(1);
+    expect(contexts[0]).toMatchObject({
+      name: "Asertividad",
+      description: "Concepto emergente confirmado desde la captura actual.",
+    });
+    expect(relations).toMatchObject([
+      {
+        nodeId: result.node.id,
+        contextId: contexts[0]?.id,
+      },
+    ]);
+  });
+
+  it("does not persist a discarded local concept", async () => {
+    const repositories = createLocalSyncRepositories({
+      syncContext: {
+        workspaceId: workspace.id,
+        deviceId: device.id,
+      },
+    });
+    await commitCaptureText({
+      content: "La Asertividad de Cristo podría resumirse así.",
+      workspace,
+      device,
+      repository: repositories.nodeRepository,
+      contextRepository: repositories.contextRepository,
+      relationRepository: repositories.nodeContextRelationRepository,
+      storage: new MemoryStorageAdapter(),
+      selectedEmergingConcepts: [],
+    });
+    const db = await getVinemaDb();
+
+    await expect(
+      db.getAllFromIndex(CONTEXTS_STORE, "by-workspace", workspace.id),
+    ).resolves.toEqual([]);
+  });
+
   afterEach(async () => {
     await resetVinemaDbConnectionForTests();
     await deleteDB(VINEMA_DB_NAME);

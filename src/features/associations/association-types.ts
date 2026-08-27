@@ -95,6 +95,8 @@ export type SuggestionDiagnostics = {
   evidenceCandidateCount: number;
   clusterCount: number;
   existingConceptSuggestionCount: number;
+  localConceptCandidateCount?: number;
+  localConceptSuggestionCount?: number;
   emergingConceptSuggestionCount: number;
   clusterDetectionMs: number;
   labelExtractionMs: number;

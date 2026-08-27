@@ -851,6 +851,111 @@ describe("association scoring", () => {
 });
 
 describe("concept suggestions", () => {
+  it("suggests local concepts from the current capture in absolute cold start", () => {
+    const text =
+      "La Asertividad de Cristo podría resumirse así:\n" +
+      "Mantengo mi posición sin necesidad de atacar, someterme ni justificarme excesivamente.\n" +
+      "Pregunta, pone límites, confronta cuando corresponde y también sabe guardar silencio.";
+    const evaluation = evaluateCaptureInput({
+      text,
+      nodes: [],
+      contexts: [],
+      relations: [],
+    });
+    const labels = evaluation.conceptSuggestions.map((suggestion) =>
+      suggestion.kind === "existing" ? suggestion.label : suggestion.suggestedLabel,
+    );
+
+    expect(evaluation.recoveryMatches).toEqual([]);
+    expect(evaluation.diagnostics.existingConceptSuggestionCount).toBe(0);
+    expect(evaluation.diagnostics.localConceptCandidateCount).toBeGreaterThan(0);
+    expect(evaluation.diagnostics.localConceptSuggestionCount).toBeGreaterThan(0);
+    expect(evaluation.diagnostics.emergingConceptSuggestionCount).toBe(0);
+    expect(evaluation.diagnostics.conceptResultCount).toBeGreaterThan(0);
+    expect(labels).toContain("Asertividad");
+    expect(labels).not.toEqual(
+      expect.arrayContaining([
+        "Posición",
+        "Necesidad",
+        "Pregunta",
+        "Respuesta",
+        "Conversación",
+        "Ejemplo",
+        "Enseñanza",
+        "Explicación",
+        "Acusación",
+      ]),
+    );
+  });
+
+  it("does not invent local concepts from trivial cold-start text", () => {
+    const evaluation = evaluateCaptureInput({
+      text: "hola que tal",
+      nodes: [],
+      contexts: [],
+      relations: [],
+    });
+
+    expect(evaluation.conceptSuggestions).toEqual([]);
+    expect(evaluation.diagnostics.localConceptCandidateCount).toBe(0);
+    expect(evaluation.diagnostics.localConceptSuggestionCount).toBe(0);
+  });
+
+  it("reuses an existing local concept instead of creating a new candidate", () => {
+    const evaluation = evaluateCaptureInput({
+      text: "La Asertividad de Cristo ordena esta reflexión.",
+      nodes: [],
+      contexts: [context({ id: "asertividad", name: "Asertividad" })],
+      relations: [],
+    });
+
+    expect(evaluation.conceptSuggestions).toContainEqual(
+      expect.objectContaining({
+        kind: "existing",
+        conceptId: "asertividad",
+        label: "Asertividad",
+      }),
+    );
+    expect(
+      evaluation.conceptSuggestions.some(
+        (suggestion) =>
+          suggestion.kind === "emerging" &&
+          suggestion.suggestedLabel === "Asertividad",
+      ),
+    ).toBe(false);
+  });
+
+  it("reuses an existing alias for a local concept instead of creating a new candidate", () => {
+    const evaluation = evaluateCaptureInput({
+      text: "La Asertividad de Cristo ordena esta reflexión.",
+      nodes: [],
+      contexts: [
+        context({
+          id: "asertividad-cristiana",
+          name: "Asertividad cristiana",
+          aliases: ["Asertividad"],
+        }),
+      ],
+      relations: [],
+    });
+
+    expect(evaluation.conceptSuggestions).toContainEqual(
+      expect.objectContaining({
+        kind: "existing",
+        conceptId: "asertividad-cristiana",
+        label: "Asertividad cristiana",
+        matchedAlias: "Asertividad",
+      }),
+    );
+    expect(
+      evaluation.conceptSuggestions.some(
+        (suggestion) =>
+          suggestion.kind === "emerging" &&
+          suggestion.suggestedLabel === "Asertividad",
+      ),
+    ).toBe(false);
+  });
+
   it("does not return emerging concepts from current input without memory evidence", () => {
     const evaluation = evaluateCaptureInput({
       text: "Revisar Railway para la sincronizacion de Vinema",
@@ -1394,6 +1499,38 @@ describe("concept suggestions", () => {
           suggestion.suggestedLabel === "Reuniones",
       ),
     ).toBe(false);
+  });
+
+  it("deduplicates equivalent local and historical emerging concepts", () => {
+    const nodes = [
+      node({
+        id: "a",
+        content: "La Asertividad de Cristo aparece en esta memoria.",
+      }),
+      node({
+        id: "b",
+        content: "La Asertividad de Cristo guía esta reflexión.",
+      }),
+      node({
+        id: "c",
+        content: "La Asertividad de Cristo se repite como tema.",
+      }),
+    ];
+    const evaluation = evaluateCaptureInput({
+      text: "La Asertividad de Cristo podría resumirse así.",
+      nodes,
+      contexts: [],
+      relations: [],
+    });
+    const asertividadSuggestions = evaluation.conceptSuggestions.filter(
+      (suggestion) =>
+        suggestion.kind === "emerging" &&
+        suggestion.suggestedLabel === "Asertividad",
+    );
+
+    expect(evaluation.recoveryMatches.length).toBeGreaterThan(0);
+    expect(evaluation.diagnostics.localConceptSuggestionCount).toBeGreaterThan(0);
+    expect(asertividadSuggestions).toHaveLength(1);
   });
 
   it("traces concept scores, related captures and threshold decisions", () => {
