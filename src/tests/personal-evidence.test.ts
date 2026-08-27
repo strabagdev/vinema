@@ -169,14 +169,15 @@ describe("PersonalEvidence", () => {
       observedRelations: [{ id: "relation", evidence: [] }],
       temporalSignals: [{ id: "signal", evidenceNodeIds: [] }],
     };
-    const suggestionCalls: Array<{
-      behavioralEvidenceModel?: unknown;
-      evolutionEvidenceModel?: unknown;
-      precomputedEvidence?: {
+    const composerCalls: Array<{
+      personalEvidence?: unknown;
+      bundle?: {
         relationships: unknown[];
-        behavioralPatterns: unknown[];
-        semanticStatements: unknown[];
-        evolutionSignals: unknown[];
+        personalLearning: {
+          observedPatterns: unknown[];
+          observedRelations: unknown[];
+          temporalSignals: unknown[];
+        };
       };
     }> = [];
 
@@ -249,8 +250,20 @@ describe("PersonalEvidence", () => {
       >("@/features/cognition/knowledge-suggestions");
       return {
         ...actual,
-        deriveKnowledgeSuggestions: vi.fn((options) => {
-          suggestionCalls.push(options);
+        deriveKnowledgeSuggestions: vi.fn(() => {
+          throw new Error("orchestrator must use SuggestionComposer");
+        }),
+      };
+    });
+
+    vi.doMock("@/features/cognition/suggestion-composer", async () => {
+      const actual = await vi.importActual<
+        typeof import("@/features/cognition/suggestion-composer")
+      >("@/features/cognition/suggestion-composer");
+      return {
+        ...actual,
+        composeSuggestions: vi.fn((options) => {
+          composerCalls.push(options);
           return [];
         }),
       };
@@ -276,14 +289,16 @@ describe("PersonalEvidence", () => {
     const [evidence] = createdEvidence;
     expect(createdEvidence).toHaveLength(1);
     expect(learningEvidence).toEqual([evidence]);
-    expect(suggestionCalls).toHaveLength(1);
-    expect(suggestionCalls[0].behavioralEvidenceModel).toBe(evidence);
-    expect(suggestionCalls[0].evolutionEvidenceModel).toBe(evidence);
-    expect(suggestionCalls[0].precomputedEvidence).toEqual({
+    expect(composerCalls).toHaveLength(1);
+    expect(composerCalls[0].personalEvidence).toBe(evidence);
+    expect(composerCalls[0].bundle).toEqual({
       relationships: expect.any(Array),
-      behavioralPatterns: createdLearning.observedPatterns,
-      semanticStatements: createdLearning.observedRelations,
-      evolutionSignals: createdLearning.temporalSignals,
+      personalLearning: {
+        observedPatterns: createdLearning.observedPatterns,
+        observedRelations: createdLearning.observedRelations,
+        temporalSignals: createdLearning.temporalSignals,
+      },
+      semanticRelatedConceptIds: [],
     });
   });
 });

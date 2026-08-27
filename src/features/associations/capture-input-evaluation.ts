@@ -10,7 +10,16 @@ import {
   buildConceptSuggestionsFromTraces,
   diagnoseConceptSuggestionDetails,
 } from "@/features/associations/concept-suggestions";
-import { deriveKnowledgeSuggestions } from "@/features/cognition/knowledge-suggestions";
+import {
+  DEFAULT_BEHAVIORAL_RECENT_WINDOW_DAYS,
+} from "@/features/cognition/behavioral-engine/behavioral-engine";
+import { createPersonalEvidence } from "@/features/cognition/personal-evidence";
+import { createPersonalLearning } from "@/features/cognition/personal-learning";
+import {
+  composeSuggestions,
+  createSuggestionConceptModel,
+  resolveSuggestionPresentConceptIds,
+} from "@/features/cognition/suggestion-composer";
 import { normalizeAssociationText } from "@/features/associations/normalize-text";
 import {
   hasDirectionalContradiction,
@@ -22,6 +31,7 @@ import {
 } from "@/features/associations/tokenize";
 import { isShortStructuralToken } from "@/features/associations/structural-tokens";
 import { resolveConceptIdentity } from "@/features/concepts/concept-identity";
+import { deriveConceptRelationships } from "@/features/exploration/concept-relationships";
 import type {
   AssociationSuggestion,
   ConceptSuggestion,
@@ -118,14 +128,55 @@ export function evaluateCaptureInput({
     selectedContextIds,
     traces: conceptTraces,
   });
-  const knowledgeSuggestions = deriveKnowledgeSuggestions({
-    inputConceptIds: getPresentConceptIds({
-      conceptTraces,
-      selectedContextIds,
-    }),
+  const knowledgeInputConceptIds = getPresentConceptIds({
+    conceptTraces,
+    selectedContextIds,
+  });
+  const knowledgeNow = new Date();
+  const activeKnowledgeNodes = nodes.filter(
+    (node) => node.deletedAt === null && !node.archivedAt,
+  );
+  const activeKnowledgeNodeIds = new Set(activeKnowledgeNodes.map((node) => node.id));
+  const activeKnowledgeRelations = relations.filter((relation) =>
+    activeKnowledgeNodeIds.has(relation.nodeId),
+  );
+  const knowledgeConceptModel = createSuggestionConceptModel({
     contexts,
-    nodes,
-    relations,
+    availableConceptIds: getSuggestionAvailableConceptIds(activeKnowledgeRelations),
+  });
+  const knowledgePresentConceptIds = resolveSuggestionPresentConceptIds({
+    inputConceptIds: knowledgeInputConceptIds,
+    conceptModel: knowledgeConceptModel,
+  });
+  const knowledgeEvidence = createPersonalEvidence({
+    concepts: contexts,
+    relations: activeKnowledgeRelations,
+    captures: activeKnowledgeNodes,
+    now: knowledgeNow,
+    recentWindowDays: DEFAULT_BEHAVIORAL_RECENT_WINDOW_DAYS,
+  });
+  const knowledgeLearning = createPersonalLearning({ evidence: knowledgeEvidence });
+  const knowledgeRelationships = Array.from(knowledgePresentConceptIds).flatMap(
+    (sourceConceptId) =>
+      deriveConceptRelationships({
+        sourceConceptId,
+        contexts,
+        nodes: activeKnowledgeNodes,
+        relations: activeKnowledgeRelations,
+        now: knowledgeNow,
+        limit: 8,
+      }),
+  );
+  const knowledgeSuggestions = composeSuggestions({
+    inputConceptIds: knowledgeInputConceptIds,
+    conceptModel: knowledgeConceptModel,
+    personalEvidence: knowledgeEvidence,
+    bundle: {
+      relationships: knowledgeRelationships,
+      personalLearning: knowledgeLearning,
+      semanticRelatedConceptIds: [],
+    },
+    now: knowledgeNow,
     localText: text,
     localConceptTraces: conceptTraces,
   });
@@ -669,6 +720,14 @@ function getPresentConceptIds({
         .map((trace) => trace.context.id),
     ]),
   ).sort();
+}
+
+function getSuggestionAvailableConceptIds(relations: NodeContextRelation[]) {
+  return new Set(
+    relations
+      .filter((relation) => relation.relationType !== "CAPTURE_ASSOCIATION")
+      .map((relation) => relation.contextId),
+  );
 }
 
 function shouldReplaceSuggestion(

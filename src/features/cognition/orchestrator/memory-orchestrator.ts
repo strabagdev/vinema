@@ -4,12 +4,17 @@ import {
   DEFAULT_BEHAVIORAL_RECENT_WINDOW_DAYS,
   type BehavioralPattern,
 } from "@/features/cognition/behavioral-engine/behavioral-engine";
-import { deriveKnowledgeSuggestions, type KnowledgeSuggestion } from "@/features/cognition/knowledge-suggestions";
+import type { KnowledgeSuggestion } from "@/features/cognition/knowledge-suggestions";
 import {
   type MemoryEvolutionSignal,
 } from "@/features/cognition/memory-evolution";
 import { createPersonalEvidence } from "@/features/cognition/personal-evidence";
 import { createPersonalLearning } from "@/features/cognition/personal-learning";
+import {
+  composeSuggestions,
+  createSuggestionConceptModel,
+  resolveSuggestionPresentConceptIds,
+} from "@/features/cognition/suggestion-composer";
 import type { SemanticStatement } from "@/features/cognition/semantic-understanding";
 import { createConceptIdentity } from "@/features/concepts/concept-identity";
 import { deriveConceptProfile, type ConceptProfile } from "@/features/exploration/concept-profile";
@@ -77,7 +82,15 @@ export function deriveMemoryResponse({
   const activeSuggestionRelations = relations.filter((relation) =>
     activeSuggestionNodeIds.has(relation.nodeId),
   );
-  const suggestionRelationships = queryConceptIds.flatMap((conceptId) =>
+  const suggestionConceptModel = createSuggestionConceptModel({
+    contexts,
+    availableConceptIds: getSuggestionAvailableConceptIds(activeSuggestionRelations),
+  });
+  const suggestionInputConceptIds = resolveSuggestionPresentConceptIds({
+    inputConceptIds: queryConceptIds,
+    conceptModel: suggestionConceptModel,
+  });
+  const suggestionRelationships = Array.from(suggestionInputConceptIds).flatMap((conceptId) =>
     deriveConceptRelationships({
       sourceConceptId: conceptId,
       contexts,
@@ -98,20 +111,20 @@ export function deriveMemoryResponse({
     personalLearning.temporalSignals,
   );
   const suggestions = dedupeSuggestions(
-    deriveKnowledgeSuggestions({
+    composeSuggestions({
       inputConceptIds: queryConceptIds,
-      contexts,
-      relations,
-      nodes,
-      now: query.now,
-      behavioralEvidenceModel: personalEvidence,
-      evolutionEvidenceModel: personalEvidence,
-      precomputedEvidence: {
+      conceptModel: suggestionConceptModel,
+      personalEvidence,
+      bundle: {
         relationships: suggestionRelationships,
-        behavioralPatterns,
-        semanticStatements,
-        evolutionSignals,
+        personalLearning: {
+          observedPatterns: behavioralPatterns,
+          observedRelations: semanticStatements,
+          temporalSignals: evolutionSignals,
+        },
+        semanticRelatedConceptIds: [],
       },
+      now: query.now,
     }),
   );
   const evidence = collectEvidence({
@@ -241,6 +254,16 @@ function dedupeRelationships(relationships: DerivedConceptRelationship[]) {
 
 function relationshipKey(relationship: DerivedConceptRelationship) {
   return [relationship.sourceConceptId, relationship.targetConceptId].sort().join(":");
+}
+
+function getSuggestionAvailableConceptIds(
+  relations: { contextId: string; relationType?: string }[],
+) {
+  return new Set(
+    relations
+      .filter((relation) => relation.relationType !== "CAPTURE_ASSOCIATION")
+      .map((relation) => relation.contextId),
+  );
 }
 
 function dedupeBehavioralPatterns(patterns: BehavioralPattern[]) {
