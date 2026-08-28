@@ -46,6 +46,21 @@ describe("semantic phrase extraction", () => {
     expect(labels).not.toContain("Detección tardía");
   });
 
+  it("prefers complete de-linked nominal phrases over overlapping fragments", () => {
+    const labels = labelsFor("una fuente única de verdad para la operación");
+
+    expect(labels).toContain("Fuente única de verdad");
+    expect(labels).not.toContain("Fuente única");
+    expect(labels).not.toContain("Única de verdad");
+  });
+
+  it("keeps de-linked concepts and rejects default y coordination as one concept", () => {
+    expect(labelsFor("riesgo de atropello")).toContain("Riesgo de atropello");
+    expect(labelsFor("seguridad y continuidad operacional")).not.toContain(
+      "Seguridad y continuidad",
+    );
+  });
+
   it("keeps personal memory empty until evidence or stored concepts exist", () => {
     const evaluation = evaluateCaptureInput({
       text: "Ombre Leather, Tom Ford, Erba Pura, Operational Core y Mina Andes Norte.",

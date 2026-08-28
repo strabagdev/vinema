@@ -32,9 +32,13 @@ import {
 import { isShortStructuralToken } from "@/features/associations/structural-tokens";
 import { resolveConceptIdentity } from "@/features/concepts/concept-identity";
 import { deriveConceptRelationships } from "@/features/exploration/concept-relationships";
-import { extractSemanticPhraseCandidates } from "@/features/semantics/semantic-phrase-extractor";
+import {
+  extractSemanticPhraseCandidates,
+  type SemanticPhraseCandidate,
+} from "@/features/semantics/semantic-phrase-extractor";
 import {
   hasSemanticUppercase,
+  hasTechnicalShape,
   tokenizeSemanticText,
 } from "@/features/semantics/semantic-tokenizer";
 import type {
@@ -70,6 +74,75 @@ type LocalConceptCandidate = {
   score: number;
   representativeTerms: string[];
 };
+
+type LocalConceptSource = Exclude<
+  SemanticPhraseCandidate["source"],
+  "HISTORICAL_EVIDENCE"
+>;
+
+const LOCAL_CONCEPT_ALLOWED_SOURCES = new Set([
+  "KNOWN_TERM",
+  "PROPER_NOUN_PHRASE",
+  "NOUN_PHRASE",
+  "GENERAL_NOUN_PHRASE",
+  "CAPITALIZED_PHRASE",
+] satisfies LocalConceptSource[]);
+
+const LOCAL_CONCEPT_ACTION_TERMS = new Set([
+  "busca",
+  "circulando",
+  "cuesta",
+  "convertirse",
+  "detectar",
+  "depende",
+  "dificultar",
+  "disminuye",
+  "dormir",
+  "existen",
+  "ingresan",
+  "mantener",
+  "mejorar",
+  "mejoro",
+  "necesito",
+  "permite",
+  "puede",
+  "presentan",
+  "presentar",
+  "rapidamente",
+  "revisar",
+  "redujo",
+  "resumirse",
+  "tarde",
+  "tardiamente",
+]);
+
+const LOCAL_CONCEPT_WEAK_BOUNDARY_TERMS = new Set([
+  "antes",
+  "cuando",
+  "dentro",
+  "donde",
+  "durante",
+  "hora",
+  "mañana",
+  "manana",
+  "mayor",
+  "mediante",
+  "para",
+  "semanas",
+  "sectores",
+  "tiempo",
+  "ultima",
+  "ultimas",
+]);
+
+const LOCAL_CONCEPT_INVALID_CONNECTORS = new Set([
+  "a",
+  "es",
+  "esta",
+  "estan",
+  "fue",
+  "son",
+]);
 
 export type CaptureInputEvaluation = {
   recoveryMatches: AssociationSuggestion[];
@@ -393,40 +466,158 @@ function detectLocalConceptCandidates(text: string): LocalConceptCandidate[] {
   const candidates = new Map<string, LocalConceptCandidate>();
 
   for (const candidate of semanticCandidates) {
-    if (candidate.source !== "PROPER_NOUN_PHRASE") {
+    if (!isLocalConceptSource(candidate.source)) {
       continue;
     }
 
-    if (crossesLocalConceptBoundary(text.slice(candidate.start, candidate.end))) {
+    const sourceText = text.slice(candidate.start, candidate.end);
+
+    if (crossesLocalConceptBoundary(sourceText)) {
       continue;
     }
 
-    const tokens = tokenizeSemanticText(candidate.text);
-    const meaningfulTokens = tokens.filter(
-      (token) => !isShortStructuralToken(token.normalizedText),
-    );
-    const [firstMeaningful] = meaningfulTokens;
+    const terms = candidate.tokens.filter(isLocalConceptToken);
 
-    if (!firstMeaningful || !hasSemanticUppercase(firstMeaningful.text)) {
+    if (!isLocalSemanticConceptCandidate({ text: sourceText, terms, source: candidate.source })) {
       continue;
     }
 
-    for (const token of meaningfulTokens.filter((item) =>
-      hasSemanticUppercase(item.text),
-    )) {
-      if (!isLocalConceptToken(token.normalizedText)) {
-        continue;
-      }
+    const label = deriveLocalConceptLabel(candidate.text, candidate.source);
+    const labelTerms = tokenizeAssociationText(label).filter(isLocalConceptToken);
 
-      addLocalConceptCandidate(candidates, {
-        label: formatLocalConceptLabel(token.text),
+    if (labelTerms.length === 0) {
+      continue;
+    }
+
+    addLocalConceptCandidate(candidates, {
+      label: formatLocalConceptLabel(label),
+      score: scoreLocalConceptCandidate({
         score: candidate.score,
-        representativeTerms: [token.normalizedText],
-      });
-    }
+        source: candidate.source,
+        terms: labelTerms,
+        text: label,
+      }),
+      representativeTerms: labelTerms,
+    });
   }
 
-  return Array.from(candidates.values()).sort(compareLocalConceptCandidates);
+  return suppressRedundantLocalConceptCandidates(
+    Array.from(candidates.values()),
+  ).sort(compareLocalConceptCandidates);
+}
+
+function isLocalConceptSource(
+  source: SemanticPhraseCandidate["source"],
+): source is LocalConceptSource {
+  return LOCAL_CONCEPT_ALLOWED_SOURCES.has(source as LocalConceptSource);
+}
+
+function isLocalSemanticConceptCandidate({
+  text,
+  terms,
+  source,
+}: {
+  text: string;
+  terms: string[];
+  source: SemanticPhraseCandidate["source"];
+}) {
+  if (terms.length === 0) {
+    return false;
+  }
+
+  const surfaceTokens = tokenizeSemanticText(text);
+  const normalizedValues = surfaceTokens.map((token) => token.normalizedText);
+  const first = normalizedValues[0] ?? "";
+  const last = normalizedValues[normalizedValues.length - 1] ?? "";
+
+  if (!first || !last) {
+    return false;
+  }
+
+  if (normalizedValues.some((value) => LOCAL_CONCEPT_ACTION_TERMS.has(value))) {
+    return false;
+  }
+
+  if (
+    LOCAL_CONCEPT_WEAK_BOUNDARY_TERMS.has(first) ||
+    LOCAL_CONCEPT_WEAK_BOUNDARY_TERMS.has(last)
+  ) {
+    return false;
+  }
+
+  if (normalizedValues.some((value) => LOCAL_CONCEPT_INVALID_CONNECTORS.has(value))) {
+    return false;
+  }
+
+  if (terms.length === 1) {
+    return source === "KNOWN_TERM" || isStrongSingleLocalConceptTerm(terms[0] ?? "");
+  }
+
+  if (source === "CAPITALIZED_PHRASE") {
+    return surfaceTokens
+      .filter((token) => isLocalConceptToken(token.normalizedText))
+      .every((token) => hasTechnicalShape(token.text));
+  }
+
+  return true;
+}
+
+function scoreLocalConceptCandidate({
+  score,
+  source,
+  terms,
+  text,
+}: {
+  score: number;
+  source: SemanticPhraseCandidate["source"];
+  terms: string[];
+  text: string;
+}) {
+  const sourceBoost =
+    source === "NOUN_PHRASE"
+      ? 0.08
+      : source === "KNOWN_TERM"
+        ? 0.06
+        : source === "GENERAL_NOUN_PHRASE"
+          ? 0.04
+          : source === "PROPER_NOUN_PHRASE"
+            ? 0.02
+            : -0.08;
+  const compoundBoost = Math.min(terms.length - 1, 3) * 0.03;
+  const connectorBoost = /\s(?:de|del|para|con|sin|y)\s/iu.test(text) ? 0.03 : 0;
+  const technicalBoost = tokenizeSemanticText(text).some((token) =>
+    hasTechnicalShape(token.text),
+  )
+    ? 0.04
+    : 0;
+  const specificityBoost = terms.some((term) => term.length >= 10) ? 0.02 : 0;
+
+  return Math.min(
+    0.98,
+    Math.max(
+      0,
+      score + sourceBoost + compoundBoost + connectorBoost + technicalBoost + specificityBoost,
+    ),
+  );
+}
+
+function suppressRedundantLocalConceptCandidates(
+  candidates: LocalConceptCandidate[],
+) {
+  return candidates.filter((candidate) => {
+    if (candidate.representativeTerms.length !== 1) {
+      return true;
+    }
+
+    const [term] = candidate.representativeTerms;
+
+    return !candidates.some(
+      (other) =>
+        other !== candidate &&
+        other.representativeTerms.length > 1 &&
+        other.representativeTerms.includes(term ?? ""),
+    );
+  });
 }
 
 function buildLocalConceptSuggestions({
@@ -488,6 +679,42 @@ function isLocalConceptToken(normalized: string) {
     !isShortStructuralToken(normalized) &&
     isMeaningfulLocalSupportToken(normalized)
   );
+}
+
+function isStrongSingleLocalConceptTerm(term: string) {
+  return term.length >= 8 && !LOCAL_CONCEPT_WEAK_BOUNDARY_TERMS.has(term);
+}
+
+function deriveLocalConceptLabel(
+  label: string,
+  source: SemanticPhraseCandidate["source"],
+) {
+  if (source !== "PROPER_NOUN_PHRASE") {
+    return label;
+  }
+
+  const tokens = tokenizeSemanticText(label);
+  const connectorIndex = tokens.findIndex((token) =>
+    isShortStructuralToken(token.normalizedText),
+  );
+
+  if (connectorIndex <= 0) {
+    return label;
+  }
+
+  const afterConnector = tokens.slice(connectorIndex + 1);
+  const hasProperTail = afterConnector.some((token) =>
+    hasSemanticUppercase(token.text),
+  );
+
+  if (!hasProperTail) {
+    return label;
+  }
+
+  return tokens
+    .slice(0, connectorIndex)
+    .map((token) => token.text)
+    .join(" ");
 }
 
 function formatLocalConceptLabel(value: string) {

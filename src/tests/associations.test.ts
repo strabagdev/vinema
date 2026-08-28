@@ -901,6 +901,106 @@ describe("concept suggestions", () => {
     expect(evaluation.diagnostics.localConceptSuggestionCount).toBe(0);
   });
 
+  it("suggests semantic compound concepts from realistic absolute cold start", () => {
+    const evaluation = evaluateCaptureInput({
+      text:
+        "Opco busca convertirse en una fuente única de verdad para la operación. " +
+        "Su modelo configurable permite mantener trazabilidad y continuidad operacional mediante clientes especializados.",
+      nodes: [],
+      contexts: [],
+      relations: [],
+    });
+    const emergingLabels = evaluation.conceptSuggestions
+      .filter((suggestion) => suggestion.kind === "emerging")
+      .map((suggestion) => suggestion.suggestedLabel);
+
+    expect(evaluation.recoveryMatches).toHaveLength(0);
+    expect(evaluation.diagnostics.existingConceptSuggestionCount).toBe(0);
+    expect(evaluation.diagnostics.localConceptCandidateCount).toBeGreaterThan(0);
+    expect(evaluation.diagnostics.localConceptSuggestionCount).toBeGreaterThan(0);
+    expect(evaluation.diagnostics.emergingConceptSuggestionCount).toBe(0);
+    expect(evaluation.diagnostics.conceptResultCount).toBeGreaterThan(0);
+    expect(emergingLabels).toEqual(
+      expect.arrayContaining([
+        "Fuente única de verdad",
+        "Continuidad operacional",
+        "Modelo configurable",
+      ]),
+    );
+    expect(emergingLabels).not.toContain("Fuente única");
+    expect(emergingLabels).not.toContain("Única de verdad");
+    expect(emergingLabels).not.toContain("Trazabilidad y continuidad");
+  });
+
+  it("suggests lowercase semantic compound concepts without capitalization", () => {
+    const evaluation = evaluateCaptureInput({
+      text: "la continuidad operacional depende de una fuente única de verdad",
+      nodes: [],
+      contexts: [],
+      relations: [],
+    });
+    const emergingLabels = evaluation.conceptSuggestions
+      .filter((suggestion) => suggestion.kind === "emerging")
+      .map((suggestion) => suggestion.suggestedLabel);
+
+    expect(emergingLabels).toContain("Continuidad operacional");
+  });
+
+  it("keeps a complete semantic phrase without redundant single-token concepts", () => {
+    const evaluation = evaluateCaptureInput({
+      text: "La continuidad operacional es importante.",
+      nodes: [],
+      contexts: [],
+      relations: [],
+    });
+    const emergingLabels = evaluation.conceptSuggestions
+      .filter((suggestion) => suggestion.kind === "emerging")
+      .map((suggestion) => suggestion.suggestedLabel);
+
+    expect(emergingLabels).toContain("Continuidad operacional");
+    expect(emergingLabels).not.toContain("Continuidad");
+    expect(emergingLabels).not.toContain("Operacional");
+  });
+
+  it("does not turn verbal or temporal fragments into local concepts", () => {
+    const evaluation = evaluateCaptureInput({
+      text: "Necesito revisar rápidamente los documentos mañana.",
+      nodes: [],
+      contexts: [],
+      relations: [],
+    });
+
+    expect(evaluation.conceptSuggestions).toEqual([]);
+    expect(evaluation.diagnostics.localConceptCandidateCount).toBe(0);
+    expect(evaluation.diagnostics.localConceptSuggestionCount).toBe(0);
+  });
+
+  it("does not duplicate an equivalent existing concept with a local emerging concept", () => {
+    const evaluation = evaluateCaptureInput({
+      text: "La continuidad operacional depende de una fuente única de verdad.",
+      nodes: [],
+      contexts: [
+        context({ id: "continuidad-operacional", name: "Continuidad operacional" }),
+      ],
+      relations: [],
+    });
+
+    expect(evaluation.conceptSuggestions).toContainEqual(
+      expect.objectContaining({
+        kind: "existing",
+        conceptId: "continuidad-operacional",
+        label: "Continuidad operacional",
+      }),
+    );
+    expect(
+      evaluation.conceptSuggestions.some(
+        (suggestion) =>
+          suggestion.kind === "emerging" &&
+          suggestion.suggestedLabel === "Continuidad operacional",
+      ),
+    ).toBe(false);
+  });
+
   it("reuses an existing local concept instead of creating a new candidate", () => {
     const evaluation = evaluateCaptureInput({
       text: "La Asertividad de Cristo ordena esta reflexión.",
@@ -956,7 +1056,7 @@ describe("concept suggestions", () => {
     ).toBe(false);
   });
 
-  it("does not return emerging concepts from current input without memory evidence", () => {
+  it("keeps current-input local concepts separate from historical emerging evidence", () => {
     const evaluation = evaluateCaptureInput({
       text: "Revisar Railway para la sincronizacion de Vinema",
       nodes: [],
@@ -967,26 +1067,36 @@ describe("concept suggestions", () => {
       (suggestion) => suggestion.kind === "emerging",
     );
 
-    expect(emerging).toEqual([]);
+    expect(emerging).toEqual([
+      expect.objectContaining({
+        suggestedLabel: "Sincronizacion",
+        evidenceCaptureIds: [],
+      }),
+    ]);
     expect(evaluation.diagnostics.emergingConceptSuggestionCount).toBe(0);
   });
 
-  it("keeps current-text concepts empty before saving with empty memory", () => {
+  it("suggests current-text mining concepts before saving with empty memory", () => {
     const evaluation = evaluateCaptureInput({
       text: "Durante la perforación de avance, una mala iluminación puede dificultar la identificación de personas u obstáculos en el frente de trabajo.",
       nodes: [],
       contexts: [],
       relations: [],
     });
+    const emergingLabels = evaluation.conceptSuggestions
+      .filter((suggestion) => suggestion.kind === "emerging")
+      .map((suggestion) => suggestion.suggestedLabel);
 
-    expect(
-      evaluation.conceptSuggestions.filter(
-        (suggestion) => suggestion.kind === "emerging",
-      ).length,
-    ).toBe(0);
+    expect(emergingLabels).toEqual(
+      expect.arrayContaining([
+        "Perforación de avance",
+        "Identificación de personas",
+      ]),
+    );
+    expect(evaluation.diagnostics.emergingConceptSuggestionCount).toBe(0);
   });
 
-  it("does not suggest current-text mobile equipment risk concepts before saving", () => {
+  it("suggests current-text mobile equipment risk concepts before saving", () => {
     const evaluation = evaluateCaptureInput({
       text: "Los equipos móviles presentan mayor riesgo de atropello cuando existen personas circulando dentro de su radio de operación.",
       nodes: [],
@@ -997,10 +1107,17 @@ describe("concept suggestions", () => {
       .filter((suggestion) => suggestion.kind === "emerging")
       .map((suggestion) => suggestion.suggestedLabel);
 
-    expect(emergingLabels).toEqual([]);
+    expect(emergingLabels).toEqual(
+      expect.arrayContaining([
+        "Equipos móviles",
+        "Radio de operación",
+      ]),
+    );
+    expect(emergingLabels).not.toContain("Personas circulando");
+    expect(emergingLabels).not.toContain("Circulando dentro");
   });
 
-  it("does not derive late detection concepts from current input before saving", () => {
+  it("keeps late detection current-input concepts nominal", () => {
     const evaluation = evaluateCaptureInput({
       text: "En sectores con baja visibilidad, el operador puede detectar tardíamente a trabajadores que ingresan al área de maniobra del equipo.",
       nodes: [],
@@ -1011,10 +1128,15 @@ describe("concept suggestions", () => {
       .filter((suggestion) => suggestion.kind === "emerging")
       .map((suggestion) => suggestion.suggestedLabel);
 
-    expect(emergingLabels).toEqual([]);
+    expect(emergingLabels).toEqual(
+      expect.arrayContaining(["Baja visibilidad", "Maniobra del equipo"]),
+    );
+    expect(emergingLabels).not.toContain("Detectar tardíamente");
+    expect(emergingLabels).not.toContain("Tardíamente a trabajadores");
+    expect(emergingLabels).not.toContain("Trabajadores que ingresan");
   });
 
-  it("does not suggest segregation controls from current input alone", () => {
+  it("suggests nominal segregation controls from current input alone", () => {
     const evaluation = evaluateCaptureInput({
       text: "La segregación mediante barreras físicas disminuye la exposición de peatones a equipos móviles durante las maniobras.",
       nodes: [],
@@ -1025,7 +1147,9 @@ describe("concept suggestions", () => {
       .filter((suggestion) => suggestion.kind === "emerging")
       .map((suggestion) => suggestion.suggestedLabel);
 
-    expect(emergingLabels).toEqual([]);
+    expect(emergingLabels).toEqual(
+      expect.arrayContaining(["Barreras físicas", "Equipos móviles"]),
+    );
     expect(emergingLabels).not.toContain("Disminuye la exposición");
   });
 
@@ -1090,7 +1214,12 @@ describe("concept suggestions", () => {
     expect(existingLabels).not.toContain("Identificación de personas");
     expect(existingLabels).not.toContain("Baja visibilidad");
     expect(existingLabels).not.toContain("Mala iluminación");
-    expect(emergingLabels).toEqual([]);
+    expect(emergingLabels).toEqual(
+      expect.arrayContaining(["Barreras físicas", "Exposición de peatones"]),
+    );
+    expect(emergingLabels).not.toContain("Disminuye la exposición");
+    expect(emergingLabels).not.toContain("Identificación de personas");
+    expect(emergingLabels).not.toContain("Baja visibilidad");
   });
 
   it("keeps maneuver concepts while preventing dust and silica thematic contamination", () => {
@@ -1240,7 +1369,6 @@ describe("concept suggestions", () => {
       suggestion.kind === "existing" ? suggestion.label : suggestion.suggestedLabel,
     );
 
-    expect(labels).toEqual([]);
     expect(labels).not.toEqual(
       expect.arrayContaining([
         "Maniobra del equipo",
@@ -1249,6 +1377,8 @@ describe("concept suggestions", () => {
         "acostarme Dejar",
         "Cuesta conciliar",
         "Parece mejorar",
+        "Equipos móviles",
+        "Radio de operación",
       ]),
     );
     expect(evaluation.recoveryMatches).toEqual([]);
@@ -1293,8 +1423,14 @@ describe("concept suggestions", () => {
       suggestion.kind === "existing" ? suggestion.label : suggestion.suggestedLabel,
     );
 
-    expect(labels).toEqual(["Pantalla"]);
+    expect(labels).toEqual(
+      expect.arrayContaining([
+        "Pantalla",
+      ]),
+    );
     expect(labels).not.toContain("Antes Fuera");
+    expect(labels).not.toContain("Equipos móviles");
+    expect(labels).not.toContain("Radio de operación");
     expect(evaluation.recoveryMatches.map((match) => match.node.id)).toEqual([
       "sueno",
     ]);

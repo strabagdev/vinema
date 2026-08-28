@@ -25,7 +25,7 @@ export type SemanticPhraseCandidate = {
   reasons: string[];
 };
 
-const MAX_SEMANTIC_SUGGESTIONS = 5;
+const MAX_SEMANTIC_SUGGESTIONS = 12;
 
 export function extractSemanticPhraseCandidates(text: string) {
   const tokens = tokenizeSemanticText(text);
@@ -436,24 +436,38 @@ function isFlexibleConnectorNounPhrase(
   const connectorIndex = normalizedValues.findIndex((value) =>
     isSemanticConnector(value),
   );
+  const connector = normalizedValues[connectorIndex] ?? "";
   const beforeConnector = normalizedValues.slice(0, connectorIndex);
   const afterConnector = normalizedValues.slice(connectorIndex + 1);
+
+  if (!isNominalPhraseConnector(connector)) {
+    return false;
+  }
+
   if (
     connectorIndex <= 0 ||
     afterConnector.length !== 1 ||
-    beforeConnector.length > 1 ||
+    beforeConnector.length > 2 ||
     meaningfulValues.length > 3
   ) {
     return false;
   }
 
-  if (meaningfulValues.some(isLikelyAdjective)) {
+  if (
+    meaningfulValues.some(
+      (value) => isLikelyAdjective(value) || isLikelyInfinitive(value),
+    )
+  ) {
     return false;
   }
 
   return (
     meaningfulValues.some(isNominalConceptTerm) ||
-    (meaningfulValues.length === 2 &&
+    (beforeConnector.length === 2 &&
+      meaningfulValues.length === 3 &&
+      meaningfulValues.every(isLikelyNoun)) ||
+    (beforeConnector.length === 1 &&
+      meaningfulValues.length === 2 &&
       meaningfulValues.every(isLikelyNoun))
   );
 }
@@ -496,6 +510,7 @@ function isSalientAbstractSingleNoun({
     isShortBoundaryToken(normalized) ||
     isLikelyAdjective(normalized) ||
     isLikelyGerund(normalized) ||
+    isLikelyInfinitive(normalized) ||
     (!isNominalConceptTerm(normalized) && !hasStructuralSimpleNounEvidence({
       normalized,
       previous,
@@ -627,13 +642,11 @@ function isLikelyPresentVerb(value: string) {
 }
 
 function isLikelyInfinitive(value: string) {
-  void value;
-  return false;
+  return /^[\p{L}]{5,}(?:ar|er|ir|arme|erme|irme|arte|erte|irte|arse|erse|irse|arnos|ernos|irnos)$/u.test(value);
 }
 
 function isVerbInfinitiveSurface(value: string) {
-  void value;
-  return false;
+  return isLikelyInfinitive(value);
 }
 
 function nominalizeEligibleVerb(token: SemanticToken) {
@@ -701,6 +714,10 @@ function stemSemanticToken(value: string) {
 
 function isSemanticConnector(value: string) {
   return isShortStructuralToken(value);
+}
+
+function isNominalPhraseConnector(value: string) {
+  return value === "de" || value === "del";
 }
 
 function isWithinSingleSegment(tokens: SemanticToken[]) {
