@@ -4286,7 +4286,7 @@ describe("CaptureSurface", () => {
     );
   });
 
-  it("does not show semantic phrase concepts before they exist in memory", async () => {
+  it("shows conservative cold-start concepts without proper-phrase token noise", async () => {
     const screen = await renderCaptureSurface();
 
     await changeTextarea(
@@ -4296,7 +4296,8 @@ describe("CaptureSurface", () => {
     await advanceTime(500);
     await openConceptPanel(screen.container);
 
-    expect(screen.container.textContent).toContain("No hay conceptos detectados.");
+    expect(screen.container.textContent).toContain("Conceptos detectados");
+    expect(getButton(screen.container, "Perfumes")).toBeDefined();
     expect(getButton(screen.container, "Ombre")).toBeUndefined();
     expect(getButton(screen.container, "Ombre Leather")).toBeUndefined();
     expect(getButton(screen.container, "Tom Ford")).toBeUndefined();

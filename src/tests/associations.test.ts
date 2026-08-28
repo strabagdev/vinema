@@ -932,6 +932,38 @@ describe("concept suggestions", () => {
     expect(emergingLabels).not.toContain("Trazabilidad y continuidad");
   });
 
+  it("keeps cold-start concepts while rejecting structural phrase noise", () => {
+    const evaluation = evaluateCaptureInput({
+      text:
+        "Opco opera Operational Core como fuente única de verdad. " +
+        "Los módulos actualizan información automáticamente. " +
+        "El sistema funciona como clientes especializados de una plataforma central. " +
+        "La configuración define permisos cada usuario.",
+      nodes: [],
+      contexts: [],
+      relations: [],
+    });
+    const emergingLabels = evaluation.conceptSuggestions
+      .filter((suggestion) => suggestion.kind === "emerging")
+      .map((suggestion) => suggestion.suggestedLabel);
+
+    expect(emergingLabels).toEqual(
+      expect.arrayContaining([
+        "Fuente única de verdad",
+        "Operational Core",
+      ]),
+    );
+    expect(emergingLabels).not.toContain("Actualizan información");
+    expect(emergingLabels).not.toContain("Como clientes");
+    expect(emergingLabels).not.toContain("Permisos cada");
+    expect(
+      evaluation.conceptSuggestions
+        .filter((suggestion) => suggestion.kind === "emerging")
+        .every((suggestion) => suggestion.evidenceCaptureIds.length === 0),
+    ).toBe(true);
+    expect(evaluation.diagnostics.emergingConceptSuggestionCount).toBe(0);
+  });
+
   it("suggests lowercase semantic compound concepts without capitalization", () => {
     const evaluation = evaluateCaptureInput({
       text: "la continuidad operacional depende de una fuente única de verdad",

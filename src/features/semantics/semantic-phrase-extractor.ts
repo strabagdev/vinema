@@ -155,7 +155,9 @@ function createPhraseCandidate({
 
   if (
     isShortBoundaryToken(first) ||
-    isShortBoundaryToken(last)
+    isShortBoundaryToken(last) ||
+    isDependentStartToken(first) ||
+    isIncompleteBoundaryToken(last)
   ) {
     return null;
   }
@@ -400,13 +402,17 @@ function isGeneralNounPhrase(normalizedValues: string[]) {
   if (
     meaningfulValues.some(
       (value) =>
-        isShortBoundaryToken(value) || isLikelyInfinitive(value),
+        isShortBoundaryToken(value) ||
+        isIncompleteBoundaryToken(value) ||
+        isDependentStartToken(value) ||
+        isLikelyInfinitive(value) ||
+        isLikelyAdverb(value),
     )
   ) {
     return false;
   }
 
-  if (isLikelyPresentVerb(first)) {
+  if (meaningfulValues.some(isLikelyPresentVerb)) {
     return false;
   }
 
@@ -510,6 +516,8 @@ function isSalientAbstractSingleNoun({
     isShortBoundaryToken(normalized) ||
     isLikelyAdjective(normalized) ||
     isLikelyGerund(normalized) ||
+    isLikelyAdverb(normalized) ||
+    isLikelyPresentVerb(normalized) ||
     isLikelyInfinitive(normalized) ||
     (!isNominalConceptTerm(normalized) && !hasStructuralSimpleNounEvidence({
       normalized,
@@ -598,7 +606,8 @@ function startsWithSentenceInitialConnectorFragment(
     first &&
       second &&
       isLikelySentenceInitialOnly(first, previousToken) &&
-      isShortStructuralToken(second.normalizedText),
+      isShortStructuralToken(second.normalizedText) &&
+      !isNominalPhraseConnector(second.normalizedText),
   );
 }
 
@@ -637,8 +646,18 @@ function isActionObjectPhrase({
 }
 
 function isLikelyPresentVerb(value: string) {
-  void value;
-  return false;
+  if (!/^[\p{L}]{6,}$/u.test(value)) {
+    return false;
+  }
+
+  if (isLikelyNominalization(value) || isLikelyInfinitive(value)) {
+    return false;
+  }
+
+  return (
+    /(?:an|en)$/u.test(value) ||
+    /(?:iza|iona|iona|tiene|duce|mite|fine|iona)$/u.test(value)
+  );
 }
 
 function isLikelyInfinitive(value: string) {
@@ -647,6 +666,14 @@ function isLikelyInfinitive(value: string) {
 
 function isVerbInfinitiveSurface(value: string) {
   return isLikelyInfinitive(value);
+}
+
+function isLikelyNominalization(value: string) {
+  return /(?:cion|sion|dad|tad|miento|mento|aje|ncia|anza)$/u.test(value);
+}
+
+function isLikelyAdverb(value: string) {
+  return /^[\p{L}]{8,}mente$/u.test(value);
 }
 
 function nominalizeEligibleVerb(token: SemanticToken) {
@@ -682,7 +709,15 @@ function absorbsProperNameAfterConnector(phraseTokens: SemanticToken[]) {
 }
 
 function isShortBoundaryToken(value: string) {
-  return isShortStructuralToken(value);
+  return isShortStructuralToken(value) || isIncompleteBoundaryToken(value);
+}
+
+function isDependentStartToken(value: string) {
+  return DEPENDENT_START_TOKENS.has(value);
+}
+
+function isIncompleteBoundaryToken(value: string) {
+  return INCOMPLETE_BOUNDARY_TOKENS.has(value);
 }
 
 function isLikelySentenceInitialOnly(
@@ -719,6 +754,69 @@ function isSemanticConnector(value: string) {
 function isNominalPhraseConnector(value: string) {
   return value === "de" || value === "del";
 }
+
+const DEPENDENT_START_TOKENS = new Set([
+  "aunque",
+  "como",
+  "cuando",
+  "donde",
+  "mientras",
+  "porque",
+  "pero",
+  "segun",
+  "según",
+]);
+
+const INCOMPLETE_BOUNDARY_TOKENS = new Set([
+  "aquel",
+  "aquella",
+  "aquellas",
+  "aquellos",
+  "cada",
+  "con",
+  "cualquier",
+  "cualquiera",
+  "cuyo",
+  "cuyos",
+  "del",
+  "desde",
+  "durante",
+  "el",
+  "esa",
+  "esas",
+  "ese",
+  "esos",
+  "esta",
+  "estas",
+  "este",
+  "estos",
+  "la",
+  "las",
+  "los",
+  "mi",
+  "mis",
+  "ningun",
+  "ninguna",
+  "ningún",
+  "nuestro",
+  "nuestros",
+  "para",
+  "por",
+  "segun",
+  "según",
+  "sin",
+  "sobre",
+  "su",
+  "sus",
+  "todo",
+  "todos",
+  "tu",
+  "tus",
+  "un",
+  "una",
+  "unas",
+  "unos",
+]);
 
 function isWithinSingleSegment(tokens: SemanticToken[]) {
   const [first] = tokens;

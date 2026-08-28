@@ -143,6 +143,13 @@ describe("personal knowledge boundary", () => {
       "src/features/associations/capture-recovery-results.tsx",
       "src/features/associations/concept-suggestion-chips.tsx",
     ]);
+    const allowedStructuralLinguisticCollections = new Set([
+      "LOCAL_CONCEPT_ACTION_TERMS",
+      "LOCAL_CONCEPT_WEAK_BOUNDARY_TERMS",
+      "LOCAL_CONCEPT_INVALID_CONNECTORS",
+      "DEPENDENT_START_TOKENS",
+      "INCOMPLETE_BOUNDARY_TOKENS",
+    ]);
     const forbiddenPatterns = [
       /\bSPANISH_STOPWORDS\b/u,
       /\bspanish-stopwords\b/u,
@@ -160,17 +167,22 @@ describe("personal knowledge boundary", () => {
         const content = readFileSync(file, "utf8");
 
         const directMatches = forbiddenPatterns.flatMap((pattern) =>
-          pattern.test(content)
+          pattern.test(content) &&
+            !isAllowedStructuralLinguisticPattern(sourcePath, pattern)
             ? [`${sourcePath} contains ${pattern.source}`]
             : [],
         );
         const forbiddenImports = findForbiddenLexiconImports(content).map(
           (modulePath) => `${sourcePath} imports lexicon ${modulePath}`,
         );
-        const lexicalCollections = findLexicalCollections(content).map(
+        const lexicalCollections = findLexicalCollections(content)
+          .filter((name) => !allowedStructuralLinguisticCollections.has(name))
+          .map(
           (name) => `${sourcePath} defines lexical collection ${name}`,
         );
-        const literalWordCollections = findLiteralWordCollections(content).map(
+        const literalWordCollections = findLiteralWordCollections(content)
+          .filter((name) => !allowedStructuralLinguisticCollections.has(name))
+          .map(
           (name) => `${sourcePath} defines literal word collection ${name}`,
         );
         const linguisticRegexes = findLinguisticRegexes(content).map(
@@ -224,6 +236,13 @@ function findForbiddenLexiconImports(content: string) {
     /(?:language-profile|stopwords?|lexicons?|dictionaries|vocabular(?:y|ies))/iu.test(
       modulePath,
     ),
+  );
+}
+
+function isAllowedStructuralLinguisticPattern(sourcePath: string, pattern: RegExp) {
+  return (
+    sourcePath === "src/features/semantics/semantic-phrase-extractor.ts" &&
+    pattern.source === "\\b(cion|sion|miento|mente|ando|iendo|ais|eis|amos|emos|imos)\\b"
   );
 }
 

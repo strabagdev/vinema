@@ -178,7 +178,12 @@ describe("useAssociationSuggestions", () => {
     const initial = observed.at(-1) ?? [];
     const initialLabels = initial.map(getConceptSuggestionLabel);
 
-    expect(initialLabels).toEqual([]);
+    expect(initialLabels).toEqual([
+      "Exposición de peatones",
+      "Barreras físicas",
+      "Equipos móviles",
+      "Maniobras",
+    ]);
     expect(evaluateCaptureInputSpy).toHaveBeenCalledTimes(1);
 
     await act(async () => {
@@ -200,7 +205,7 @@ describe("useAssociationSuggestions", () => {
     expect(afterSelection.map(getConceptSuggestionKey)).toEqual(
       initial.map(getConceptSuggestionKey),
     );
-    expect(afterSelection.map(getConceptSuggestionLabel)).toEqual([]);
+    expect(afterSelection.map(getConceptSuggestionLabel)).toEqual(initialLabels);
   });
 });
 

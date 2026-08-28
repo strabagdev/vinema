@@ -61,6 +61,51 @@ describe("semantic phrase extraction", () => {
     );
   });
 
+  it("rejects conjugated verb object fragments without blocking derived nouns", () => {
+    const actionLabels = labelsFor(
+      "Los módulos actualizan información automáticamente. " +
+        "El sistema gestiona personas. " +
+        "La herramienta mantiene registros.",
+    );
+    const derivedLabels = labelsFor(
+      "La actualización de información mantiene la trazabilidad.",
+    );
+
+    expect(actionLabels).not.toContain("Actualizan información");
+    expect(actionLabels).not.toContain("Gestiona personas");
+    expect(actionLabels).not.toContain("Mantiene registros");
+    expect(derivedLabels).toContain("Actualización de información");
+  });
+
+  it("rejects dependent starts and incomplete endings", () => {
+    expect(
+      labelsFor("El sistema funciona como clientes especializados."),
+    ).not.toContain("Como clientes");
+    expect(
+      labelsFor("El sistema define permisos cada usuario según su contexto."),
+    ).not.toContain("Permisos cada");
+  });
+
+  it("keeps existing positive semantic concept shapes", () => {
+    const labels = labelsFor(
+      "Fuente única de verdad. Operational Core. Continuidad operacional. " +
+        "Modelo configurable. Clientes especializados. Riesgo de atropello. " +
+        "Perforación de avance.",
+    );
+
+    expect(labels).toEqual(
+      expect.arrayContaining([
+        "Fuente única de verdad",
+        "Operational Core",
+        "Continuidad operacional",
+        "Modelo configurable",
+        "Clientes especializados",
+        "Riesgo de atropello",
+        "Perforación de avance",
+      ]),
+    );
+  });
+
   it("keeps personal memory empty until evidence or stored concepts exist", () => {
     const evaluation = evaluateCaptureInput({
       text: "Ombre Leather, Tom Ford, Erba Pura, Operational Core y Mina Andes Norte.",
