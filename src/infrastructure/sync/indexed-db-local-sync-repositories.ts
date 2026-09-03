@@ -37,6 +37,7 @@ import {
 } from "@/features/sync/sync-outbox-repository";
 import { chooseLatestConflictRecord } from "@/features/sync/conflict-lifecycle";
 import { appendMemorySyncEvent } from "@/features/sync/observability/sync-event-buffer";
+import { requestPendingSync } from "@/features/sync/sync-request-events";
 import { normalizeContextAliases } from "@/features/concepts/concept-identity";
 
 export type MutationOrigin = "LOCAL" | "REMOTE" | "SYSTEM";
@@ -495,6 +496,11 @@ async function enqueueLocalMutation({
     }
 
     await outboxStore.put(record);
+    requestPendingSync({
+      workspaceId: syncContext.workspaceId,
+      deviceId: syncContext.deviceId,
+      requestedAt: at,
+    });
     appendMemorySyncEvent({
       type: "LOCAL_WRITE_CREATED",
       timestamp: at,

@@ -21,6 +21,7 @@ import {
   InMemoryAuthSessionStorage,
   InMemoryLocalAuthIdentityStorage,
 } from "@/features/auth/storage/in-memory-auth-session-storage";
+import { requestPendingSync } from "@/features/sync/sync-request-events";
 import type { StoredLocalAuthIdentity } from "@/features/auth/storage/auth-session-storage";
 import { IndexedDbContextRepository } from "@/infrastructure/context/indexed-db-context-repository";
 import { IndexedDbNodeContextRelationRepository } from "@/infrastructure/context/indexed-db-node-context-relation-repository";
@@ -192,6 +193,75 @@ describe("minimal authentication UI", () => {
     await click("button:nth-of-type(2)");
     expect(text("[data-testid='status']")).toBe("UNAUTHENTICATED");
     expect(text("[data-testid='error']")).toBe("INVALID_CREDENTIALS");
+  });
+
+  it("AuthProvider runs sync promptly after a local outbox write request", async () => {
+    vi.useFakeTimers();
+    const fetchMock = createFetch([
+      jsonResponse(session),
+      jsonResponse({ accepted: [], rejected: [], conflicts: [], serverCursor: "0" }),
+      jsonResponse({ changes: [], nextCursor: "0", hasMore: false }),
+      jsonResponse({ accepted: [], rejected: [], conflicts: [], serverCursor: "0" }),
+      jsonResponse({ changes: [], nextCursor: "0", hasMore: false }),
+    ]);
+    globalThis.fetch = fetchMock;
+
+    function Probe() {
+      const auth = useAuth();
+      return (
+        <div>
+          <p data-testid="status">{auth.state.status}</p>
+          <button
+            type="button"
+            onClick={() => {
+              void auth.login({
+                email: user.email,
+                password: "password-123",
+              });
+            }}
+          >
+            Login
+          </button>
+        </div>
+      );
+    }
+
+    await render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    await flush();
+    await click("button");
+    await flush();
+
+    expect(text("[data-testid='status']")).toBe("AUTHENTICATED_ONLINE");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    requestPendingSync({
+      workspaceId,
+      deviceId,
+      requestedAt: "2026-07-30T12:00:00.000Z",
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+    await flush();
+
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    const fetchCalls = (fetchMock as ReturnType<typeof vi.fn>).mock.calls;
+
+    expect(
+      fetchCalls.filter((call) =>
+        String(call[0]).includes("/api/sync/push"),
+      ),
+    ).toHaveLength(2);
+    expect(
+      fetchCalls.filter((call) =>
+        String(call[0]).includes("/api/sync/pull"),
+      ),
+    ).toHaveLength(2);
   });
 
   it("Login renders, validates, submits, shows loading/errors and links to register", async () => {

@@ -324,6 +324,62 @@ describe("automatic sync orchestrator", () => {
     expect(setup.order).toEqual(["push", "pull", "push", "pull"]);
   });
 
+  it("pushes a mutation enqueued while a sync cycle is in flight without waiting for polling", async () => {
+    harness = await createE2eSyncHarness();
+    const { deviceA, deviceB, remoteClient, workspaceId } = harness;
+    const originalPush = remoteClient.push.bind(remoteClient);
+    const firstPushStarted = createDeferred<void>();
+    const releaseFirstPush = createDeferred<void>();
+    let pushCalls = 0;
+    remoteClient.push = vi.fn(async (input) => {
+      pushCalls += 1;
+      if (pushCalls === 1) {
+        firstPushStarted.resolve();
+        await releaseFirstPush.promise;
+      }
+
+      return originalPush(input);
+    });
+    const orchestrator = createAutomaticSyncOrchestrator({
+      pushCoordinator: deviceA.pushCoordinator,
+      pullCoordinator: deviceA.pullCoordinator,
+      config: { runOnStart: false, syncIntervalMs: 10_000 },
+    });
+
+    await harness.runOnDevice(deviceA, async () => {
+      await deviceA.repositories.nodeRepository.create(
+        makeNode({
+          workspaceId,
+          deviceId: deviceA.device.id,
+          content: "Captura A",
+        }),
+      );
+
+      const firstRun = orchestrator.syncNow();
+      await firstPushStarted.promise;
+      await deviceA.repositories.nodeRepository.create(
+        makeNode({
+          workspaceId,
+          deviceId: deviceA.device.id,
+          content: "Captura B",
+        }),
+      );
+
+      const coalesced = await orchestrator.syncNow();
+      expect(coalesced.status).toBe("ALREADY_RUNNING");
+
+      releaseFirstPush.resolve();
+      await expect(firstRun).resolves.toMatchObject({ status: "SUCCESS" });
+
+      expect(remoteClient.push).toHaveBeenCalledTimes(2);
+      await expect(getOutboxRecords()).resolves.toHaveLength(0);
+    });
+
+    await expect(
+      harness.runOnDevice(deviceB, () => deviceB.pullCoordinator.run()),
+    ).resolves.toMatchObject({ status: "SUCCESS", pulled: 2, applied: 2 });
+  });
+
   it("treats coordinator already-running skips as skipped, not failed", async () => {
     const setup = createSetup({
       pushResults: [

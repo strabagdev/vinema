@@ -18,6 +18,7 @@ import { archiveNode } from "@/features/node/archive-node";
 import { createNode } from "@/features/node/create-node";
 import { updateNode } from "@/features/node/update-node";
 import { IndexedDbSyncOutboxRepository } from "@/features/sync/sync-outbox-repository";
+import { subscribeToPendingSyncRequests } from "@/features/sync/sync-request-events";
 import { IndexedDbNodeRepository } from "@/infrastructure/node/indexed-db-node-repository";
 import {
   IndexedDbLocalSyncNodeRepository,
@@ -243,6 +244,41 @@ describe("local sync repositories", () => {
       mutation: { entityType: "capture", entityId: node.id, baseVersion: 1 },
     });
     await expect(outbox.listPending(workspace.id, 10)).resolves.toHaveLength(2);
+  });
+
+  it("requests prompt sync when a local mutation is enqueued", async () => {
+    const requests: Array<{ workspaceId: string; deviceId: string }> = [];
+    const unsubscribe = subscribeToPendingSyncRequests((request) => {
+      requests.push({
+        workspaceId: request.workspaceId,
+        deviceId: request.deviceId,
+      });
+    });
+    const repositories = createLocalSyncRepositories({
+      syncContext: { workspaceId: workspace.id, deviceId: device.id },
+      mutationIdFactory: mutationIdFactory([
+        "33333333-3333-4333-8333-333333333333",
+      ]),
+    });
+
+    try {
+      await createNode(repositories.nodeRepository, {
+        type: "NOTE",
+        content: "Captura que debe sincronizar pronto",
+        organizationStatus: "ORGANIZED",
+        workspace,
+        device,
+      });
+    } finally {
+      unsubscribe();
+    }
+
+    expect(requests).toEqual([
+      {
+        workspaceId: workspace.id,
+        deviceId: device.id,
+      },
+    ]);
   });
 
   it("archives captures locally and enqueues an archive mutation without deleting the record", async () => {

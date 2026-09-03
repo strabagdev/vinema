@@ -61,6 +61,7 @@ import {
   createSyncStateEngine,
   type SyncState,
 } from "@/features/sync/sync-state-engine";
+import { subscribeToPendingSyncRequests } from "@/features/sync/sync-request-events";
 import {
   detectLocalKnowledgeIncorporationOffer,
   incorporateLocalKnowledgeToRemoteAccount,
@@ -70,6 +71,7 @@ import {
 import { workspaceRepository } from "@/infrastructure/repositories";
 
 const AUTHENTICATED_SYNC_INTERVAL_MS = 10_000;
+const PENDING_SYNC_REQUEST_DEBOUNCE_MS = 250;
 
 export type AuthContextValue = {
   state: AuthState;
@@ -146,6 +148,39 @@ export function AuthProvider({
     });
 
     return () => lifecycle.dispose();
+  }, [runtime]);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const clearPendingTimer = () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    };
+
+    const unsubscribe = subscribeToPendingSyncRequests((request) => {
+      const currentState = runtime.controller.getState();
+
+      if (
+        currentState.status !== "AUTHENTICATED_ONLINE" ||
+        currentState.workspaceId !== request.workspaceId ||
+        currentState.deviceId !== request.deviceId
+      ) {
+        return;
+      }
+
+      clearPendingTimer();
+      timer = setTimeout(() => {
+        timer = null;
+        void runtime.controller.syncNow().catch(() => undefined);
+      }, PENDING_SYNC_REQUEST_DEBOUNCE_MS);
+    });
+
+    return () => {
+      clearPendingTimer();
+      unsubscribe();
+    };
   }, [runtime]);
 
   useEffect(() => {
