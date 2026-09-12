@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   recordMemoryVerificationResult: vi.fn(),
   reconcile: vi.fn(),
   reconcileServerAuthoritativeMemory: vi.fn(),
+  resolveCaptureConflict: vi.fn(),
   syncNow: vi.fn(),
   synced: vi.fn(),
   syncing: vi.fn(),
@@ -63,7 +64,7 @@ vi.mock("@/features/sync/server-authoritative-memory-reconciliation", () => ({
 
 vi.mock("@/features/sync/conflict-resolution", () => ({
   listCaptureConflicts: mocks.listCaptureConflicts,
-  resolveCaptureConflict: vi.fn(),
+  resolveCaptureConflict: mocks.resolveCaptureConflict,
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
@@ -78,8 +79,10 @@ describe("MemorySyncStatusPanel", () => {
     mocks.loadMemorySyncSnapshot.mockResolvedValue(snapshotFixture());
     mocks.recordMemoryVerificationResult.mockResolvedValue(null);
     mocks.listCaptureConflicts.mockResolvedValue([captureConflictFixture()]);
+    mocks.resolveCaptureConflict.mockResolvedValue({ resolved: true, mutationCreated: false });
     mocks.reconcile.mockResolvedValue(reconciliationFixture());
     mocks.reconcileServerAuthoritativeMemory.mockResolvedValue(serverCompletenessFixture());
+    vi.spyOn(window, "confirm").mockReturnValue(true);
   });
 
   afterEach(async () => {
@@ -105,7 +108,7 @@ describe("MemorySyncStatusPanel", () => {
     const homeLink = screen.querySelector("a[aria-label='Vinema']");
     expect(homeLink?.getAttribute("href")).toBe("/");
     expect(screen.querySelector("[data-vinema-brand='monogram']")).toBeTruthy();
-    expect(panel?.textContent).toContain("Estado de la memoria");
+    expect(panel?.textContent).toContain("Estado");
     expect(panel?.textContent).toContain("Memoria integra");
     expect(panel?.textContent).toContain("Verificar memoria");
     expect(panel?.textContent).not.toContain("Cursor local");
@@ -114,13 +117,19 @@ describe("MemorySyncStatusPanel", () => {
     expect(panel?.textContent).not.toContain("RECONCILIATION_COMPLETED");
     expect(panel?.querySelector("details")).toBeNull();
     expect(panel?.className).toContain("fixed");
-    expect(panel?.className).toContain("md:absolute");
+    expect(panel?.className).toContain("right-0");
+    expect(panel?.className).toContain("h-dvh");
+    expect(panel?.className).toContain("w-screen");
     expect(panel?.className).toContain("overflow-hidden");
     expect(panel?.getAttribute("role")).toBe("dialog");
     expect(panel?.getAttribute("aria-modal")).toBe("true");
     expect(panel?.querySelector("[data-memory-sync-panel-body]")?.className).toContain(
+      "flex-1",
+    );
+    expect(panel?.querySelector("[data-memory-sync-panel-body]")?.className).toContain(
       "overflow-y-auto",
     );
+    expect(document.body.style.overflow).toBe("hidden");
     expect(dot?.getAttribute("title")).toBe("memoria integra");
     expect(dot?.getAttribute("aria-label")).toBe(
       "Estado de la memoria: memoria integra",
@@ -197,11 +206,12 @@ describe("MemorySyncStatusPanel", () => {
     const screen = await renderPanel();
 
     await click(screen.querySelector("button[aria-label='Abrir Estado de la memoria']"));
+    const closeButton = screen.querySelector("button[aria-label='Cerrar Estado']");
     const verifyButton = getButton(screen, "Verificar memoria");
 
     verifyButton.focus();
     await keyDownWindow({ key: "Tab" });
-    expect(document.activeElement).toBe(verifyButton);
+    expect(document.activeElement).toBe(closeButton);
 
     await keyDownWindow({ key: "Tab", shiftKey: true });
     expect(document.activeElement).toBe(verifyButton);
@@ -580,9 +590,9 @@ describe("MemorySyncStatusPanel", () => {
     expect(screen.textContent).toContain("Versión de este dispositivo");
     expect(screen.textContent).toContain("Version local disponible");
     expect(screen.textContent).toContain("No fue posible cargar la versión sincronizada.");
-    expect(screen.textContent).toContain("Reintentar cargar");
-    expect(screen.textContent).toContain("Cancelar");
-    expect(screen.textContent).not.toContain("Conservar versión sincronizada");
+    expect(screen.textContent).toContain("Usar versión local");
+    expect(screen.textContent).toContain("Reintentar cargar versión sincronizada");
+    expect(screen.textContent).not.toContain("Usar versión sincronizada");
     expect(screen.textContent).not.toContain("Fusionar manualmente");
   });
 
@@ -700,7 +710,7 @@ describe("MemorySyncStatusPanel", () => {
 
     expect(mocks.listCaptureConflicts).toHaveBeenCalledTimes(2);
     expect(screen.textContent).toContain("Version remota actual");
-    expect(screen.textContent).toContain("Conservar versión sincronizada");
+    expect(screen.textContent).toContain("Usar versión sincronizada");
   });
 
   it("shows a useful remote-only resolver state when the local snapshot is missing", async () => {
@@ -727,11 +737,128 @@ describe("MemorySyncStatusPanel", () => {
 
     expect(screen.textContent).toContain("Versión sincronizada");
     expect(screen.textContent).toContain("Version remota disponible");
-    expect(screen.textContent).toContain("No fue posible cargar la versión local.");
-    expect(screen.textContent).toContain("Reintentar cargar");
-    expect(screen.textContent).toContain("Cancelar");
-    expect(screen.textContent).not.toContain("Conservar esta versión");
+    expect(screen.textContent).toContain("La versión local ya no está disponible.");
+    expect(screen.textContent).toContain("Usar versión sincronizada");
+    expect(screen.textContent).toContain("Reintentar cargar versión local");
+    expect(screen.textContent).not.toContain("Usar versión local");
     expect(screen.textContent).not.toContain("Fusionar manualmente");
+  });
+
+  it("resolves a remote-only conflict by using the synchronized version", async () => {
+    mocks.loadMemorySyncSnapshot.mockResolvedValue(snapshotFixture({
+      status: "DIVERGED",
+      conflictMutations: 1,
+      conflictEntityCounts: {
+        captures: 1,
+        concepts: 0,
+        captureConcepts: 0,
+      },
+    }));
+    mocks.listCaptureConflicts
+      .mockResolvedValueOnce([
+        captureConflictFixture({
+          localContent: null,
+          remoteContent: "Version remota disponible",
+          remoteVersion: 26,
+        }),
+      ])
+      .mockResolvedValueOnce([]);
+    const screen = await renderPanel();
+
+    await click(screen.querySelector("button[aria-label='Abrir Estado de la memoria']"));
+    await click(getButton(screen, "Resolver"));
+    await flushReact();
+    await click(getButton(screen, "Usar versión sincronizada"));
+
+    expect(mocks.resolveCaptureConflict).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      deviceId: "device-1",
+      entityId: "capture-1",
+      strategy: "KEEP_REMOTE",
+      mergedContent: "",
+    });
+    expect(screen.textContent).not.toContain("Una captura requiere atencion");
+  });
+
+  it("renders every capture conflict instead of collapsing the resolver to the first item", async () => {
+    mocks.loadMemorySyncSnapshot.mockResolvedValue(snapshotFixture({
+      status: "DIVERGED",
+      conflictMutations: 3,
+      conflictEntityCounts: {
+        captures: 3,
+        concepts: 0,
+        captureConcepts: 0,
+      },
+    }));
+    mocks.listCaptureConflicts.mockResolvedValue([
+      captureConflictFixture({
+        entityId: "capture-1",
+        localContent: "Local uno",
+        remoteContent: "Remota uno",
+      }),
+      captureConflictFixture({
+        entityId: "capture-2",
+        localContent: "Local dos",
+        remoteContent: "Remota dos",
+      }),
+      captureConflictFixture({
+        entityId: "capture-3",
+        localContent: null,
+        remoteContent: "Remota tres",
+      }),
+    ]);
+    const screen = await renderPanel();
+
+    await click(screen.querySelector("button[aria-label='Abrir Estado de la memoria']"));
+    await click(getButton(screen, "Resolver"));
+    await flushReact();
+
+    expect(screen.querySelectorAll("[data-capture-conflict-card]")).toHaveLength(3);
+    expect(screen.textContent).toContain("Local uno");
+    expect(screen.textContent).toContain("Remota dos");
+    expect(screen.textContent).toContain("Remota tres");
+  });
+
+  it("keeps one scrollable panel body on a short viewport", async () => {
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 420,
+    });
+    mocks.loadMemorySyncSnapshot.mockResolvedValue(snapshotFixture({
+      status: "DIVERGED",
+      conflictMutations: 2,
+      conflictEntityCounts: {
+        captures: 2,
+        concepts: 0,
+        captureConcepts: 0,
+      },
+    }));
+    mocks.listCaptureConflicts.mockResolvedValue([
+      captureConflictFixture({
+        entityId: "capture-1",
+        localContent: "Local uno",
+        remoteContent: "Remota uno",
+      }),
+      captureConflictFixture({
+        entityId: "capture-2",
+        localContent: "Local dos",
+        remoteContent: "Remota dos",
+      }),
+    ]);
+    const screen = await renderPanel();
+
+    await click(screen.querySelector("button[aria-label='Abrir Estado de la memoria']"));
+    await click(getButton(screen, "Resolver"));
+    await flushReact();
+
+    const panel = screen.querySelector("[data-memory-sync-panel]");
+    const body = screen.querySelector("[data-memory-sync-panel-body]");
+    expect(panel?.className).toContain("h-dvh");
+    expect(panel?.className).toContain("overflow-hidden");
+    expect(body?.className).toContain("min-h-0");
+    expect(body?.className).toContain("flex-1");
+    expect(body?.className).toContain("overflow-y-auto");
+    expect(screen.querySelectorAll("[data-capture-conflict-card]")).toHaveLength(2);
   });
 
   it("shows an empty resolver fallback when neither snapshot is available", async () => {
@@ -1038,4 +1165,11 @@ async function keyDownWindow({
 async function flushPromises() {
   await Promise.resolve();
   await Promise.resolve();
+}
+
+async function flushReact() {
+  await act(async () => {
+    await flushPromises();
+    await flushPromises();
+  });
 }

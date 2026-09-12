@@ -4,6 +4,7 @@ import { deleteDB } from "idb";
 import type { Node } from "@/domain/node/node";
 import {
   NODES_STORE,
+  SYNC_ENTITY_ACKS_STORE,
   SYNC_MUTATIONS_STORE,
   VINEMA_DB_NAME,
   getVinemaDb,
@@ -13,6 +14,7 @@ import {
   listCaptureConflicts,
   resolveCaptureConflict,
 } from "@/features/sync/conflict-resolution";
+import { subscribeToSyncDataChanged } from "@/features/sync/sync-data-events";
 import type { SyncMutationOutboxRecord } from "@/features/sync/sync-outbox-repository";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
@@ -268,9 +270,28 @@ describe("conflict resolution", () => {
         entityId: nodeId,
         localContent: null,
         remoteContent: null,
-        localVersion: 48,
+        localVersion: null,
         remoteVersion: 26,
         occurrenceCount: 1,
+      },
+    ]);
+  });
+
+  it("marks the local snapshot unavailable when IndexedDB no longer has the capture", async () => {
+    const db = await getVinemaDb();
+    await db.put(SYNC_MUTATIONS_STORE, conflictRecord({
+      mutationId: "44444444-4444-4444-8444-444444444444",
+      localContent: "Snapshot viejo de outbox",
+      localVersion: 48,
+    }));
+
+    await expect(listCaptureConflicts(workspaceId)).resolves.toMatchObject([
+      {
+        entityId: nodeId,
+        localContent: null,
+        remoteContent: "Remoto",
+        localVersion: null,
+        remoteVersion: 11,
       },
     ]);
   });
@@ -309,8 +330,10 @@ describe("conflict resolution", () => {
     });
   });
 
-  it("keeping remote applies the remote capture and clears the conflict", async () => {
+  it("keeping remote applies the remote capture, clears the conflict and invalidates local UI", async () => {
     const db = await getVinemaDb();
+    const events: unknown[] = [];
+    const unsubscribe = subscribeToSyncDataChanged((event) => events.push(event));
     await db.put(NODES_STORE, node({ content: "Local actual", version: 57 }));
     await db.put(SYNC_MUTATIONS_STORE, conflictRecord({
       mutationId: "55555555-5555-4555-8555-555555555555",
@@ -331,6 +354,77 @@ describe("conflict resolution", () => {
       content: "Remoto",
       version: 11,
     });
+    expect(events).toMatchObject([
+      {
+        workspaceId,
+        entityTypes: ["capture"],
+      },
+    ]);
+    unsubscribe();
+  });
+
+  it("keeping remote restores the remote capture when the local capture is missing", async () => {
+    const db = await getVinemaDb();
+    await db.put(SYNC_MUTATIONS_STORE, conflictRecord({
+      mutationId: "55555555-5555-4555-8555-555555555555",
+      localContent: null,
+      localVersion: 57,
+    }));
+
+    await expect(resolveCaptureConflict({
+      workspaceId,
+      deviceId,
+      entityId: nodeId,
+      strategy: "KEEP_REMOTE",
+      now,
+    })).resolves.toEqual({ resolved: true, mutationCreated: false });
+
+    await expect(db.getAll(SYNC_MUTATIONS_STORE)).resolves.toEqual([]);
+    await expect(db.get(NODES_STORE, nodeId)).resolves.toMatchObject({
+      content: "Remoto",
+      version: 11,
+    });
+    await expect(
+      db.get(SYNC_ENTITY_ACKS_STORE, [workspaceId, "capture", nodeId]),
+    ).resolves.toMatchObject({
+      workspaceId,
+      entityType: "capture",
+      entityId: nodeId,
+      acknowledgedRemoteVersion: 11,
+      acknowledgedLocalVersion: 11,
+      acknowledgedLocalUpdatedAt: now,
+      acknowledgedAt: now,
+    });
+    await expect(
+      resolveCaptureConflict({
+        workspaceId,
+        deviceId,
+        entityId: nodeId,
+        strategy: "KEEP_REMOTE",
+        now,
+      }),
+    ).resolves.toEqual({ resolved: false, mutationCreated: false });
+    await expect(db.getAll(SYNC_MUTATIONS_STORE)).resolves.toEqual([]);
+    await expect(db.getAll(NODES_STORE)).resolves.toHaveLength(1);
+  });
+
+  it("keeping local is not possible when the local capture is missing", async () => {
+    const db = await getVinemaDb();
+    await db.put(SYNC_MUTATIONS_STORE, conflictRecord({
+      mutationId: "55555555-5555-4555-8555-555555555555",
+      localContent: "Snapshot viejo de outbox",
+      localVersion: 57,
+    }));
+
+    await expect(resolveCaptureConflict({
+      workspaceId,
+      deviceId,
+      entityId: nodeId,
+      strategy: "KEEP_LOCAL",
+      now,
+    })).resolves.toEqual({ resolved: false, mutationCreated: false });
+
+    await expect(db.getAll(SYNC_MUTATIONS_STORE)).resolves.toHaveLength(1);
   });
 
   it("manual merge creates one pending mutation with the merged content", async () => {

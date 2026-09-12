@@ -6,6 +6,8 @@ import {
   getVinemaDb,
 } from "@/infrastructure/storage/vinema-db";
 import { mapRemoteCaptureToLocalNode } from "@/features/sync/sync-mappers";
+import { emitSyncDataChanged } from "@/features/sync/sync-data-events";
+import type { Node } from "@/domain/node/node";
 import {
   chooseLatestConflictRecord,
   consolidateEntitySyncConflicts,
@@ -84,7 +86,13 @@ export async function listCaptureConflicts(
     let remoteLoadStatus: CaptureRemoteLoadStatus = remote ? "LOADED" : "MISSING";
     let remoteLoadDiagnostic: CaptureRemoteLoadDiagnostic | undefined;
     const requestedRemoteVersion = getRemoteChangeVersion(latest?.conflictData);
-    const localContent = getMutationContent(latest);
+    const localNode = await db.get(NODES_STORE, group.entityId);
+    const localContent = isAvailableLocalCapture(localNode)
+      ? localNode.content
+      : null;
+    const localVersion = isAvailableLocalCapture(localNode)
+      ? localNode.version
+      : null;
 
     if (!latest) {
       continue;
@@ -119,7 +127,7 @@ export async function listCaptureConflicts(
       entityId: group.entityId,
       localContent,
       remoteContent: remote?.content ?? null,
-      localVersion: group.localVersion,
+      localVersion,
       remoteVersion: remote?.version ?? requestedRemoteVersion,
       remoteLoadStatus,
       remoteLoadDiagnostic,
@@ -156,8 +164,9 @@ export async function resolveCaptureConflict(input: {
   );
   const latest = chooseLatestConflictRecord(entityRecords);
   const remote = getServerCapture(latest?.conflictData);
+  const remoteVersion = remote?.version ?? getRemoteChangeVersion(latest?.conflictData);
 
-  if (!latest || !remote || latest.mutation.entityType !== "capture") {
+  if (!latest || latest.mutation.entityType !== "capture") {
     await transaction.done;
     return { resolved: false, mutationCreated: false };
   }
@@ -171,6 +180,11 @@ export async function resolveCaptureConflict(input: {
   }
 
   if (input.strategy === "KEEP_REMOTE") {
+    if (!remote) {
+      await transaction.done;
+      return { resolved: false, mutationCreated: false };
+    }
+
     const node = mapRemoteCaptureToLocalNode(remote, input.deviceId);
     await transaction.objectStore(NODES_STORE).put(node);
     await transaction.objectStore(SYNC_ENTITY_ACKS_STORE).put({
@@ -186,6 +200,7 @@ export async function resolveCaptureConflict(input: {
     } satisfies SyncEntityAcknowledgementRecord);
     await mutationStore.delete(latest.mutationId);
     await transaction.done;
+    emitConflictResolved(input.workspaceId);
     return { resolved: true, mutationCreated: false };
   }
 
@@ -193,9 +208,11 @@ export async function resolveCaptureConflict(input: {
   const content =
     input.strategy === "MERGE_MANUALLY"
       ? input.mergedContent?.trim()
-      : getMutationContent(latest);
+      : isAvailableLocalCapture(existingNode)
+        ? existingNode.content
+        : null;
 
-  if (!existingNode || !content) {
+  if (!isAvailableLocalCapture(existingNode) || !content || remoteVersion === null) {
     await transaction.done;
     return { resolved: false, mutationCreated: false };
   }
@@ -223,7 +240,7 @@ export async function resolveCaptureConflict(input: {
       entityType: "capture",
       operation: "upsert",
       entityId: latest.mutation.entityId,
-      baseVersion: remote.version,
+      baseVersion: remoteVersion,
       payload: {
         content,
         createdAt: nextNode.createdAt,
@@ -233,14 +250,27 @@ export async function resolveCaptureConflict(input: {
     },
   } satisfies SyncMutationOutboxRecord);
   await transaction.done;
+  emitConflictResolved(input.workspaceId);
   return { resolved: true, mutationCreated: true };
 }
 
-function getMutationContent(record: SyncMutationOutboxRecord | null | undefined) {
-  const payload = record?.mutation.payload;
-  return payload && "content" in payload && typeof payload.content === "string"
-    ? payload.content
-    : null;
+function isAvailableLocalCapture(
+  node: Node | undefined,
+): node is Node & { content: string; version: number; deletedAt: null } {
+  return (
+    Boolean(node) &&
+    node?.deletedAt === null &&
+    typeof node.content === "string" &&
+    typeof node.version === "number"
+  );
+}
+
+function emitConflictResolved(workspaceId: string) {
+  emitSyncDataChanged({
+    workspaceId,
+    entityTypes: ["capture"],
+    changedAt: new Date().toISOString(),
+  });
 }
 
 function toCaptureEntity(

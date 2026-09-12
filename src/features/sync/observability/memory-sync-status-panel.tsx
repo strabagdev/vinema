@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { VisualFeedbackWordmark, useVisualFeedback } from "@/features/feedback/visual-feedback-provider";
 import { useAuth } from "@/features/auth/auth-provider";
@@ -57,8 +57,8 @@ export function MemorySyncStatusPanel({
   const [exportingConflicts, setExportingConflicts] = useState(false);
   const [captureConflicts, setCaptureConflicts] = useState<CaptureConflictSummary[]>([]);
   const [resolvingConflict, setResolvingConflict] = useState(false);
-  const [mergeContent, setMergeContent] = useState("");
-  const [showMergeEditor, setShowMergeEditor] = useState(false);
+  const [mergeContentByEntityId, setMergeContentByEntityId] = useState<Record<string, string>>({});
+  const [mergeEditorEntityId, setMergeEditorEntityId] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const [lastVerificationMessage, setLastVerificationMessage] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -132,6 +132,9 @@ export function MemorySyncStatusPanel({
       return;
     }
 
+    const previousBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         closePanel();
@@ -157,6 +160,7 @@ export function MemorySyncStatusPanel({
     window.addEventListener("pointerdown", handlePointerDown);
 
     return () => {
+      document.body.style.overflow = previousBodyOverflow;
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("pointerdown", handlePointerDown);
     };
@@ -298,20 +302,21 @@ export function MemorySyncStatusPanel({
         : undefined,
     });
     setCaptureConflicts(conflicts);
-    setShowMergeEditor(false);
-    setMergeContent(conflicts[0]?.localContent ?? "");
+    setMergeEditorEntityId(null);
+    setMergeContentByEntityId(toMergeContentMap(conflicts));
   }
 
   function handleCancelConflictResolver() {
     setCaptureConflicts([]);
-    setShowMergeEditor(false);
-    setMergeContent("");
+    setMergeEditorEntityId(null);
+    setMergeContentByEntityId({});
   }
 
   async function handleResolveCaptureConflict(
+    entityId: string,
     strategy: "KEEP_LOCAL" | "KEEP_REMOTE" | "MERGE_MANUALLY",
   ) {
-    const conflict = captureConflicts[0];
+    const conflict = captureConflicts.find((item) => item.entityId === entityId);
     if (!conflict || !auth.workspaceId || !auth.deviceId || resolvingConflict) {
       return;
     }
@@ -330,7 +335,7 @@ export function MemorySyncStatusPanel({
         deviceId: auth.deviceId,
         entityId: conflict.entityId,
         strategy,
-        mergedContent: mergeContent,
+        mergedContent: mergeContentByEntityId[entityId] ?? "",
       });
       if (result.mutationCreated) {
         await auth.syncNow();
@@ -338,8 +343,8 @@ export function MemorySyncStatusPanel({
       await refreshSnapshot();
       const conflicts = await listCaptureConflicts(auth.workspaceId);
       setCaptureConflicts(conflicts);
-      setMergeContent(conflicts[0]?.localContent ?? "");
-      setShowMergeEditor(false);
+      setMergeContentByEntityId(toMergeContentMap(conflicts));
+      setMergeEditorEntityId(null);
       feedback.success("Conflicto actualizado");
     } catch {
       setLocalError("No fue posible resolver el conflicto.");
@@ -409,18 +414,24 @@ export function MemorySyncStatusPanel({
           exportingConflicts={exportingConflicts}
           captureConflicts={captureConflicts}
           resolvingConflict={resolvingConflict}
-          mergeContent={mergeContent}
-          showMergeEditor={showMergeEditor}
+          mergeContentByEntityId={mergeContentByEntityId}
+          mergeEditorEntityId={mergeEditorEntityId}
           onVerifyMemory={() => void handleVerifyMemory()}
           onExportConflictDiagnostic={() => void handleExportConflictDiagnostic()}
           onOpenConflictResolver={() => void handleOpenConflictResolver()}
-          onResolveCaptureConflict={(strategy) =>
-            void handleResolveCaptureConflict(strategy)
+          onResolveCaptureConflict={(entityId, strategy) =>
+            void handleResolveCaptureConflict(entityId, strategy)
           }
           onRetryLoadConflict={() => void handleOpenConflictResolver()}
           onCancelConflict={handleCancelConflictResolver}
-          onMergeContentChange={setMergeContent}
-          onShowMergeEditor={() => setShowMergeEditor(true)}
+          onMergeContentChange={(entityId, value) =>
+            setMergeContentByEntityId((current) => ({
+              ...current,
+              [entityId]: value,
+            }))
+          }
+          onShowMergeEditor={setMergeEditorEntityId}
+          onClose={closePanel}
         />
       ) : null}
     </div>
@@ -441,8 +452,8 @@ function MemorySyncPanelContent({
   exportingConflicts,
   captureConflicts,
   resolvingConflict,
-  mergeContent,
-  showMergeEditor,
+  mergeContentByEntityId,
+  mergeEditorEntityId,
   onVerifyMemory,
   onExportConflictDiagnostic,
   onOpenConflictResolver,
@@ -451,6 +462,7 @@ function MemorySyncPanelContent({
   onCancelConflict,
   onMergeContentChange,
   onShowMergeEditor,
+  onClose,
 }: {
   variant?: "standalone" | "rail-panel";
   dialogRef: RefObject<HTMLElement | null>;
@@ -465,18 +477,20 @@ function MemorySyncPanelContent({
   exportingConflicts: boolean;
   captureConflicts: CaptureConflictSummary[];
   resolvingConflict: boolean;
-  mergeContent: string;
-  showMergeEditor: boolean;
+  mergeContentByEntityId: Record<string, string>;
+  mergeEditorEntityId: string | null;
   onVerifyMemory: () => void;
   onExportConflictDiagnostic: () => void;
   onOpenConflictResolver: () => void;
   onResolveCaptureConflict: (
+    entityId: string,
     strategy: "KEEP_LOCAL" | "KEEP_REMOTE" | "MERGE_MANUALLY",
   ) => void;
   onRetryLoadConflict: () => void;
   onCancelConflict: () => void;
-  onMergeContentChange: (value: string) => void;
-  onShowMergeEditor: () => void;
+  onMergeContentChange: (entityId: string, value: string) => void;
+  onShowMergeEditor: (entityId: string) => void;
+  onClose: () => void;
 }) {
   const health = snapshot.health;
   const isOffline = presentation.status === "OFFLINE";
@@ -492,7 +506,7 @@ function MemorySyncPanelContent({
       className={cn(
         "flex flex-col overflow-hidden bg-white text-left text-sm",
         variant === "standalone"
-          ? "fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-50 max-h-[min(82dvh,42rem)] rounded-xl border border-zinc-200 shadow-xl md:absolute md:inset-auto md:left-1/2 md:top-full md:mt-2 md:w-96 md:max-w-[calc(100vw-1.5rem)] md:-translate-x-1/2"
+          ? "fixed inset-y-0 right-0 z-50 h-dvh w-screen border-l border-zinc-200 shadow-xl sm:w-[min(100vw,600px)] md:w-[clamp(480px,38vw,600px)]"
           : "h-full max-h-full bg-transparent",
       )}
       aria-label="Estado de la memoria"
@@ -501,15 +515,27 @@ function MemorySyncPanelContent({
       tabIndex={-1}
       data-memory-sync-panel=""
     >
-      <div className="px-4 pt-4">
-        <h2 className="font-medium text-zinc-950">Estado de la memoria</h2>
-        <p className="mt-1 text-sm text-zinc-700">
-          {presentation.headline}
-        </p>
+      <div className="shrink-0 border-b border-zinc-100 px-4 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="font-medium text-zinc-950">Estado</h2>
+            <p className="mt-1 text-sm text-zinc-700">
+              {presentation.headline}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-zinc-500 outline-none transition-colors hover:bg-zinc-100 hover:text-zinc-900 focus-visible:ring-2 focus-visible:ring-zinc-400"
+            aria-label="Cerrar Estado"
+            onClick={onClose}
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
       </div>
 
       <div
-        className="min-h-0 overflow-y-auto px-4 pb-4 pt-4"
+        className="min-h-0 flex-1 overflow-y-auto px-4 pb-5 pt-4"
         data-memory-sync-panel-body=""
       >
         <p className="text-xs text-zinc-500">
@@ -550,7 +576,6 @@ function MemorySyncPanelContent({
           {health.conflictMutations > 0 ? (
             <Button
               size="sm"
-              variant="ghost"
               onClick={onOpenConflictResolver}
             >
               Resolver
@@ -558,6 +583,7 @@ function MemorySyncPanelContent({
           ) : null}
           <Button
             size="sm"
+            variant={health.conflictMutations > 0 ? "ghost" : "default"}
             onClick={onVerifyMemory}
             disabled={verifyingMemory || loading || isOffline || isLocalOnly}
           >
@@ -566,19 +592,26 @@ function MemorySyncPanelContent({
           </Button>
         </div>
 
-        {captureConflicts[0] ? (
-          <div className="mt-4">
-            <CaptureConflictResolver
-              conflict={captureConflicts[0]}
-              resolving={resolvingConflict}
-              mergeContent={mergeContent}
-              showMergeEditor={showMergeEditor}
-              onResolve={onResolveCaptureConflict}
-              onRetryLoad={onRetryLoadConflict}
-              onCancel={onCancelConflict}
-              onMergeContentChange={onMergeContentChange}
-              onShowMergeEditor={onShowMergeEditor}
-            />
+        {captureConflicts.length > 0 ? (
+          <div className="mt-4 space-y-3">
+            {captureConflicts.map((conflict) => (
+              <CaptureConflictResolver
+                key={conflict.entityId}
+                conflict={conflict}
+                resolving={resolvingConflict}
+                mergeContent={mergeContentByEntityId[conflict.entityId] ?? ""}
+                showMergeEditor={mergeEditorEntityId === conflict.entityId}
+                onResolve={(strategy) =>
+                  onResolveCaptureConflict(conflict.entityId, strategy)
+                }
+                onRetryLoad={onRetryLoadConflict}
+                onCancel={onCancelConflict}
+                onMergeContentChange={(value) =>
+                  onMergeContentChange(conflict.entityId, value)
+                }
+                onShowMergeEditor={() => onShowMergeEditor(conflict.entityId)}
+              />
+            ))}
           </div>
         ) : null}
 
@@ -693,17 +726,22 @@ function CaptureConflictResolver({
   const remoteContent = conflict.remoteContent;
   const hasLocalSnapshot = localContent !== null;
   const hasRemoteSnapshot = remoteContent !== null;
-  const canResolve = hasLocalSnapshot && hasRemoteSnapshot;
+  const canKeepLocal = hasLocalSnapshot && conflict.remoteVersion !== null;
+  const canKeepRemote = hasRemoteSnapshot;
+  const canMerge = hasLocalSnapshot && hasRemoteSnapshot;
 
   return (
-    <div className="rounded-lg border border-amber-100 bg-amber-50/60 p-3 text-xs text-zinc-700">
+    <div
+      className="rounded-lg border border-amber-100 bg-amber-50/60 p-3 text-xs text-zinc-700"
+      data-capture-conflict-card=""
+    >
       <p className="font-medium text-zinc-900">Una captura requiere atencion</p>
       <div className="mt-3 grid gap-2 md:grid-cols-2">
-        {hasLocalSnapshot ? (
-          <VersionPreview label="Versión de este dispositivo" content={localContent} />
-        ) : null}
         {hasRemoteSnapshot ? (
           <VersionPreview label="Versión sincronizada" content={remoteContent} />
+        ) : null}
+        {hasLocalSnapshot ? (
+          <VersionPreview label="Versión de este dispositivo" content={localContent} />
         ) : null}
       </div>
       {!hasLocalSnapshot && !hasRemoteSnapshot ? (
@@ -718,10 +756,10 @@ function CaptureConflictResolver({
       ) : null}
       {!hasLocalSnapshot && hasRemoteSnapshot ? (
         <p className="mt-3 rounded-md bg-white/80 p-2 text-zinc-700">
-          No fue posible cargar la versión local.
+          La versión local ya no está disponible.
         </p>
       ) : null}
-      {showMergeEditor && canResolve ? (
+      {showMergeEditor && canMerge ? (
         <textarea
           className="mt-3 min-h-28 w-full resize-y rounded-md border border-amber-200 bg-white p-2 outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
           aria-label="Resultado de fusion manual"
@@ -730,22 +768,26 @@ function CaptureConflictResolver({
         />
       ) : null}
       <div className="mt-3 flex flex-wrap gap-2">
-        {canResolve ? (
-          <>
-            <Button size="sm" onClick={() => onResolve("KEEP_LOCAL")} disabled={resolving}>
-              Conservar esta versión
-            </Button>
+        {canKeepRemote ? (
             <Button
               size="sm"
-              variant="ghost"
               onClick={() => onResolve("KEEP_REMOTE")}
               disabled={resolving}
             >
-              Conservar versión sincronizada
+              Usar versión sincronizada
             </Button>
-          </>
         ) : null}
-        {canResolve && showMergeEditor ? (
+        {canKeepLocal ? (
+          <Button
+            size="sm"
+            variant={canKeepRemote ? "ghost" : "default"}
+            onClick={() => onResolve("KEEP_LOCAL")}
+            disabled={resolving}
+          >
+            Usar versión local
+          </Button>
+        ) : null}
+        {canMerge && showMergeEditor ? (
           <Button
             size="sm"
             variant="ghost"
@@ -754,20 +796,31 @@ function CaptureConflictResolver({
           >
             Confirmar fusion
           </Button>
-        ) : canResolve ? (
+        ) : canMerge ? (
           <Button size="sm" variant="ghost" onClick={onShowMergeEditor} disabled={resolving}>
             Fusionar manualmente
           </Button>
-        ) : (
+        ) : null}
+        {!canKeepLocal && !canKeepRemote ? (
           <>
             <Button size="sm" variant="ghost" onClick={onRetryLoad} disabled={resolving}>
-              {hasLocalSnapshot || hasRemoteSnapshot ? "Reintentar cargar" : "Reintentar"}
+              Reintentar
             </Button>
             <Button size="sm" variant="ghost" onClick={onCancel} disabled={resolving}>
               Cancelar
             </Button>
           </>
-        )}
+        ) : null}
+        {!hasLocalSnapshot && hasRemoteSnapshot ? (
+          <Button size="sm" variant="ghost" onClick={onRetryLoad} disabled={resolving}>
+            Reintentar cargar versión local
+          </Button>
+        ) : null}
+        {hasLocalSnapshot && !hasRemoteSnapshot ? (
+          <Button size="sm" variant="ghost" onClick={onRetryLoad} disabled={resolving}>
+            Reintentar cargar versión sincronizada
+          </Button>
+        ) : null}
       </div>
     </div>
   );
@@ -799,6 +852,12 @@ function VersionPreview({ label, content }: { label: string; content: string }) 
         {content}
       </p>
     </div>
+  );
+}
+
+function toMergeContentMap(conflicts: CaptureConflictSummary[]) {
+  return Object.fromEntries(
+    conflicts.map((conflict) => [conflict.entityId, conflict.localContent ?? ""]),
   );
 }
 
