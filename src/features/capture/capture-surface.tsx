@@ -78,10 +78,16 @@ import { getCapturePreview } from "@/features/node/node-display";
 import { getNodeDetailPath } from "@/features/node/node-routes";
 import type { SearchNodesRepositories } from "@/features/recovery/search-nodes";
 import { MemorySyncStatusPanel } from "@/features/sync/observability/memory-sync-status-panel";
+import { useSyncDataInvalidation } from "@/features/sync/use-sync-data-invalidation";
 import type { StorageAdapter } from "@/infrastructure/storage/storage-adapter";
 import { cn } from "@/lib/cn";
 
 const EMPTY_SELECTED_CAPTURE_IDS: string[] = [];
+const CAPTURE_SURFACE_INVALIDATION_TYPES = [
+  "capture",
+  "concept",
+  "captureConcept",
+] as const;
 const INITIAL_CONTEXTUAL_SUGGESTION_LIMIT = 5;
 const DESKTOP_PANEL_BREAKPOINT = 768;
 const CONCEPT_HIGHLIGHT_MS = 1200;
@@ -167,6 +173,7 @@ export function CaptureSurface({
   const [highlightedConceptKeys, setHighlightedConceptKeys] = useState<Set<string>>(
     new Set(),
   );
+  const [syncInvalidationToken, setSyncInvalidationToken] = useState(0);
   const [memoryIdentities, setMemoryIdentities] = useState<
     Map<string, CaptureEmergentIdentity>
   >(new Map());
@@ -222,6 +229,7 @@ export function CaptureSurface({
   const associationState = useAssociationSuggestions({
     text: plainTextContent,
     workspaceId: workspace.id,
+    invalidationToken: syncInvalidationToken,
     selectedCaptureIds: EMPTY_SELECTED_CAPTURE_IDS,
     selectedContextIds,
     contextRepository: repositories.contextRepository,
@@ -287,6 +295,13 @@ export function CaptureSurface({
     },
     [],
   );
+  useSyncDataInvalidation({
+    workspaceId: workspace.id,
+    entityTypes: CAPTURE_SURFACE_INVALIDATION_TYPES,
+    onInvalidate: () => {
+      setSyncInvalidationToken((current) => current + 1);
+    },
+  });
   const clearPanelCloseTimer = useCallback(() => {
     if (closePanelTimerRef.current) {
       clearTimeout(closePanelTimerRef.current);

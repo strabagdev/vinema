@@ -53,6 +53,7 @@ export function useAssociationSuggestions({
   text,
   workspaceId,
   currentNodeId,
+  invalidationToken = 0,
   selectedCaptureIds,
   contextRepository,
   nodeRepository,
@@ -61,6 +62,7 @@ export function useAssociationSuggestions({
   text: string;
   workspaceId: string;
   currentNodeId?: string;
+  invalidationToken?: number;
   selectedCaptureIds: string[];
   selectedContextIds?: string[];
   contextRepository: ContextRepository;
@@ -344,6 +346,7 @@ export function useAssociationSuggestions({
   }, [
     currentNodeId,
     contextRepository,
+    invalidationToken,
     nodeRepository,
     relationRepository,
     selectedCaptureIdsKey,

@@ -27,7 +27,13 @@ La composicion autenticada usaba `runOnStart: false`. Eso significa que `start()
 
 Despues de cada `syncNow()`, el orchestrator reprograma el siguiente ciclo si sigue iniciado. La reprogramacion ocurre tanto despues de exito como despues de errores controlados, salvo que se configure `continueAfterError: false`.
 
-No existe un disparador de sync por `visibilitychange`, `online` u `offline`. El `visibilitychange` existente pertenece al ciclo de refresh de autenticacion, no a sincronizacion de datos.
+La implementacion vigente tambien agrega un ciclo de reanudacion de app en
+`app-resume-lifecycle`: ante `visibilitychange`, `pageshow`, `focus`, `online`
+o resume de Tauri, Vinema revalida la sesion autenticada y luego ejecuta
+`syncNow()` si el estado resultante sigue siendo `AUTHENTICATED_ONLINE`.
+
+Este disparador no reemplaza el polling ni el sync inicial. Funciona como una
+recuperacion oportunista al volver al foreground o reconectar.
 
 ## Intervalo Real
 
@@ -43,6 +49,7 @@ Despues de esta correccion:
 
 - sync inicial al autenticar/restaurar: inmediato mediante `syncNow()`.
 - polling posterior autenticado: cada 10 segundos.
+- resume/reconexion/focus: revalidacion y `syncNow()` con debounce.
 - peor caso teorico para push local: hasta 10 segundos.
 - peor caso teorico para pull en otro cliente: hasta 10 segundos adicionales.
 - peor caso entre dos clientes sin SSE: cercano a 20 segundos.
@@ -84,7 +91,7 @@ Las vistas afectadas se suscriben al evento y recargan desde IndexedDB cuando el
 
 Las siguientes superficies reaccionan a cambios remotos sin recargar la pagina:
 
-- superficie principal de captura reciente
+- superficie principal de captura y sus sugerencias contextuales
 - Historial
 - Archivo
 - detalle de captura
@@ -161,6 +168,7 @@ Para esta fase se adopta:
 - Push por HTTP.
 - Pull por HTTP.
 - polling autenticado de respaldo cada 10 segundos.
+- sync oportunista al reanudar, enfocar o reconectar la app.
 - invalidacion local de UI despues de Pull aplicado.
 - no implementar SSE todavia.
 - no implementar WebSocket.

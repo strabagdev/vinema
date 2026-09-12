@@ -21,6 +21,7 @@ import {
   CAPTURE_DRAFT_KEY,
   saveCaptureDraft,
 } from "@/features/capture/capture-draft";
+import { emitSyncDataChanged } from "@/features/sync/sync-data-events";
 import type { Device } from "@/domain/device/device";
 import { DevicePlatform } from "@/domain/device/device";
 import type { Workspace } from "@/domain/workspace/workspace";
@@ -2261,6 +2262,39 @@ describe("CaptureSurface", () => {
     expect(getDialog(screen.container, "Me recuerda a…")).toBeDefined();
     expect(screen.container.textContent).toContain("Proveedor Mitcom");
     expect(screen.container.textContent).not.toContain("Recordando...");
+  });
+
+  it("refreshes contextual memory suggestions after remote sync updates local data", async () => {
+    const nodeRepository = new InMemoryNodeRepository();
+    const screen = await renderCaptureSurface({ nodeRepository });
+
+    await changeTextarea(screen.container, "mitcom");
+    await advanceTime(500);
+
+    expect(screen.container.querySelector("[data-canvas-rail-badge]")).toBeNull();
+    expect(screen.container.textContent).not.toContain("Proveedor Mitcom");
+
+    await act(async () => {
+      await nodeRepository.create(
+        createStoredNode({
+          id: "remote-mitcom",
+          content: "Proveedor Mitcom creado desde el celular",
+          updatedAt: "2026-01-05T00:00:00.000Z",
+        }),
+      );
+      emitSyncDataChanged({
+        workspaceId: workspace.id,
+        entityTypes: ["capture"],
+        changedAt: "2026-01-05T00:00:01.000Z",
+      });
+      await flushPromises();
+    });
+    await advanceTime(500);
+
+    expect(getContextIndicator(screen.container, "Memorias sugeridas")).toBeDefined();
+    expect(screen.container.querySelector("[data-canvas-rail-badge]")).toBeDefined();
+    await openMemoryPanel(screen.container);
+    expect(screen.container.textContent).toContain("Proveedor Mitcom");
   });
 
   it("resolves a memory panel opened while a newer recall is still loading", async () => {

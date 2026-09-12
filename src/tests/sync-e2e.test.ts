@@ -2,6 +2,7 @@ import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it } from "vitest";
 import { deriveCaptureEmergentIdentity } from "@/features/identity/capture-emergent-identity";
 import { updateNode } from "@/features/node/update-node";
+import { createAutomaticSyncOrchestrator } from "@/features/sync/automatic-sync-orchestrator";
 import { SyncClientError } from "@/features/sync/sync-client";
 import {
   createE2eSyncHarness,
@@ -224,6 +225,65 @@ describe("end-to-end synchronization", () => {
     expect(convergence.deviceA.nodes).toHaveLength(100);
     expect(convergence.deviceA.contexts).toHaveLength(5);
     expect(convergence.deviceA.relations).toHaveLength(20);
+  });
+
+  it("pulls every remote capture when device B returns with its own local pending capture", async () => {
+    harness = await createE2eSyncHarness();
+    const { deviceA, deviceB, workspaceId } = harness;
+    const remoteNodes = Array.from({ length: 3 }, (_, index) =>
+      makeNode({
+        workspaceId,
+        deviceId: deviceA.device.id,
+        content: `Captura movil ${index + 1}`,
+      }),
+    );
+    const notebookNode = makeNode({
+      workspaceId,
+      deviceId: deviceB.device.id,
+      content: "Captura local del notebook pendiente.",
+    });
+
+    await harness.runOnDevice(deviceA, async () => {
+      for (const node of remoteNodes) {
+        await deviceA.repositories.nodeRepository.create(node);
+      }
+      expect(await getOutboxRecords()).toHaveLength(3);
+    });
+    await harness.runOnDevice(deviceA, () => deviceA.pushCoordinator.run());
+    await harness.runOnDevice(deviceB, async () => {
+      await deviceB.repositories.nodeRepository.create(notebookNode);
+      expect(await getOutboxRecords()).toHaveLength(1);
+    });
+
+    const notebookInitialSync = createAutomaticSyncOrchestrator({
+      pushCoordinator: deviceB.pushCoordinator,
+      pullCoordinator: deviceB.pullCoordinator,
+      config: { runOnStart: false },
+    });
+    await expect(
+      harness.runOnDevice(deviceB, () => notebookInitialSync.syncNow()),
+    ).resolves.toMatchObject({
+      status: "SUCCESS",
+      pushResult: { pushed: 1 },
+      pullResult: { pulled: 4, applied: 3 },
+    });
+
+    await harness.runOnDevice(deviceB, async () => {
+      const snapshot = await snapshotDevice(workspaceId);
+      expect(snapshot.nodes.map((node) => node.content).sort()).toEqual([
+        "Captura local del notebook pendiente.",
+        "Captura movil 1",
+        "Captura movil 2",
+        "Captura movil 3",
+      ]);
+      expect(await getOutboxRecords()).toHaveLength(0);
+      expect(await getPullCursor(workspaceId, deviceB.device.id)).toBe("4");
+    });
+
+    await harness.runOnDevice(deviceA, () => deviceA.pullCoordinator.run());
+    const convergence = await harness.compareDevices();
+    expect(convergence.differences).toEqual([]);
+    expect(convergence.deviceA.nodes).toHaveLength(4);
   });
 
   it("keeps push and pull idempotent without duplicates and persists cursors across reopen", async () => {
