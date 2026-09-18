@@ -48,6 +48,7 @@ export function mergeSemanticConceptSuggestions({
       knowledgeSuggestionKind: "RELATED_NOW",
       knowledgeSuggestionReasons: [SEMANTIC_CONCEPT_SUGGESTION_REASON],
       suggestionSource: "VECTOR_SIMILARITY",
+      evidenceOrigin: "CURRENT_TEXT",
     };
 
     if (!current) {
@@ -70,6 +71,7 @@ export function mergeSemanticConceptSuggestions({
         semanticSuggestion.knowledgeSuggestionReasons ?? [],
       ),
       suggestionSource: current.suggestionSource ?? "VECTOR_SIMILARITY",
+      evidenceOrigin: "CURRENT_TEXT",
     });
   }
 

@@ -264,6 +264,7 @@ function selectedConcepts(
       score: 1,
       evidenceCaptureIds: [],
       matchedTerms: [],
+      evidenceOrigin: "CURRENT_TEXT",
     }));
 }
 
@@ -288,6 +289,7 @@ function toExistingConceptSuggestion(
         trace.relatedContentTokens.includes(token),
     ),
     matchedAlias: trace.matchedAlias,
+    evidenceOrigin: trace.directMatches > 0 ? "CURRENT_TEXT" : "MEMORY",
   };
 }
 

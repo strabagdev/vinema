@@ -241,15 +241,19 @@ export function CaptureSurface({
     selectedEmergingConcepts,
     selectedExistingConceptSuggestions,
   );
+  const detectedConceptSuggestions = conceptSuggestions.filter(
+    isDirectConceptSuggestion,
+  );
   const memorySuggestions = associationState.suggestions;
   const showConceptIndicator =
-    hasContent && (confirmedContextSignals.concepts || conceptSuggestions.length > 0);
+    hasContent &&
+    (confirmedContextSignals.concepts || detectedConceptSuggestions.length > 0);
   const showMemoryIndicator =
     hasContent && (confirmedContextSignals.memories || memorySuggestions.length > 0);
   const memorySuggestionCount = memorySuggestions.length;
   const contextualConceptCount = Math.max(
     confirmedContextSignals.conceptCount,
-    conceptSuggestions.length,
+    detectedConceptSuggestions.length,
   );
   const hasSelectedConceptSuggestions =
     selectedContextIds.length > 0 ||
@@ -271,6 +275,10 @@ export function CaptureSurface({
           memorySuggestions,
           memoryLoading: associationState.status === "loading",
           memoryError: associationState.error !== null,
+          selectedContextIds,
+          selectedEmergingCandidateIds: selectedEmergingConcepts.map(
+            (concept) => concept.candidateId,
+          ),
         })
       : visiblePanel === "memories" && visiblePanelSnapshot
         ? createResolvedMemoryPanelSnapshot({
@@ -394,13 +402,13 @@ export function CaptureSurface({
     queueMicrotask(() => {
       setConfirmedContextSignals({
         memories: memorySuggestions.length > 0,
-        concepts: conceptSuggestions.length > 0,
-        conceptCount: conceptSuggestions.length,
+        concepts: detectedConceptSuggestions.length > 0,
+        conceptCount: detectedConceptSuggestions.length,
       });
     });
   }, [
     associationState.status,
-    conceptSuggestions.length,
+    detectedConceptSuggestions.length,
     hasContent,
     memorySuggestions.length,
   ]);
@@ -1609,41 +1617,16 @@ function mergeExistingConceptSuggestionMetadata(
       base.knowledgeSuggestionReasons ?? [],
       source.knowledgeSuggestionReasons ?? [],
     ),
+    evidenceOrigin:
+      base.evidenceOrigin === "CURRENT_TEXT" ||
+      source.evidenceOrigin === "CURRENT_TEXT"
+        ? "CURRENT_TEXT"
+        : base.evidenceOrigin ?? source.evidenceOrigin,
   };
 }
 
 function mergeUniqueStrings(first: string[], second: string[]) {
   return Array.from(new Set([...first, ...second]));
-}
-
-function enrichVisibleConceptSuggestions(
-  visibleSuggestions: ConceptSuggestion[],
-  latestSuggestions: ConceptSuggestion[],
-) {
-  const latestByKey = new Map(
-    latestSuggestions.map((suggestion) => [
-      getConceptSuggestionSnapshotKey(suggestion),
-      suggestion,
-    ]),
-  );
-  let changed = false;
-  const enriched = visibleSuggestions.map((suggestion) => {
-    const latest = latestByKey.get(getConceptSuggestionSnapshotKey(suggestion));
-
-    if (!latest || suggestion.kind !== "existing" || latest.kind !== "existing") {
-      return suggestion;
-    }
-
-    const merged = mergeExistingConceptSuggestionMetadata(suggestion, latest);
-
-    if (!haveSameConceptSuggestionMetadata(suggestion, merged)) {
-      changed = true;
-    }
-
-    return merged;
-  });
-
-  return changed ? enriched : visibleSuggestions;
 }
 
 function createEnrichedConceptPanelSnapshot({
@@ -1652,30 +1635,46 @@ function createEnrichedConceptPanelSnapshot({
   memorySuggestions,
   memoryLoading,
   memoryError,
+  selectedContextIds,
+  selectedEmergingCandidateIds,
 }: {
   snapshot: PanelSnapshot;
   latestConceptSuggestions: ConceptSuggestion[];
   memorySuggestions: AssociationSuggestion[];
   memoryLoading: boolean;
   memoryError: boolean;
+  selectedContextIds: string[];
+  selectedEmergingCandidateIds: string[];
 }) {
-  const conceptSuggestions = enrichVisibleConceptSuggestions(
-    snapshot.conceptSuggestions,
-    latestConceptSuggestions,
+  const retainedSelectedExisting = snapshot.conceptSuggestions.filter(
+    (suggestion): suggestion is ExistingConceptSuggestion =>
+      suggestion.kind === "existing" &&
+      selectedContextIds.includes(suggestion.conceptId),
   );
+  const retainedSelectedEmerging = snapshot.conceptSuggestions.filter(
+    (suggestion): suggestion is EmergingConceptSuggestion =>
+      suggestion.kind === "emerging" &&
+      selectedEmergingCandidateIds.includes(suggestion.candidateId),
+  );
+  const conceptSuggestions = mergeSelectedConceptSuggestions(
+    latestConceptSuggestions,
+    retainedSelectedEmerging,
+    retainedSelectedExisting,
+  );
+  const signature = getPanelSignature("concepts", {
+    conceptSuggestions,
+    memorySuggestions,
+    memoryLoading,
+    memoryError,
+  });
 
-  if (conceptSuggestions === snapshot.conceptSuggestions) {
+  if (signature === snapshot.signature) {
     return snapshot;
   }
 
   return {
     ...snapshot,
-    signature: getPanelSignature("concepts", {
-      conceptSuggestions,
-      memorySuggestions,
-      memoryLoading,
-      memoryError,
-    }),
+    signature,
     conceptSuggestions,
   };
 }
@@ -1716,32 +1715,6 @@ function createResolvedMemoryPanelSnapshot({
   };
 }
 
-function haveSameConceptSuggestionMetadata(
-  first: ExistingConceptSuggestion,
-  second: ExistingConceptSuggestion,
-) {
-  return (
-    first.matchedAlias === second.matchedAlias &&
-    first.knowledgeSuggestionKind === second.knowledgeSuggestionKind &&
-    haveSameStrings(
-      first.knowledgeSuggestionReasons ?? [],
-      second.knowledgeSuggestionReasons ?? [],
-    ) &&
-    haveSameStrings(first.evidenceCaptureIds, second.evidenceCaptureIds) &&
-    haveSameStrings(first.matchedTerms, second.matchedTerms)
-  );
-}
-
-function haveSameStrings(first: string[], second: string[]) {
-  return first.length === second.length && first.every((item, index) => item === second[index]);
-}
-
-function getConceptSuggestionSnapshotKey(suggestion: ConceptSuggestion) {
-  return suggestion.kind === "existing"
-    ? `existing:${suggestion.conceptId}`
-    : `emerging:${suggestion.candidateId}`;
-}
-
 function createSelectedExistingConceptSuggestion(
   context: Context,
   matchedAlias?: string,
@@ -1756,6 +1729,7 @@ function createSelectedExistingConceptSuggestion(
     matchedTerms: [],
     matchedAlias,
     knowledgeSuggestionKind: "RELATED_NOW",
+    evidenceOrigin: "CURRENT_TEXT",
   };
 }
 
@@ -1799,11 +1773,12 @@ function getPanelSignature(
             suggestion.label,
             suggestion.matchedAlias ?? "",
             suggestion.knowledgeSuggestionKind ?? "",
+            suggestion.evidenceOrigin ?? "",
             ...(suggestion.knowledgeSuggestionReasons ?? []),
           ].join(":");
         }
 
-        return `emerging:${suggestion.candidateId}:${suggestion.suggestedLabel}`;
+        return `emerging:${suggestion.candidateId}:${suggestion.suggestedLabel}:${suggestion.evidenceOrigin ?? ""}`;
       })
       .join("|");
   }
@@ -2145,10 +2120,17 @@ export function ConceptPanelContent({
     0,
     suggestions.length - INITIAL_CONTEXTUAL_SUGGESTION_LIMIT,
   );
+  const orderedSuggestions = [
+    ...suggestions.filter(isDirectConceptSuggestion),
+    ...suggestions.filter((suggestion) => !isDirectConceptSuggestion(suggestion)),
+  ];
   const visibleSuggestions = expanded
-    ? suggestions
-    : suggestions.slice(0, INITIAL_CONTEXTUAL_SUGGESTION_LIMIT);
-  const groupedSuggestions = groupConceptSuggestions(visibleSuggestions);
+    ? orderedSuggestions
+    : orderedSuggestions.slice(0, INITIAL_CONTEXTUAL_SUGGESTION_LIMIT);
+  const detectedSuggestions = visibleSuggestions.filter(isDirectConceptSuggestion);
+  const memoryRelatedSuggestions = visibleSuggestions.filter(
+    (suggestion) => !isDirectConceptSuggestion(suggestion),
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
@@ -2161,25 +2143,31 @@ export function ConceptPanelContent({
         )}
         data-contextual-suggestion-list="concepts"
       >
-        {groupedSuggestions.map(({ kind, items }) => (
-          <section key={kind} className="space-y-2">
-            <div className="space-y-2">
-              {items.map((suggestion) => (
-                <ConceptSuggestionRow
-                  key={`${suggestion.kind}-${getConceptSuggestionId(suggestion)}`}
-                  suggestion={suggestion}
-                  selectedContextIds={selectedContextIds}
-                  selectedEmergingCandidateIds={selectedEmergingCandidateIds}
-                  highlighted={highlightedConceptKeys.has(
-                    `${suggestion.kind}:${getConceptSuggestionId(suggestion)}`,
-                  )}
-                  onToggleExisting={onToggleExisting}
-                  onToggleEmerging={onToggleEmerging}
-                />
-              ))}
-            </div>
+        <ConceptSuggestionSection
+          suggestions={detectedSuggestions}
+          evidenceSection="detected"
+          selectedContextIds={selectedContextIds}
+          selectedEmergingCandidateIds={selectedEmergingCandidateIds}
+          highlightedConceptKeys={highlightedConceptKeys}
+          onToggleExisting={onToggleExisting}
+          onToggleEmerging={onToggleEmerging}
+        />
+        {memoryRelatedSuggestions.length > 0 ? (
+          <section className="space-y-2 border-t border-zinc-200 pt-3">
+            <h3 className="px-1 text-xs font-medium text-zinc-500">
+              Relacionados en tu memoria
+            </h3>
+            <ConceptSuggestionSection
+              suggestions={memoryRelatedSuggestions}
+              evidenceSection="memory"
+              selectedContextIds={selectedContextIds}
+              selectedEmergingCandidateIds={selectedEmergingCandidateIds}
+              highlightedConceptKeys={highlightedConceptKeys}
+              onToggleExisting={onToggleExisting}
+              onToggleEmerging={onToggleEmerging}
+            />
           </section>
-        ))}
+        ) : null}
       </div>
       {canExpand ? (
         <ContextualSuggestionExpandButton
@@ -2190,6 +2178,50 @@ export function ConceptPanelContent({
       ) : null}
     </div>
   );
+}
+
+function ConceptSuggestionSection({
+  suggestions,
+  evidenceSection,
+  selectedContextIds,
+  selectedEmergingCandidateIds,
+  highlightedConceptKeys,
+  onToggleExisting,
+  onToggleEmerging,
+}: {
+  suggestions: ConceptSuggestion[];
+  evidenceSection: "detected" | "memory";
+  selectedContextIds: string[];
+  selectedEmergingCandidateIds: string[];
+  highlightedConceptKeys: Set<string>;
+  onToggleExisting: (contextId: string) => void;
+  onToggleEmerging: (candidateId: string) => void;
+}) {
+  return (
+    <div className="space-y-2" data-concept-evidence-section={evidenceSection}>
+      {groupConceptSuggestions(suggestions).map(({ kind, items }) => (
+        <section key={kind} className="space-y-2">
+          {items.map((suggestion) => (
+            <ConceptSuggestionRow
+              key={`${suggestion.kind}-${getConceptSuggestionId(suggestion)}`}
+              suggestion={suggestion}
+              selectedContextIds={selectedContextIds}
+              selectedEmergingCandidateIds={selectedEmergingCandidateIds}
+              highlighted={highlightedConceptKeys.has(
+                `${suggestion.kind}:${getConceptSuggestionId(suggestion)}`,
+              )}
+              onToggleExisting={onToggleExisting}
+              onToggleEmerging={onToggleEmerging}
+            />
+          ))}
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function isDirectConceptSuggestion(suggestion: ConceptSuggestion) {
+  return suggestion.evidenceOrigin !== "MEMORY";
 }
 
 function ConceptSuggestionRow({

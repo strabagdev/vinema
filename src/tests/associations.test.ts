@@ -966,6 +966,70 @@ describe("concept suggestions", () => {
     expect(labels.indexOf("Entrenamiento guitarra")).toBeLessThan(
       labels.indexOf("Septiembre"),
     );
+    expect(
+      evaluation.conceptSuggestions.find(
+        (suggestion) =>
+          suggestion.kind === "emerging" &&
+          suggestion.suggestedLabel === "Entrenamiento guitarra",
+      ),
+    ).toMatchObject({ evidenceOrigin: "CURRENT_TEXT" });
+    expect(
+      evaluation.conceptSuggestions.find(
+        (suggestion) =>
+          suggestion.kind === "existing" && suggestion.label === "Pendientes",
+      ),
+    ).toMatchObject({ evidenceOrigin: "MEMORY" });
+    expect(
+      evaluation.conceptSuggestions.find(
+        (suggestion) =>
+          suggestion.kind === "existing" && suggestion.label === "Septiembre",
+      ),
+    ).toMatchObject({ evidenceOrigin: "MEMORY" });
+  });
+
+  it("classifies direct existing concepts separately from memory-only concepts", () => {
+    const direct = evaluateCaptureInput({
+      text: "Practicar guitarra hoy",
+      nodes: [
+        node({ id: "guitar-history", content: "Practicar guitarra cada semana" }),
+      ],
+      contexts: [context({ id: "guitar", name: "Guitarra" })],
+      relations: [contextRelation("guitar-history", "guitar")],
+    });
+    const indirect = evaluateCaptureInput({
+      text: "Revisar informe operativo",
+      nodes: [
+        node({ id: "work-note", content: "Revisar informe operativo pendiente" }),
+      ],
+      contexts: [context({ id: "work", name: "Trabajo" })],
+      relations: [contextRelation("work-note", "work")],
+    });
+
+    expect(direct.conceptSuggestions).toContainEqual(
+      expect.objectContaining({
+        kind: "existing",
+        label: "Guitarra",
+        evidenceOrigin: "CURRENT_TEXT",
+      }),
+    );
+    expect(
+      direct.conceptSuggestions.filter(
+        (suggestion) =>
+          suggestion.kind === "existing" && suggestion.conceptId === "guitar",
+      ),
+    ).toHaveLength(1);
+    const guitarTrace = direct.diagnostics.conceptTraces.find(
+      (trace) => trace.context.id === "guitar",
+    );
+    expect(guitarTrace?.directMatches).toBeGreaterThan(0);
+    expect(guitarTrace?.relatedMatches).toBeGreaterThan(0);
+    expect(indirect.conceptSuggestions).toContainEqual(
+      expect.objectContaining({
+        kind: "existing",
+        label: "Trabajo",
+        evidenceOrigin: "MEMORY",
+      }),
+    );
   });
 
   it("keeps furniture and apartment concepts above recent unrelated memory", () => {
@@ -1678,6 +1742,21 @@ describe("concept suggestions", () => {
 
       expect(labels, text).toContain(expectedLabel);
     }
+
+    expect(
+      evaluateCaptureInput({
+        text: "Machine learning aplicado a minería",
+        nodes: [],
+        contexts: [],
+        relations: [],
+      }).conceptSuggestions,
+    ).toContainEqual(
+      expect.objectContaining({
+        kind: "emerging",
+        suggestedLabel: "Machine learning",
+        evidenceOrigin: "CURRENT_TEXT",
+      }),
+    );
   });
 
   it("keeps concept ranking stable across input collection order", () => {

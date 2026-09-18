@@ -3903,6 +3903,152 @@ describe("CaptureSurface", () => {
     );
   });
 
+  it("separates detected concepts from concepts related only through memory", async () => {
+    const storage = new MemoryStorageAdapter();
+    const nodeRepository = new InMemoryNodeRepository([
+      createStoredNode({
+        id: "pending-training",
+        content: "Entrenamiento guitarra pendiente de revisar.",
+        updatedAt: "2026-01-05T00:00:00.000Z",
+      }),
+      createStoredNode({
+        id: "september-training",
+        content: "Entrenamiento guitarra anotado para septiembre.",
+        updatedAt: "2026-01-06T00:00:00.000Z",
+      }),
+    ]);
+    const contextRepository = new InMemoryContextRepository([
+      createContext({ id: "pending", name: "Pendientes" }),
+      createContext({ id: "september", name: "Septiembre" }),
+    ]);
+    const relationRepository = new InMemoryNodeContextRelationRepository([
+      ...createRelationsFor("pending-training", ["pending"]),
+      ...createRelationsFor("september-training", ["september"]),
+    ]);
+    const screen = await renderCaptureSurface({
+      storage,
+      nodeRepository,
+      contextRepository,
+      relationRepository,
+    });
+
+    await changeTextarea(screen.container, "Entrenamiento guitarra");
+    await advanceTime(500);
+
+    const conceptIndicator = getContextIndicator(
+      screen.container,
+      "Conceptos detectados",
+    );
+    expect(
+      conceptIndicator?.querySelector("[data-canvas-rail-badge]")?.textContent,
+    ).toBe("1");
+
+    await openConceptPanel(screen.container);
+
+    const detectedSection = screen.container.querySelector(
+      '[data-concept-evidence-section="detected"]',
+    );
+    const memorySection = screen.container.querySelector(
+      '[data-concept-evidence-section="memory"]',
+    );
+
+    expect(detectedSection?.textContent).toContain("Entrenamiento guitarra");
+    expect(detectedSection?.textContent).not.toContain("Pendientes");
+    expect(detectedSection?.textContent).not.toContain("Septiembre");
+    expect(memorySection?.textContent).toContain("Pendientes");
+    expect(memorySection?.textContent).toContain("Septiembre");
+    expect(screen.container.textContent).toContain("Relacionados en tu memoria");
+    expect(await nodeRepository.listByWorkspace(workspace.id)).toHaveLength(2);
+    expect(await contextRepository.list({ workspaceId: workspace.id })).toHaveLength(2);
+    expect(await relationRepository.listByWorkspace(workspace.id)).toHaveLength(2);
+
+    const pendingButton = selectedButtonFromRow(
+      getConceptSuggestionRow(screen.container, "pending"),
+    );
+    await click(pendingButton);
+
+    expect(pendingButton.getAttribute("aria-pressed")).toBe("true");
+    expect(
+      conceptIndicator?.querySelector("[data-canvas-rail-badge]")?.textContent,
+    ).toBe("1");
+    expect(
+      screen.container.querySelector(
+        '[data-concept-evidence-section="memory"]',
+      )?.textContent,
+    ).toContain("Pendientes");
+
+    await click(getButton(screen.container, "Capturar"));
+    await waitFor(async () => (await storage.get(CAPTURE_DRAFT_KEY)) === null);
+
+    const captures = await nodeRepository.listByWorkspace(workspace.id);
+    const capturedTraining = captures.find(
+      (capture) => capture.content === "Entrenamiento guitarra",
+    );
+    const relations = await relationRepository.listByWorkspace(workspace.id);
+
+    expect(capturedTraining).toBeDefined();
+    expect(relations).toContainEqual(
+      expect.objectContaining({
+        nodeId: capturedTraining?.id,
+        contextId: "pending",
+      }),
+    );
+  });
+
+  it("replaces stale concept evidence after the capture text changes", async () => {
+    const storage = new MemoryStorageAdapter();
+    const nodeRepository = new InMemoryNodeRepository([
+      createStoredNode({
+        id: "pending-training",
+        content: "Entrenamiento guitarra pendiente de revisar.",
+        updatedAt: "2026-01-05T00:00:00.000Z",
+      }),
+    ]);
+    const contextRepository = new InMemoryContextRepository([
+      createContext({ id: "pending", name: "Pendientes" }),
+    ]);
+    const relationRepository = new InMemoryNodeContextRelationRepository(
+      createRelationsFor("pending-training", ["pending"]),
+    );
+    const screen = await renderCaptureSurface({
+      storage,
+      nodeRepository,
+      contextRepository,
+      relationRepository,
+    });
+
+    await changeTextarea(screen.container, "Entrenamiento guitarra");
+    await advanceTime(500);
+    await openConceptPanel(screen.container);
+    await click(
+      selectedButtonFromRow(getConceptSuggestionRow(screen.container, "pending")),
+    );
+
+    await changeTextarea(screen.container, "Machine learning aplicado a minería");
+    await advanceTime(500);
+
+    const detectedSection = screen.container.querySelector(
+      '[data-concept-evidence-section="detected"]',
+    );
+    const memorySection = screen.container.querySelector(
+      '[data-concept-evidence-section="memory"]',
+    );
+    const conceptIndicator = getContextIndicator(
+      screen.container,
+      "Conceptos detectados",
+    );
+
+    expect(detectedSection?.textContent).toContain("Machine learning");
+    expect(detectedSection?.textContent).not.toContain("Entrenamiento guitarra");
+    expect(memorySection?.textContent).toContain("Pendientes");
+    const currentDetectedCount = detectedSection?.querySelectorAll(
+      "[data-concept-suggestion-row]",
+    ).length;
+    expect(
+      conceptIndicator?.querySelector("[data-canvas-rail-badge]")?.textContent,
+    ).toBe(String(currentDetectedCount));
+  });
+
   it("suggests Reuniones from related captures and persists the selected concept", async () => {
     const storage = new MemoryStorageAdapter();
     const nodeRepository = new InMemoryNodeRepository([

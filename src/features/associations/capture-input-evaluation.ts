@@ -287,6 +287,9 @@ export function evaluateCaptureInput({
         matchedTerms: [],
         knowledgeSuggestionKind: suggestion.kind,
         knowledgeSuggestionReasons: suggestion.reasons,
+        evidenceOrigin: knowledgeInputConceptIds.includes(suggestion.conceptId)
+          ? "CURRENT_TEXT"
+          : "MEMORY",
       };
     })
     .filter(
@@ -323,7 +326,6 @@ export function evaluateCaptureInput({
   const localConcepts = buildLocalConceptSuggestions({
     candidates: localConceptCandidates,
     existingConcepts,
-    emergingConcepts,
   });
   const clusterDetectionMs = Math.round(performance.now() - clusterStartedAt);
   const deduplicationStartedAt = performance.now();
@@ -463,6 +465,7 @@ function detectEmergingConcepts({
       score,
       evidenceCaptureIds,
       representativeTerms,
+      evidenceOrigin: "MEMORY",
     },
   ]);
 }
@@ -711,18 +714,15 @@ function suppressRedundantLocalConceptCandidates(
 function buildLocalConceptSuggestions({
   candidates,
   existingConcepts,
-  emergingConcepts,
 }: {
   candidates: LocalConceptCandidate[];
   existingConcepts: ConceptSuggestion[];
-  emergingConcepts: EmergingConceptSuggestion[];
 }): EmergingConceptSuggestion[] {
   return dedupeEmergingConcepts(
     candidates
       .filter(
         (candidate) =>
-          !hasEquivalentExistingConcept(candidate.label, existingConcepts) &&
-          !hasEquivalentEmergingConcept(candidate.label, emergingConcepts),
+          !hasEquivalentExistingConcept(candidate.label, existingConcepts),
       )
       .map((candidate) => ({
         kind: "emerging" as const,
@@ -735,6 +735,7 @@ function buildLocalConceptSuggestions({
         score: candidate.score,
         evidenceCaptureIds: [],
         representativeTerms: candidate.representativeTerms,
+        evidenceOrigin: "CURRENT_TEXT",
       })),
   );
 }
@@ -1180,6 +1181,25 @@ function mergeConceptSuggestionMetadata(
   base: ConceptSuggestion,
   source: ConceptSuggestion,
 ): ConceptSuggestion {
+  if (base.kind === "emerging" && source.kind === "emerging") {
+    return {
+      ...base,
+      evidenceCaptureIds: mergeUniqueStrings(
+        base.evidenceCaptureIds,
+        source.evidenceCaptureIds,
+      ),
+      representativeTerms: mergeUniqueStrings(
+        base.representativeTerms,
+        source.representativeTerms,
+      ),
+      evidenceOrigin:
+        base.evidenceOrigin === "CURRENT_TEXT" ||
+        source.evidenceOrigin === "CURRENT_TEXT"
+          ? "CURRENT_TEXT"
+          : base.evidenceOrigin ?? source.evidenceOrigin,
+    };
+  }
+
   if (base.kind !== "existing" || source.kind !== "existing") {
     return base;
   }
@@ -1198,6 +1218,11 @@ function mergeConceptSuggestionMetadata(
       base.knowledgeSuggestionReasons ?? [],
       source.knowledgeSuggestionReasons ?? [],
     ),
+    evidenceOrigin:
+      base.evidenceOrigin === "CURRENT_TEXT" ||
+      source.evidenceOrigin === "CURRENT_TEXT"
+        ? "CURRENT_TEXT"
+        : base.evidenceOrigin ?? source.evidenceOrigin,
   };
 }
 
@@ -1292,18 +1317,6 @@ function hasEquivalentExistingConcept(label: string, suggestions: ConceptSuggest
       suggestion.kind === "existing" &&
       (normalizeLabelForDeduplication(suggestion.label) === normalizedLabel ||
         hasExistingConceptTermSubset(suggestion, labelTerms)),
-  );
-}
-
-function hasEquivalentEmergingConcept(
-  label: string,
-  suggestions: EmergingConceptSuggestion[],
-) {
-  const normalizedLabel = normalizeLabelForDeduplication(label);
-
-  return suggestions.some(
-    (suggestion) =>
-      normalizeLabelForDeduplication(suggestion.suggestedLabel) === normalizedLabel,
   );
 }
 

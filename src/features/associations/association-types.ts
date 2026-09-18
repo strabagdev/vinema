@@ -44,6 +44,7 @@ export type ExistingConceptSuggestion = {
   knowledgeSuggestionKind?: "RELATED_NOW" | "MISSING_CONTEXT" | "REVISIT";
   knowledgeSuggestionReasons?: string[];
   suggestionSource?: "VECTOR_SIMILARITY";
+  evidenceOrigin?: "CURRENT_TEXT" | "MEMORY";
 };
 
 export type EmergingConceptSuggestion = {
@@ -53,6 +54,7 @@ export type EmergingConceptSuggestion = {
   score: number;
   evidenceCaptureIds: string[];
   representativeTerms: string[];
+  evidenceOrigin?: "CURRENT_TEXT" | "MEMORY";
 };
 
 export type ConceptSuggestion =
