@@ -106,6 +106,22 @@ describe("semantic phrase extraction", () => {
     );
   });
 
+  it("extracts useful action phrases without requiring concept promotion", () => {
+    const controls = [
+      ["Comprar pan para mañana", []],
+      ["Llamar a Juan", ["Juan"]],
+      ["Enviar correo al jefe", ["Enviar correo"]],
+      ["Lavar la ropa", []],
+      ["Ir al supermercado", ["Supermercado"]],
+      ["Revisar esto después", ["Esto después"]],
+      ["Terminar informe mañana", ["Informe mañana"]],
+    ] as const;
+
+    for (const [text, expectedLabels] of controls) {
+      expect(labelsFor(text)).toEqual(expectedLabels);
+    }
+  });
+
   it("keeps personal memory empty until evidence or stored concepts exist", () => {
     const evaluation = evaluateCaptureInput({
       text: "Ombre Leather, Tom Ford, Erba Pura, Operational Core y Mina Andes Norte.",

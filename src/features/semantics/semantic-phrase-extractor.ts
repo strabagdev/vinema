@@ -635,13 +635,16 @@ function isActionObjectPhrase({
   }
 
   return Boolean(
-      first &&
+    first &&
       second &&
-      third &&
-      normalizedValues.length === 3 &&
-      isVerbInfinitiveSurface(first) &&
-      isShortStructuralToken(second) &&
-      isLikelyNoun(third),
+      ((normalizedValues.length === 2 &&
+        isVerbInfinitiveSurface(first) &&
+        isLikelyNoun(second)) ||
+        (third &&
+          normalizedValues.length === 3 &&
+          isVerbInfinitiveSurface(first) &&
+          isShortStructuralToken(second) &&
+          isLikelyNoun(third)))
   );
 }
 

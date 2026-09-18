@@ -104,6 +104,7 @@ const LOCAL_CONCEPT_ACTION_TERMS = new Set([
   "mejorar",
   "mejoro",
   "necesito",
+  "opera",
   "permite",
   "puede",
   "presentan",
@@ -212,6 +213,9 @@ export function evaluateCaptureInput({
     selectedContextIds,
     traces: conceptTraces,
   });
+  const conceptTraceByContextId = new Map(
+    conceptTraces.map((trace) => [trace.context.id, trace]),
+  );
   const knowledgeInputConceptIds = getPresentConceptIds({
     conceptTraces,
     selectedContextIds,
@@ -294,15 +298,17 @@ export function evaluateCaptureInput({
       (suggestion): suggestion is Extract<ConceptSuggestion, { kind: "existing" }> =>
         suggestion.kind === "existing",
     )
-    .map((suggestion) => ({
-      ...suggestion,
-      knowledgeSuggestionKind: suggestion.knowledgeSuggestionKind ?? "RELATED_NOW",
-      knowledgeSuggestionReasons: suggestion.knowledgeSuggestionReasons ?? [
-        suggestion.matchedAlias
-          ? "Alias detectado en el texto"
-          : "Concepto detectado en el texto",
-      ],
-    }));
+    .map((suggestion) => {
+      const trace = conceptTraceByContextId.get(suggestion.conceptId);
+
+      return {
+        ...suggestion,
+        knowledgeSuggestionKind: suggestion.knowledgeSuggestionKind ?? "RELATED_NOW",
+        knowledgeSuggestionReasons: suggestion.knowledgeSuggestionReasons ?? [
+          getExistingConceptSuggestionReason(suggestion, trace),
+        ],
+      };
+    });
   const selectedConcepts = directConcepts.filter((suggestion) =>
     selectedContextIds.includes(suggestion.conceptId),
   );
@@ -461,6 +467,25 @@ function detectEmergingConcepts({
   ]);
 }
 
+function getExistingConceptSuggestionReason(
+  suggestion: Extract<ConceptSuggestion, { kind: "existing" }>,
+  trace?: SuggestionDiagnostics["conceptTraces"][number],
+) {
+  if (suggestion.matchedAlias) {
+    return "Alias detectado en el texto";
+  }
+
+  if ((trace?.directMatches ?? 0) > 0) {
+    return "Concepto detectado en el texto";
+  }
+
+  if ((trace?.relatedMatches ?? 0) > 0) {
+    return "Capturas asociadas comparten términos con el texto";
+  }
+
+  return "Concepto relacionado";
+}
+
 function detectLocalConceptCandidates(text: string): LocalConceptCandidate[] {
   const semanticCandidates = extractSemanticPhraseCandidates(text);
   const candidates = new Map<string, LocalConceptCandidate>();
@@ -478,7 +503,15 @@ function detectLocalConceptCandidates(text: string): LocalConceptCandidate[] {
 
     const terms = candidate.tokens.filter(isLocalConceptToken);
 
-    if (!isLocalSemanticConceptCandidate({ text: sourceText, terms, source: candidate.source })) {
+    if (
+      !isLocalSemanticConceptCandidate({
+        fullText: text,
+        text: sourceText,
+        terms,
+        source: candidate.source,
+        start: candidate.start,
+      })
+    ) {
       continue;
     }
 
@@ -513,13 +546,17 @@ function isLocalConceptSource(
 }
 
 function isLocalSemanticConceptCandidate({
+  fullText,
   text,
   terms,
   source,
+  start,
 }: {
+  fullText: string;
   text: string;
   terms: string[];
   source: SemanticPhraseCandidate["source"];
+  start: number;
 }) {
   if (terms.length === 0) {
     return false;
@@ -550,13 +587,30 @@ function isLocalSemanticConceptCandidate({
   }
 
   if (terms.length === 1) {
+    if (start > 0 && isBareInfinitiveObject(fullText, start)) {
+      return false;
+    }
+
     return source === "KNOWN_TERM" || isStrongSingleLocalConceptTerm(terms[0] ?? "");
   }
 
+  if (isLocalActionObjectLabel(text) && !hasRecurringActionStructure(fullText)) {
+    return false;
+  }
+
   if (source === "CAPITALIZED_PHRASE") {
-    return surfaceTokens
-      .filter((token) => isLocalConceptToken(token.normalizedText))
-      .every((token) => hasTechnicalShape(token.text));
+    const meaningfulSurfaceTokens = surfaceTokens.filter((token) =>
+      isLocalConceptToken(token.normalizedText),
+    );
+    const isTechnicalPhrase = meaningfulSurfaceTokens.every((token) =>
+      hasTechnicalShape(token.text),
+    );
+    const isSentenceInitialPhrase =
+      start === 0 &&
+      meaningfulSurfaceTokens.length > 1 &&
+      !meaningfulSurfaceTokens.every((token) => hasSemanticUppercase(token.text));
+
+    return isTechnicalPhrase || isSentenceInitialPhrase;
   }
 
   return true;
@@ -585,6 +639,7 @@ function scoreLocalConceptCandidate({
             : -0.08;
   const compoundBoost = Math.min(terms.length - 1, 3) * 0.03;
   const connectorBoost = /\s(?:de|del|para|con|sin|y)\s/iu.test(text) ? 0.03 : 0;
+  const actionObjectBoost = isLocalActionObjectLabel(text) ? 0.22 : 0;
   const technicalBoost = tokenizeSemanticText(text).some((token) =>
     hasTechnicalShape(token.text),
   )
@@ -596,9 +651,42 @@ function scoreLocalConceptCandidate({
     0.98,
     Math.max(
       0,
-      score + sourceBoost + compoundBoost + connectorBoost + technicalBoost + specificityBoost,
+      score +
+        sourceBoost +
+        compoundBoost +
+        connectorBoost +
+        actionObjectBoost +
+        technicalBoost +
+        specificityBoost,
     ),
   );
+}
+
+function isLocalActionObjectLabel(text: string) {
+  const [first, second] = tokenizeAssociationText(text);
+
+  return Boolean(first && second && isLocalInfinitiveActionTerm(first));
+}
+
+function isBareInfinitiveObject(text: string, candidateStart: number) {
+  const prefixTokens = tokenizeSemanticText(text.slice(0, candidateStart));
+  const first = prefixTokens[0]?.normalizedText;
+
+  return Boolean(
+    first &&
+      isLocalInfinitiveActionTerm(first) &&
+      prefixTokens.slice(1).every((token) =>
+        isShortStructuralToken(token.normalizedText),
+      ),
+  );
+}
+
+function isLocalInfinitiveActionTerm(term: string) {
+  return /^(?:ir|[\p{L}]{3,}(?:ar|er|ir)(?:me|te|se|nos)?)$/u.test(term);
+}
+
+function hasRecurringActionStructure(text: string) {
+  return /\btod(?:o|a|os|as)\s+(?:los|las)\b/iu.test(text);
 }
 
 function suppressRedundantLocalConceptCandidates(
@@ -1018,8 +1106,20 @@ function dedupeConceptSuggestions(suggestions: ConceptSuggestion[]) {
   }
 
   return Array.from(byLabel.values()).sort((first, second) => {
-    if (first.kind !== second.kind) {
-      return first.kind === "existing" ? -1 : 1;
+    const scoreDifference = second.score - first.score;
+
+    if (Math.abs(scoreDifference) > 0.05) {
+      return scoreDifference;
+    }
+
+    const localPriorityDifference = compareLocalEmergingPriority(first, second);
+
+    if (localPriorityDifference !== 0) {
+      return localPriorityDifference;
+    }
+
+    if (scoreDifference !== 0) {
+      return scoreDifference;
     }
 
     if (first.kind === "emerging" && second.kind === "emerging") {
@@ -1031,8 +1131,49 @@ function dedupeConceptSuggestions(suggestions: ConceptSuggestion[]) {
       }
     }
 
-    return second.score - first.score;
+    if (first.kind !== second.kind) {
+      return first.kind === "existing" ? -1 : 1;
+    }
+
+    return compareStableText(
+      getConceptSuggestionLabel(first),
+      getConceptSuggestionLabel(second),
+    );
   });
+}
+
+function compareLocalEmergingPriority(
+  first: ConceptSuggestion,
+  second: ConceptSuggestion,
+) {
+  const scoreDifference = Math.abs(second.score - first.score);
+
+  if (scoreDifference > 0.05) {
+    return 0;
+  }
+
+  const firstIsLocal = isLocalEmergingSuggestion(first);
+  const secondIsLocal = isLocalEmergingSuggestion(second);
+
+  if (firstIsLocal === secondIsLocal) {
+    return 0;
+  }
+
+  return firstIsLocal ? -1 : 1;
+}
+
+function isLocalEmergingSuggestion(suggestion: ConceptSuggestion) {
+  return suggestion.kind === "emerging" && suggestion.evidenceCaptureIds.length === 0;
+}
+
+function getConceptSuggestionLabel(suggestion: ConceptSuggestion) {
+  return suggestion.kind === "existing"
+    ? suggestion.label
+    : suggestion.suggestedLabel;
+}
+
+function compareStableText(first: string, second: string) {
+  return first < second ? -1 : first > second ? 1 : 0;
 }
 
 function mergeConceptSuggestionMetadata(

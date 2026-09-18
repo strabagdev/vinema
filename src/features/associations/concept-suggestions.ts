@@ -215,7 +215,7 @@ export function diagnoseConceptSuggestionDetails({
     );
     const identityMatch = identityMatches.get(context.id) ?? null;
     const directMatches = overlapCount(queryTokens, contextTokens) +
-      (identityMatch ? Math.max(1, queryTokens.length) : 0);
+      (identityMatch ? 1 : 0);
     const relatedMatches = overlapCount(queryTokens, relatedContentTokens);
     const selectedBoost = selectedContextIds.includes(context.id) ? 1 : 0;
     const score =

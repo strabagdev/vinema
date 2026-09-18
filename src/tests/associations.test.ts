@@ -932,6 +932,140 @@ describe("concept suggestions", () => {
     expect(emergingLabels).not.toContain("Trazabilidad y continuidad");
   });
 
+  it("prioritizes current text concepts over weak administrative existing concepts", () => {
+    const evaluation = evaluateCaptureInput({
+      text: "Entrenamiento guitarra",
+      nodes: [
+        node({
+          id: "pending-training",
+          content: "Entrenamiento guitarra pendiente de revisar.",
+        }),
+        node({
+          id: "september-training",
+          content: "Entrenamiento guitarra anotado para septiembre.",
+        }),
+      ],
+      contexts: [
+        context({ id: "pending", name: "Pendientes" }),
+        context({ id: "september", name: "Septiembre" }),
+      ],
+      relations: [
+        contextRelation("pending-training", "pending"),
+        contextRelation("september-training", "september"),
+      ],
+    });
+    const labels = conceptLabels(evaluation.conceptSuggestions);
+
+    expect(labels[0]).toMatch(/entrenamiento|guitarra/i);
+    expect(labels).toEqual(
+      expect.arrayContaining(["Entrenamiento guitarra", "Pendientes", "Septiembre"]),
+    );
+    expect(labels.indexOf("Entrenamiento guitarra")).toBeLessThan(
+      labels.indexOf("Pendientes"),
+    );
+    expect(labels.indexOf("Entrenamiento guitarra")).toBeLessThan(
+      labels.indexOf("Septiembre"),
+    );
+  });
+
+  it("keeps furniture and apartment concepts above recent unrelated memory", () => {
+    const evaluation = evaluateCaptureInput({
+      text: "Comprar una mesa plegable para el departamento",
+      nodes: [
+        node({
+          id: "recent-admin",
+          content: "Comprar mesa plegable departamento pendiente.",
+        }),
+        node({
+          id: "recent-general",
+          content: "Comprar mesa plegable departamento general.",
+        }),
+      ],
+      contexts: [
+        context({ id: "pending", name: "Pendientes" }),
+        context({ id: "general", name: "General" }),
+      ],
+      relations: [
+        contextRelation("recent-admin", "pending"),
+        contextRelation("recent-general", "general"),
+      ],
+    });
+    const labels = conceptLabels(evaluation.conceptSuggestions);
+    const firstRelevantIndex = labels.findIndex((label) =>
+      /mesa|departamento|plegable/i.test(label),
+    );
+    const firstAdministrativeIndex = labels.findIndex((label) =>
+      /pendientes|general/i.test(label),
+    );
+
+    expect(firstRelevantIndex).toBeGreaterThanOrEqual(0);
+    expect(firstAdministrativeIndex).toBeGreaterThanOrEqual(0);
+    expect(firstRelevantIndex).toBeLessThan(firstAdministrativeIndex);
+  });
+
+  it("keeps guitar practice central even when temporal concepts have history", () => {
+    const evaluation = evaluateCaptureInput({
+      text: "Practicar guitarra todos los martes",
+      nodes: [
+        node({
+          id: "tuesday-practice",
+          content: "Practicar guitarra todos los martes.",
+        }),
+      ],
+      contexts: [context({ id: "tuesday", name: "Martes" })],
+      relations: [contextRelation("tuesday-practice", "tuesday")],
+    });
+    const labels = conceptLabels(evaluation.conceptSuggestions);
+
+    expect(labels[0]).toMatch(/guitarra|practicar/i);
+    expect(labels.indexOf("Martes")).toBeGreaterThan(
+      labels.findIndex((label) => /guitarra|practicar/i.test(label)),
+    );
+  });
+
+  it("does not let historical memory degrade an evident current-text concept", () => {
+    const emptyMemoryLabels = conceptLabels(
+      evaluateCaptureInput({
+        text: "Entrenamiento guitarra",
+        nodes: [],
+        contexts: [],
+        relations: [],
+      }).conceptSuggestions,
+    );
+    const richMemoryLabels = conceptLabels(
+      evaluateCaptureInput({
+        text: "Entrenamiento guitarra",
+        nodes: [
+          node({
+            id: "pending-training",
+            content: "Entrenamiento guitarra pendiente de revisar.",
+          }),
+          node({
+            id: "september-training",
+            content: "Entrenamiento guitarra anotado para septiembre.",
+          }),
+          node({
+            id: "general-training",
+            content: "Entrenamiento guitarra en notas generales.",
+          }),
+        ],
+        contexts: [
+          context({ id: "pending", name: "Pendientes" }),
+          context({ id: "september", name: "Septiembre" }),
+          context({ id: "general", name: "General" }),
+        ],
+        relations: [
+          contextRelation("pending-training", "pending"),
+          contextRelation("september-training", "september"),
+          contextRelation("general-training", "general"),
+        ],
+      }).conceptSuggestions,
+    );
+
+    expect(emptyMemoryLabels[0]).toBe("Entrenamiento guitarra");
+    expect(richMemoryLabels[0]).toBe("Entrenamiento guitarra");
+  });
+
   it("keeps cold-start concepts while rejecting structural phrase noise", () => {
     const evaluation = evaluateCaptureInput({
       text:
@@ -1483,6 +1617,99 @@ describe("concept suggestions", () => {
         ),
       ).toEqual([]);
     }
+  });
+
+  it("does not promote routine action-object phrases to local concepts", () => {
+    const controls = [
+      "Comprar pan para mañana",
+      "Llamar a Juan",
+      "Enviar correo al jefe",
+      "Lavar la ropa",
+      "Ir al supermercado",
+      "Revisar esto después",
+      "Terminar informe mañana",
+    ];
+
+    const results = controls.map((text) => {
+      const evaluation = evaluateCaptureInput({
+        text,
+        nodes: [],
+        contexts: [],
+        relations: [],
+      });
+
+      return {
+        text,
+        localCandidates: evaluation.diagnostics.localConceptCandidateCount,
+        emergingSuggestions:
+          evaluation.diagnostics.emergingConceptSuggestionCount,
+        labels: conceptLabels(evaluation.conceptSuggestions),
+      };
+    });
+
+    expect(results).toEqual(
+      controls.map((text) => ({
+        text,
+        localCandidates: 0,
+        emergingSuggestions: 0,
+        labels: [],
+      })),
+    );
+  });
+
+  it("keeps strong current-capture concept shapes with empty memory", () => {
+    const cases = [
+      ["Entrenamiento guitarra", "Entrenamiento guitarra"],
+      ["Practicar guitarra todos los martes", "Practicar guitarra"],
+      ["Aprender fotografía analógica", "Fotografía analógica"],
+      ["Proyecto solar departamento", "Proyecto solar"],
+      ["Machine learning aplicado a minería", "Machine learning"],
+    ] as const;
+
+    for (const [text, expectedLabel] of cases) {
+      const labels = conceptLabels(
+        evaluateCaptureInput({
+          text,
+          nodes: [],
+          contexts: [],
+          relations: [],
+        }).conceptSuggestions,
+      );
+
+      expect(labels, text).toContain(expectedLabel);
+    }
+  });
+
+  it("keeps concept ranking stable across input collection order", () => {
+    const nodes = [
+      node({
+        id: "pending-training",
+        content: "Entrenamiento guitarra pendiente de revisar.",
+      }),
+      node({
+        id: "september-training",
+        content: "Entrenamiento guitarra anotado para septiembre.",
+      }),
+    ];
+    const contexts = [
+      context({ id: "pending", name: "Pendientes" }),
+      context({ id: "september", name: "Septiembre" }),
+    ];
+    const relations = [
+      contextRelation("pending-training", "pending"),
+      contextRelation("september-training", "september"),
+    ];
+    const evaluate = ({ reverse }: { reverse: boolean }) =>
+      conceptLabels(
+        evaluateCaptureInput({
+          text: "Entrenamiento guitarra",
+          nodes: reverse ? [...nodes].reverse() : nodes,
+          contexts: reverse ? [...contexts].reverse() : contexts,
+          relations: reverse ? [...relations].reverse() : relations,
+        }).conceptSuggestions,
+      );
+
+    expect(evaluate({ reverse: true })).toEqual(evaluate({ reverse: false }));
   });
 
   it("deduplicates and orders existing concepts before equivalent emerging concepts", () => {
@@ -2423,6 +2650,14 @@ function context({
 
 function getConceptId(suggestion: { kind: string; conceptId?: string }) {
   return suggestion.kind === "existing" ? suggestion.conceptId : undefined;
+}
+
+function conceptLabels(
+  suggestions: ReturnType<typeof evaluateCaptureInput>["conceptSuggestions"],
+) {
+  return suggestions.map((suggestion) =>
+    suggestion.kind === "existing" ? suggestion.label : suggestion.suggestedLabel,
+  );
 }
 
 function relation(firstNodeId: string, secondNodeId: string): NodeContextRelation {

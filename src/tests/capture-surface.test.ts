@@ -3955,10 +3955,13 @@ describe("CaptureSurface", () => {
     expect(getDialog(screen.container, "Conceptos detectados")).toBeDefined();
     expect(screen.container.textContent).toContain("Reuniones");
 
-    const reunionesChip = getButton(screen.container, "Reuniones");
-    expect(reunionesChip.getAttribute("aria-pressed")).toBe("false");
-    await click(reunionesChip);
-    expect(reunionesChip.getAttribute("aria-pressed")).toBe("true");
+    const reunionesChip = Array.from(
+      screen.container.querySelectorAll("button"),
+    ).find((button) => button.textContent?.trim().startsWith("Reuniones"));
+    expect(reunionesChip).toBeDefined();
+    expect(reunionesChip!.getAttribute("aria-pressed")).toBe("false");
+    await click(reunionesChip!);
+    expect(reunionesChip!.getAttribute("aria-pressed")).toBe("true");
 
     await click(getButton(screen.container, "Capturar"));
     await waitFor(async () => (await storage.get(CAPTURE_DRAFT_KEY)) === null);
