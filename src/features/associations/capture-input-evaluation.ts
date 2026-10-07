@@ -36,6 +36,7 @@ import {
   extractSemanticPhraseCandidates,
   type SemanticPhraseCandidate,
 } from "@/features/semantics/semantic-phrase-extractor";
+import { assessConceptuality, isInfinitiveActionTerm } from "@/features/semantics/conceptuality";
 import {
   hasSemanticUppercase,
   hasTechnicalShape,
@@ -74,76 +75,6 @@ type LocalConceptCandidate = {
   score: number;
   representativeTerms: string[];
 };
-
-type LocalConceptSource = Exclude<
-  SemanticPhraseCandidate["source"],
-  "HISTORICAL_EVIDENCE"
->;
-
-const LOCAL_CONCEPT_ALLOWED_SOURCES = new Set([
-  "KNOWN_TERM",
-  "PROPER_NOUN_PHRASE",
-  "NOUN_PHRASE",
-  "GENERAL_NOUN_PHRASE",
-  "CAPITALIZED_PHRASE",
-] satisfies LocalConceptSource[]);
-
-const LOCAL_CONCEPT_ACTION_TERMS = new Set([
-  "busca",
-  "circulando",
-  "cuesta",
-  "convertirse",
-  "detectar",
-  "depende",
-  "dificultar",
-  "disminuye",
-  "dormir",
-  "existen",
-  "ingresan",
-  "mantener",
-  "mejorar",
-  "mejoro",
-  "necesito",
-  "opera",
-  "permite",
-  "puede",
-  "presentan",
-  "presentar",
-  "rapidamente",
-  "revisar",
-  "redujo",
-  "resumirse",
-  "tarde",
-  "tardiamente",
-]);
-
-const LOCAL_CONCEPT_WEAK_BOUNDARY_TERMS = new Set([
-  "antes",
-  "cuando",
-  "dentro",
-  "donde",
-  "durante",
-  "hora",
-  "mañana",
-  "manana",
-  "mayor",
-  "mediante",
-  "para",
-  "semanas",
-  "sectores",
-  "tiempo",
-  "ultima",
-  "ultimas",
-]);
-
-const LOCAL_CONCEPT_INVALID_CONNECTORS = new Set([
-  "a",
-  "es",
-  "esta",
-  "estan",
-  "fue",
-  "son",
-]);
 
 export type CaptureInputEvaluation = {
   recoveryMatches: AssociationSuggestion[];
@@ -494,32 +425,12 @@ function detectLocalConceptCandidates(text: string): LocalConceptCandidate[] {
   const candidates = new Map<string, LocalConceptCandidate>();
 
   for (const candidate of semanticCandidates) {
-    if (!isLocalConceptSource(candidate.source)) {
-      continue;
-    }
-
-    const sourceText = text.slice(candidate.start, candidate.end);
-
-    if (crossesLocalConceptBoundary(sourceText)) {
-      continue;
-    }
-
-    const terms = candidate.tokens.filter(isLocalConceptToken);
-
-    if (
-      !isLocalSemanticConceptCandidate({
-        fullText: text,
-        text: sourceText,
-        terms,
-        source: candidate.source,
-        start: candidate.start,
-      })
-    ) {
+    if (!assessConceptuality(candidate, text).accepted) {
       continue;
     }
 
     const label = deriveLocalConceptLabel(candidate.text, candidate.source);
-    const labelTerms = tokenizeAssociationText(label).filter(isLocalConceptToken);
+    const labelTerms = tokenizeAssociationText(label).filter(isMeaningfulLocalSupportToken);
 
     if (labelTerms.length === 0) {
       continue;
@@ -540,86 +451,6 @@ function detectLocalConceptCandidates(text: string): LocalConceptCandidate[] {
   return suppressRedundantLocalConceptCandidates(
     Array.from(candidates.values()),
   ).sort(compareLocalConceptCandidates);
-}
-
-function isLocalConceptSource(
-  source: SemanticPhraseCandidate["source"],
-): source is LocalConceptSource {
-  return LOCAL_CONCEPT_ALLOWED_SOURCES.has(source as LocalConceptSource);
-}
-
-function isLocalSemanticConceptCandidate({
-  fullText,
-  text,
-  terms,
-  source,
-  start,
-}: {
-  fullText: string;
-  text: string;
-  terms: string[];
-  source: SemanticPhraseCandidate["source"];
-  start: number;
-}) {
-  if (terms.length === 0) {
-    return false;
-  }
-
-  const surfaceTokens = tokenizeSemanticText(text);
-  const normalizedValues = surfaceTokens.map((token) => token.normalizedText);
-  const first = normalizedValues[0] ?? "";
-  const last = normalizedValues[normalizedValues.length - 1] ?? "";
-
-  if (!first || !last) {
-    return false;
-  }
-
-  if (normalizedValues.some((value) => LOCAL_CONCEPT_ACTION_TERMS.has(value))) {
-    return false;
-  }
-
-  if (
-    LOCAL_CONCEPT_WEAK_BOUNDARY_TERMS.has(first) ||
-    LOCAL_CONCEPT_WEAK_BOUNDARY_TERMS.has(last)
-  ) {
-    return false;
-  }
-
-  if (normalizedValues.some((value) => LOCAL_CONCEPT_INVALID_CONNECTORS.has(value))) {
-    return false;
-  }
-
-  if (terms.length === 1) {
-    if (start > 0 && isBareInfinitiveObject(fullText, start)) {
-      return false;
-    }
-
-    return source === "KNOWN_TERM" || isStrongSingleLocalConceptTerm(terms[0] ?? "");
-  }
-
-  if (isLocalActionObjectLabel(text) && !hasRecurringActionStructure(fullText)) {
-    return false;
-  }
-
-  if (source === "CAPITALIZED_PHRASE") {
-    const meaningfulSurfaceTokens = surfaceTokens.filter((token) =>
-      isLocalConceptToken(token.normalizedText),
-    );
-    const isTechnicalPhrase = meaningfulSurfaceTokens.every((token) =>
-      hasTechnicalShape(token.text),
-    );
-    const isSentenceInitialPhrase =
-      start === 0 &&
-      meaningfulSurfaceTokens.length > 1 &&
-      // Complete titles remain eligible regardless of title capitalization.
-      // Embedded proper names still require the existing technical evidence.
-      (text.trim() === fullText.trim() ||
-        !meaningfulSurfaceTokens.every((token) => hasSemanticUppercase(token.text)));
-
-    return isTechnicalPhrase || isSentenceInitialPhrase;
-  }
-
-  return true;
 }
 
 function scoreLocalConceptCandidate({
@@ -671,28 +502,7 @@ function scoreLocalConceptCandidate({
 function isLocalActionObjectLabel(text: string) {
   const [first, second] = tokenizeAssociationText(text);
 
-  return Boolean(first && second && isLocalInfinitiveActionTerm(first));
-}
-
-function isBareInfinitiveObject(text: string, candidateStart: number) {
-  const prefixTokens = tokenizeSemanticText(text.slice(0, candidateStart));
-  const first = prefixTokens[0]?.normalizedText;
-
-  return Boolean(
-    first &&
-      isLocalInfinitiveActionTerm(first) &&
-      prefixTokens.slice(1).every((token) =>
-        isShortStructuralToken(token.normalizedText),
-      ),
-  );
-}
-
-function isLocalInfinitiveActionTerm(term: string) {
-  return /^(?:ir|[\p{L}]{3,}(?:ar|er|ir)(?:me|te|se|nos)?)$/u.test(term);
-}
-
-function hasRecurringActionStructure(text: string) {
-  return /\btod(?:o|a|os|as)\s+(?:los|las)\b/iu.test(text);
+  return Boolean(first && second && isInfinitiveActionTerm(first));
 }
 
 function suppressRedundantLocalConceptCandidates(
@@ -765,18 +575,6 @@ function compareLocalConceptCandidates(
   );
 }
 
-function isLocalConceptToken(normalized: string) {
-  return (
-    normalized.length >= 4 &&
-    !isShortStructuralToken(normalized) &&
-    isMeaningfulLocalSupportToken(normalized)
-  );
-}
-
-function isStrongSingleLocalConceptTerm(term: string) {
-  return term.length >= 8 && !LOCAL_CONCEPT_WEAK_BOUNDARY_TERMS.has(term);
-}
-
 function deriveLocalConceptLabel(
   label: string,
   source: SemanticPhraseCandidate["source"],
@@ -813,10 +611,6 @@ function formatLocalConceptLabel(value: string) {
   const trimmed = value.trim();
 
   return trimmed.charAt(0).toLocaleUpperCase() + trimmed.slice(1);
-}
-
-function crossesLocalConceptBoundary(value: string) {
-  return /[,()[\]{}]/u.test(value);
 }
 
 function dedupeEmergingConcepts(suggestions: EmergingConceptSuggestion[]) {

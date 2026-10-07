@@ -28,6 +28,18 @@ const cases = [
   { text: "Revisar esto después", candidates: ["Esto después"], expected: [] },
 ];
 
+const generalizationCases = [
+  { text: "Arquitectura software", candidates: ["Arquitectura software"], expected: ["Arquitectura software"] },
+  { text: "Reunión semanal", candidates: ["Reunión semanal"], expected: ["Reunión semanal"] },
+  { text: "Gestión documental", candidates: ["Gestión documental"], expected: ["Gestión documental"] },
+  { text: "Data Analytics", candidates: ["Data Analytics"], expected: ["Data Analytics"] },
+  { text: "Comprar detergente", candidates: ["Comprar detergente"], expected: [] },
+  { text: "Cambiar ampolleta baño", candidates: ["Ampolleta baño"], expected: [] },
+  { text: "Sacar la basura", candidates: [], expected: [] },
+  { text: "Escribirle a Pedro", candidates: ["Escribirle", "Pedro"], expected: [] },
+];
+const acceptanceCases = [...cases, ...generalizationCases];
+
 const emptyMemory = { nodes: [], contexts: [], relations: [] };
 
 function capture(id: string, content: string): Node {
@@ -53,7 +65,7 @@ async function clearDatabase() {
 afterEach(clearDatabase);
 
 describe("semantic core acceptance contract", () => {
-  it.each(cases)("audits candidates and exact CURRENT_TEXT output: $text", ({ text, candidates, expected }) => {
+  it.each(acceptanceCases)("audits candidates and exact CURRENT_TEXT output: $text", ({ text, candidates, expected }) => {
     expect(extractSemanticPhraseCandidates(text).map((candidate) => candidate.text)).toEqual(candidates);
     const first = evaluateCaptureInput({ text, ...emptyMemory });
     expect(currentLabels(first)).toEqual(expected);
@@ -61,7 +73,7 @@ describe("semantic core acceptance contract", () => {
     expect(first.recoveryMatches).toEqual([]);
   });
 
-  it.each(cases)("is independent of node, concept and relation order: $text", ({ text, expected }) => {
+  it.each(acceptanceCases)("is independent of node, concept and relation order: $text", ({ text, expected }) => {
     const nodes = [capture("one", "Nebulosa violeta"), capture("two", "Archivo remoto")];
     const contexts = ["Nebulosa violeta", "Archivo remoto"].map((name, index) => ({
       id: `context-${index}`, workspaceId: "semantic-acceptance", type: "PROJECT" as const,
@@ -85,7 +97,7 @@ describe("semantic core acceptance contract", () => {
     }
   });
 
-  it.each(cases.filter(({ expected }) => expected.length > 0))(
+  it.each(acceptanceCases.filter(({ expected }) => expected.length > 0))(
     "confirms, persists and recovers the suggested concept: $text",
     async ({ text, expected }) => {
       await clearDatabase();

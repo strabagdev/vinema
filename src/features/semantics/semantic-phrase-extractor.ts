@@ -42,7 +42,6 @@ export function extractSemanticPhraseCandidates(text: string) {
       token,
       previousToken: tokens[index - 1],
       nextToken: tokens[index + 1],
-      index,
     });
     if (candidate) {
       upsertCandidate(candidates, candidate);
@@ -68,10 +67,6 @@ export function extractSemanticPhraseCandidates(text: string) {
     }
   }
 
-  for (const candidate of createDerivedVerbAdverbCandidates(tokens)) {
-    upsertCandidate(candidates, candidate);
-  }
-
   return suppressContainedCandidates(Array.from(candidates.values()))
     .sort(compareSemanticCandidates)
     .slice(0, MAX_SEMANTIC_SUGGESTIONS);
@@ -81,12 +76,10 @@ function createSingleTokenCandidate({
   token,
   previousToken,
   nextToken,
-  index,
 }: {
   token: SemanticToken;
   previousToken?: SemanticToken;
   nextToken?: SemanticToken;
-  index: number;
 }): SemanticPhraseCandidate | null {
   const normalized = normalizeSemanticPhrase(token.text);
   const isTechnical = hasTechnicalShape(token.text);
@@ -99,7 +92,6 @@ function createSingleTokenCandidate({
     token,
     previousToken,
     nextToken,
-    index,
   });
 
   if (!isTechnical && !isProper && !isSalientSingleNoun) {
@@ -156,17 +148,12 @@ function createPhraseCandidate({
   if (
     isShortBoundaryToken(first) ||
     isShortBoundaryToken(last) ||
-    isDependentStartToken(first) ||
-    isIncompleteBoundaryToken(last)
+    isDependentStartToken(first)
   ) {
     return null;
   }
 
   if (startsWithSentenceInitialConnectorFragment(phraseTokens, previousToken)) {
-    return null;
-  }
-
-  if (isTemporalComplementFragment(normalizedValues)) {
     return null;
   }
 
@@ -224,8 +211,7 @@ function createPhraseCandidate({
   if (
     hasConnectorInside &&
     !nounPhrase &&
-    !generalNounPhrase &&
-    !isAllowedProperConnectorPhrase()
+    !generalNounPhrase
   ) {
     return null;
   }
@@ -264,50 +250,6 @@ function createPhraseCandidate({
       hasConnectorInside ? "valid-internal-connector" : "contiguous-phrase",
     ],
   };
-}
-
-function createDerivedVerbAdverbCandidates(tokens: SemanticToken[]) {
-  const candidates: SemanticPhraseCandidate[] = [];
-
-  for (let index = 0; index < tokens.length - 1; index += 1) {
-    const verb = tokens[index];
-    const adverb = tokens[index + 1];
-
-    if (!verb || !adverb) {
-      continue;
-    }
-
-    if (!isWithinSingleSegment([verb, adverb])) {
-      continue;
-    }
-
-    const noun = nominalizeEligibleVerb(verb);
-    const adjective = adjectiveFromConceptualAdverb(adverb);
-
-    if (!noun || !adjective) {
-      continue;
-    }
-
-    const text = `${noun} ${adjective}`;
-    const normalizedText = normalizeSemanticPhrase(text);
-    const normalizedTerms = [
-      normalizeSemanticPhrase(noun),
-      normalizeSemanticPhrase(adjective),
-    ];
-
-    candidates.push({
-      text,
-      normalizedText,
-      tokens: normalizedTerms.map(stemSemanticToken),
-      start: verb.start,
-      end: adverb.end,
-      source: "GENERAL_NOUN_PHRASE",
-      score: 0.58,
-      reasons: ["noun-phrase-pattern", "derived-verb-adverb"],
-    });
-  }
-
-  return candidates;
 }
 
 function suppressContainedCandidates(candidates: SemanticPhraseCandidate[]) {
@@ -403,7 +345,6 @@ function isGeneralNounPhrase(normalizedValues: string[]) {
     meaningfulValues.some(
       (value) =>
         isShortBoundaryToken(value) ||
-        isIncompleteBoundaryToken(value) ||
         isDependentStartToken(value) ||
         isLikelyInfinitive(value) ||
         isLikelyAdverb(value),
@@ -427,7 +368,7 @@ function isGeneralNounPhrase(normalizedValues: string[]) {
   return (
     meaningfulValues.length === 2 &&
     ((isLikelyModifier(first) && isNominalConceptTerm(second)) ||
-      (isLikelyNoun(first) && (isLikelyAdjective(second) || isLikelyNoun(second))))
+      (isLikelyNoun(first) && isLikelyNoun(second)))
   );
 }
 
@@ -459,11 +400,7 @@ function isFlexibleConnectorNounPhrase(
     return false;
   }
 
-  if (
-    meaningfulValues.some(
-      (value) => isLikelyAdjective(value) || isLikelyInfinitive(value),
-    )
-  ) {
+  if (meaningfulValues.some(isLikelyInfinitive)) {
     return false;
   }
 
@@ -482,16 +419,6 @@ function isLikelyNoun(value: string) {
   return /^[\p{L}]{4,}$/u.test(value);
 }
 
-function isLikelyAdjective(value: string) {
-  void value;
-  return false;
-}
-
-function isLikelyGerund(value: string) {
-  void value;
-  return false;
-}
-
 function isLikelyModifier(value: string) {
   return value.length >= 4 && !isShortStructuralToken(value);
 }
@@ -500,12 +427,10 @@ function isSalientAbstractSingleNoun({
   token,
   previousToken,
   nextToken,
-  index,
 }: {
   token: SemanticToken;
   previousToken?: SemanticToken;
   nextToken?: SemanticToken;
-  index: number;
 }) {
   const normalized = token.normalizedText;
   const previous = previousToken?.normalizedText ?? "";
@@ -514,8 +439,6 @@ function isSalientAbstractSingleNoun({
   if (
     normalized.length < 6 ||
     isShortBoundaryToken(normalized) ||
-    isLikelyAdjective(normalized) ||
-    isLikelyGerund(normalized) ||
     isLikelyAdverb(normalized) ||
     isLikelyPresentVerb(normalized) ||
     isLikelyInfinitive(normalized) ||
@@ -534,7 +457,6 @@ function isSalientAbstractSingleNoun({
       previous,
       next,
     }) ||
-    (index === 1 && isShortStructuralToken(previous)) ||
     isShortStructuralToken(previous) ||
     isShortStructuralToken(next)
   );
@@ -591,11 +513,6 @@ function isConjugatedVerbInfinitivePhrase(normalizedValues: string[]) {
   );
 }
 
-function isTemporalComplementFragment(normalizedValues: string[]) {
-  void normalizedValues;
-  return false;
-}
-
 function startsWithSentenceInitialConnectorFragment(
   phraseTokens: SemanticToken[],
   previousToken?: SemanticToken,
@@ -628,7 +545,6 @@ function isActionObjectPhrase({
     !isShortBoundaryToken(nextToken.normalizedText) &&
     !isLikelyPresentVerb(nextToken.normalizedText) &&
     (isLikelyNoun(nextToken.normalizedText) ||
-      isLikelyAdjective(nextToken.normalizedText) ||
       isLikelyModifier(nextToken.normalizedText))
   ) {
     return false;
@@ -659,7 +575,7 @@ function isLikelyPresentVerb(value: string) {
 
   return (
     /(?:an|en)$/u.test(value) ||
-    /(?:iza|iona|iona|tiene|duce|mite|fine|iona)$/u.test(value)
+    /(?:iza|iona|tiene|duce|mite|fine)$/u.test(value)
   );
 }
 
@@ -679,22 +595,8 @@ function isLikelyAdverb(value: string) {
   return /^[\p{L}]{8,}mente$/u.test(value);
 }
 
-function nominalizeEligibleVerb(token: SemanticToken) {
-  void token;
-  return null;
-}
-
-function adjectiveFromConceptualAdverb(token: SemanticToken) {
-  void token;
-  return null;
-}
-
 function capitalizeTerm(value: string) {
   return value.charAt(0).toLocaleUpperCase() + value.slice(1);
-}
-
-function isAllowedProperConnectorPhrase() {
-  return false;
 }
 
 function absorbsProperNameAfterConnector(phraseTokens: SemanticToken[]) {
