@@ -611,7 +611,10 @@ function isLocalSemanticConceptCandidate({
     const isSentenceInitialPhrase =
       start === 0 &&
       meaningfulSurfaceTokens.length > 1 &&
-      !meaningfulSurfaceTokens.every((token) => hasSemanticUppercase(token.text));
+      // Complete titles remain eligible regardless of title capitalization.
+      // Embedded proper names still require the existing technical evidence.
+      (text.trim() === fullText.trim() ||
+        !meaningfulSurfaceTokens.every((token) => hasSemanticUppercase(token.text)));
 
     return isTechnicalPhrase || isSentenceInitialPhrase;
   }
